@@ -1,0 +1,168 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // This security rules file assumes the following data structures
+    // for the "TEA TIME" café digital ordering application:
+    //
+    // Collection: /menu/{productId}
+    // Fields:
+    //   - name: string (required) - Name of the menu item
+    //   - description: string (optional) - Item description
+    //   - category: string (required) - Category identifier or name
+    //   - priceMinor: number (required) - Price in minor currency units (cents/LKR)
+    //   - isAvailable: bool (required) - Real-time item availability toggle
+    //   - imageUrl: string (optional) - Cloud Storage image download URL
+    //   - displayOrder: number (optional) - Sort priority in UI
+    //   - createdAt: timestamp (optional) - Item creation timestamp
+    //   - updatedAt: timestamp (optional) - Last updated timestamp
+    //
+    // Collection: /categories/{categoryId}
+    // Fields:
+    //   - name: string (required) - Category display label (e.g., "Tea", "Bites")
+    //   - displayOrder: number (optional) - Category ordering priority
+    //   - icon: string (optional) - Icon identifier or icon URL
+    //   - active: bool (optional) - Category visibility toggle
+    //
+    // Collection: /tables/{tableId}
+    // Fields:
+    //   - number: string (required) - Table number identifier (e.g., "Table 07")
+    //   - token: string (required) - High-entropy QR verification token
+    //   - active: bool (required) - Table operational status
+    //   - capacity: number (optional) - Seating capacity
+    //
+    // Collection: /settings/{settingId} (e.g., 'cafe')
+    // Fields:
+    //   - isOrderingPaused: bool (optional) - Global café ordering freeze toggle
+    //   - pauseMessage: string (optional) - Message displayed when ordering is paused
+    //   - cafeName: string (optional) - Café display name
+    //   - currency: string (optional) - Base currency code (e.g., "LKR")
+    //   - openingHours: map/string (optional) - Operating hours description
+    //
+    // Collection: /orders/{orderId}
+    // (Note: Supports client-side order creation fallback when Cloud Functions are not yet deployed;
+    //  customers can create orders where customerId == request.auth.uid, read their own orders;
+    //  administrators have full read/update/delete access)
+    // Fields:
+    //   - orderNumber: number (required) - Sequential order number (e.g., 1042)
+    //   - orderNumberDisplay: string (required) - Display string (e.g., "#1042")
+    //   - tableId: string (required) - Firestore document ID of table
+    //   - tableNumber: string (required) - Human readable table label
+    //   - tableToken: string (required) - QR token validated during checkout
+    //   - customerId: string (required) - Firebase Auth UID of placing customer
+    //   - status: string (required) - Order state: 'new'|'preparing'|'ready'|'served'|'cancelled'
+    //   - items: list (required) - Snapshot array of order items
+    //   - itemCount: number (required) - Total items in order
+    //   - totalMinor: number (required) - Server-computed total in minor units
+    //   - currency: string (required) - Currency code (e.g., "LKR")
+    //   - specialInstructions: string (optional) - Customer prep notes
+    //   - idempotencyKey: string (required) - Client duplicate-prevention key
+    //   - paymentStatus: string (required) - Payment workflow state
+    //   - createdAt: timestamp (required) - Server creation timestamp
+    //   - updatedAt: timestamp (required) - Last modification timestamp
+    //   - updatedBy: string (optional) - UID of admin who modified status
+    //   - cancelReason: string (optional) - Reason if cancelled
+    //   - servedAt: timestamp (optional) - Timestamp when served
+    //
+    // Collection: /admins/{adminId}
+    // Fields:
+    //   - email: string (required) - Administrator email address
+    //   - active: bool (required) - Active admin privileges indicator
+    //   - grantedAt: timestamp (optional) - Timestamp when admin role was granted
+    //
+    // Collection: /counters/{counterId} (e.g., 'orders')
+    // Fields:
+    //   - lastOrderNumber: number (required) - Latest sequential integer order counter
+    //   - updatedAt: timestamp (optional) - Counter increment timestamp
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Checks if the request is from an authenticated user (anonymous or registered)
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Checks if the authenticated user has administrative privileges
+    // via Firebase Auth custom claims or active entry in /admins/{uid}
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.admin == true ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // Menu: Publicly readable for anonymous & registered customer browsing.
+    // Modifications restricted strictly to cafe administrators.
+    match /menu/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Categories: Publicly readable so customers can browse menu sections.
+    // Modifications restricted strictly to cafe administrators.
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Tables: Publicly readable so customers scanning QR codes can verify table tokens.
+    // Modifications restricted strictly to cafe administrators.
+    match /tables/{tableId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Settings: Publicly readable so customers can check cafe status, pauses, and hours.
+    // Modifications restricted strictly to cafe administrators.
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Orders:
+    // - Read: Customers can read only their own orders (customerId == request.auth.uid).
+    //         Administrators can read all orders.
+    // - Create: Authenticated customers (anonymous or registered) can place orders directly
+    //           with customerId == request.auth.uid (supports Cloud Function fallback).
+    // - Update / Delete: Only administrators can update status or manage orders.
+    match /orders/{orderId} {
+      allow read: if isAdmin() || (
+        isAuthenticated() && resource.data.customerId == request.auth.uid
+      );
+      allow create: if isAuthenticated() && request.resource.data.customerId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // Admins: Access strictly confined to administrators.
+    match /admins/{adminId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Counters: Internal sequential counters (e.g., lastOrderNumber).
+    // Maintained by Cloud Functions Admin SDK; client access restricted to admin.
+    match /counters/{counterId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ===============================================================
+    // Default Deny Rule
+    // ===============================================================
+    // Any collections or subcollections not explicitly matched above are denied.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

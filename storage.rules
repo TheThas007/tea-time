@@ -1,0 +1,37 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Helper function for admin check
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.token.admin == true ||
+        firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Public read for menu product images
+    match /products/{imageId} {
+      allow read: if true;
+      allow write: if isAdmin()
+                   && request.resource.contentType.matches('image/.*')
+                   && request.resource.size <= 5 * 1024 * 1024; // 5 MB limit
+      allow delete: if isAdmin();
+    }
+
+    // Branding & logo assets
+    match /branding/{imageId} {
+      allow read: if true;
+      allow write: if isAdmin()
+                   && request.resource.contentType.matches('image/.*')
+                   && request.resource.size <= 5 * 1024 * 1024;
+      allow delete: if isAdmin();
+    }
+
+    // Fallback: deny all other paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

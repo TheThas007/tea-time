@@ -1,0 +1,38 @@
+{
+  "name": "tea-time",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "build:all": "tsc && vite build && cd functions && npm run build",
+    "preview": "vite preview",
+    "seed": "node scripts/seed.cjs",
+    "create-admin": "node scripts/create-admin.cjs",
+    "emulators": "firebase emulators:start"
+  },
+  "dependencies": {
+    "canvas-confetti": "^1.9.3",
+    "clsx": "^2.1.1",
+    "firebase": "^10.12.2",
+    "lucide-react": "^0.395.0",
+    "qrcode.react": "^3.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.23.1",
+    "tailwind-merge": "^2.3.0"
+  },
+  "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/node": "^20.14.2",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.4",
+    "typescript": "^5.4.5",
+    "vite": "^5.3.1"
+  }
+}
