@@ -1,10 +1,17 @@
 import React, { useState } from "react";
-import { X, Trash2, Minus, Plus, Send, Loader2, AlertCircle } from "lucide-react";
+import { X, Trash2, Minus, Plus, Send, Loader2, AlertCircle, Utensils } from "lucide-react";
 import confetti from "canvas-confetti";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { signInAnonymously } from "firebase/auth";
 import { useCart } from "../../context/CartContext";
-import { formatRupees, generateIdempotencyKey } from "../../lib/utils";
+import {
+  formatRupees,
+  generateIdempotencyKey,
+  getProductImages,
+  supportsSugarSelection,
+  SUGAR_SPOON_OPTIONS,
+  formatSugarLabel,
+} from "../../lib/utils";
 import { auth, db, callCreateOrder } from "../../lib/firebase";
 
 interface CartDrawerProps {
@@ -28,6 +35,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     specialInstructions,
     setSpecialInstructions,
     updateQuantity,
+    updateItemSugar,
     removeItem,
     clearCart,
     totalMinor,
@@ -41,6 +49,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   if (!isOpen) return null;
+
+  const sugarEligibleItems = items.filter((i) => supportsSugarSelection(i.product));
 
   const handlePlaceOrder = async () => {
     if (items.length === 0) return;
@@ -66,13 +76,25 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       }
     }
 
+    const sugarInstructionParts = items
+      .filter((i) => supportsSugarSelection(i.product) && typeof i.sugarSpoons === "number")
+      .map((i) => `${i.product.name}: ${formatSugarLabel(i.sugarSpoons)}`);
+
+    const combinedSpecialInstructions = [
+      ...sugarInstructionParts,
+      specialInstructions.trim(),
+    ]
+      .filter(Boolean)
+      .join(" • ")
+      .slice(0, 300);
+
     const payload = {
       tableToken: tableToken.trim(),
       items: items.map((i) => ({
         productId: i.product.id,
         quantity: i.quantity,
       })),
-      specialInstructions: specialInstructions.trim().slice(0, 300),
+      specialInstructions: combinedSpecialInstructions,
       idempotencyKey,
     };
 
@@ -115,11 +137,15 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             quantity: i.quantity,
             subtotalMinor: i.product.priceMinor * i.quantity,
             imageUrl: i.product.imageUrl || null,
+            sugarNote:
+              supportsSugarSelection(i.product) && typeof i.sugarSpoons === "number"
+                ? formatSugarLabel(i.sugarSpoons)
+                : null,
           })),
           itemCount: totalItems,
           totalMinor: totalMinor,
           currency: "LKR",
-          specialInstructions: specialInstructions.trim().slice(0, 300),
+          specialInstructions: combinedSpecialInstructions,
           idempotencyKey,
           paymentStatus: "pay_at_counter",
           createdAt: serverTimestamp(),
@@ -201,31 +227,47 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             </div>
           ) : (
             <>
-              {items.map(({ product, quantity }) => {
+              {items.map(({ product, quantity, sugarSpoons }) => {
                 const itemTotalMinor = product.priceMinor * quantity;
+                const thumbUrl = getProductImages(product)[0] || "";
+                const itemSugarText =
+                  supportsSugarSelection(product) && typeof sugarSpoons === "number"
+                    ? formatSugarLabel(sugarSpoons)
+                    : "";
                 return (
                   <div
                     key={product.id}
                     className="bg-[#FFFCF6] rounded-2xl p-3 border border-[#DFC9AC] shadow-warm flex items-center gap-3"
                   >
                     {/* Item Thumbnail */}
-                    <img
-                      src={product.imageUrl}
-                      alt={product.name}
-                      className="w-16 h-16 rounded-xl object-cover shrink-0 bg-[#FAF7F0] border border-[#DFC9AC]/50"
-                    />
+                    {thumbUrl ? (
+                      <img
+                        src={thumbUrl}
+                        alt={product.name}
+                        className="w-16 h-16 rounded-xl object-contain shrink-0 bg-[#FAF7F0] border border-[#DFC9AC]/50"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 rounded-xl shrink-0 bg-[#FAF7F0] border border-[#DFC9AC]/50 flex items-center justify-center">
+                        <Utensils className="w-5 h-5 text-[#8A6A53]" />
+                      </div>
+                    )}
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-[#301C10] text-sm truncate">
+                      <h4 className="font-semibold text-[#301C10] text-sm leading-snug break-words">
                         {quantity} × {product.name}
                       </h4>
-                      <p className="text-xs text-[#301C10] font-medium">
+                      <p className="text-xs text-[#301C10] font-medium whitespace-nowrap">
                         {formatRupees(itemTotalMinor)}{" "}
                         <span className="text-[11px] text-[#8A6A53]">
                           ({formatRupees(product.priceMinor)} each)
                         </span>
                       </p>
+                      {itemSugarText && (
+                        <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-[#FAF7F0] border border-[#DFC9AC] text-[10px] font-bold text-[#4A290F]">
+                          {itemSugarText}
+                        </span>
+                      )}
                     </div>
 
                     {/* Stepper Controls & Delete */}
@@ -262,21 +304,72 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 );
               })}
 
-              {/* Special instructions textarea */}
-              <div className="pt-2">
-                <label className="block text-xs font-bold text-[#301C10] mb-1.5">
+              {/* Special instructions (with minimal Sugar selector for Coffee & Non-Milk Tea) */}
+              <div className="pt-2 space-y-2.5">
+                <label className="block text-xs font-bold text-[#301C10]">
                   Special instructions (optional)
                 </label>
-                <textarea
-                  value={specialInstructions}
-                  onChange={(e) => setSpecialInstructions(e.target.value)}
-                  maxLength={300}
-                  placeholder="e.g. Less sugar, no ice, extra milk..."
-                  rows={2}
-                  className="w-full text-xs p-3 rounded-xl border border-[#DFC9AC] bg-[#FFFCF6] text-[#301C10] placeholder-[#8A6A53] focus:outline-none focus:ring-2 focus:ring-[#C99532] focus:border-transparent resize-none shadow-warm transition"
-                />
-                <div className="text-right text-[10px] text-[#8A6A53] mt-0.5">
-                  {specialInstructions.length}/300
+
+                {sugarEligibleItems.length > 0 && (
+                  <div className="bg-[#FFFCF6] rounded-xl p-3 border border-[#DFC9AC] shadow-warm space-y-2.5">
+                    {sugarEligibleItems.map(({ product, sugarSpoons }) => {
+                      const currentSpoons =
+                        typeof sugarSpoons === "number" ? sugarSpoons : null;
+                      return (
+                        <div key={product.id} className="space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold text-[#301C10] truncate">
+                              Sugar · {product.name}
+                            </span>
+                            <span className="text-[10px] font-bold text-[#8A6A53] shrink-0">
+                              {currentSpoons !== null
+                                ? formatSugarLabel(currentSpoons)
+                                : "Select spoons"}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-6 gap-1.5">
+                            {SUGAR_SPOON_OPTIONS.map((opt) => {
+                              const selected = currentSpoons === opt.value;
+                              return (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={() =>
+                                    updateItemSugar(
+                                      product.id,
+                                      currentSpoons === opt.value ? null : opt.value
+                                    )
+                                  }
+                                  className={`py-1.5 px-1 rounded-lg text-[11px] font-bold transition active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532] ${
+                                    selected
+                                      ? "bg-[#E8B64F] text-[#1A0F08] border border-[#C99532] shadow-warm"
+                                      : "bg-[#FAF7F0] text-[#301C10] border border-[#DFC9AC] hover:border-[#C99532]"
+                                  }`}
+                                >
+                                  {opt.pill}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div>
+                  <textarea
+                    value={specialInstructions}
+                    onChange={(e) => setSpecialInstructions(e.target.value)}
+                    maxLength={300}
+                    placeholder="e.g. Extra hot, less milk, no ice..."
+                    rows={2}
+                    className="w-full text-xs p-3 rounded-xl border border-[#DFC9AC] bg-[#FFFCF6] text-[#301C10] placeholder-[#8A6A53] focus:outline-none focus:ring-2 focus:ring-[#C99532] focus:border-transparent resize-none shadow-warm transition"
+                  />
+                  <div className="text-right text-[10px] text-[#8A6A53] mt-0.5">
+                    {specialInstructions.length}/300
+                  </div>
                 </div>
               </div>
 

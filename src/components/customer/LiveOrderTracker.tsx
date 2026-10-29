@@ -1,17 +1,24 @@
 import React, { useEffect, useState } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
-import { 
-  CheckCircle2, 
-  Clock, 
-  ChefHat, 
-  BellRing, 
-  CheckCheck, 
-  X, 
-  Utensils
+import {
+  CheckCircle2,
+  Clock,
+  ChefHat,
+  BellRing,
+  CheckCheck,
+  X,
+  Utensils,
+  Star,
+  ExternalLink
 } from "lucide-react";
 import { db } from "../../lib/firebase";
 import { Order, OrderStatus } from "../../types";
 import { formatRupees, formatTimeAgo } from "../../lib/utils";
+
+const GOOGLE_REVIEW_URL =
+  "https://www.google.com/maps/place/TeaTime/@8.7505273,80.5002708,1075m/data=!3m1!1e3!4m8!3m7!1s0x3afc150061716423:0xd3dafef0e97cac0d!8m2!3d8.7505273!4d80.5028457!9m1!1b1!16s%2Fg%2F11x038s1mv?entry=ttu&g_ep=EgoyMDI2MTAyMC4wIKXMDSoASAFQAw%3D%3D";
+const INSTAGRAM_URL = "https://www.instagram.com/teatime_vavuniya/";
+const FACEBOOK_URL = "https://www.facebook.com/teatime.vavuniya/";
 
 interface LiveOrderTrackerProps {
   orderId: string;
@@ -128,21 +135,19 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
                     {/* Connecting vertical line */}
                     {idx < stages.length - 1 && (
                       <div
-                        className={`absolute left-4 top-8 -bottom-4 w-0.5 transition-colors duration-300 ${
-                          idx < currentStageIndex ? "bg-[#E8B64F]" : "bg-[#DFC9AC]"
-                        }`}
+                        className={`absolute left-4 top-8 -bottom-4 w-0.5 transition-colors duration-300 ${idx < currentStageIndex ? "bg-[#E8B64F]" : "bg-[#DFC9AC]"
+                          }`}
                       />
                     )}
 
                     {/* Stage icon circle */}
                     <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all duration-300 z-10 ${
-                        isCurrent
+                      className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all duration-300 z-10 ${isCurrent
                           ? "bg-[#4A290F] text-[#FFFCF6] ring-4 ring-[#E8B64F]/40 shadow-warm-md font-bold scale-110"
                           : isPassed
-                          ? "bg-[#E8B64F] text-[#301C10]"
-                          : "bg-[#FAF7F0] text-[#8A6A53] border border-[#DFC9AC]"
-                      }`}
+                            ? "bg-[#E8B64F] text-[#301C10]"
+                            : "bg-[#FAF7F0] text-[#8A6A53] border border-[#DFC9AC]"
+                        }`}
                     >
                       <IconComponent className="w-4 h-4" />
                     </div>
@@ -150,13 +155,12 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
                     <div className="flex-1 pt-0.5">
                       <div className="flex items-center justify-between">
                         <span
-                          className={`text-xs font-bold ${
-                            isCurrent
+                          className={`text-xs font-bold ${isCurrent
                               ? "text-[#301C10] text-sm"
                               : isPassed
-                              ? "text-[#301C10]"
-                              : "text-[#8A6A53]"
-                          }`}
+                                ? "text-[#301C10]"
+                                : "text-[#8A6A53]"
+                            }`}
                         >
                           {stage.label}
                         </span>
@@ -188,11 +192,18 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
 
               <div className="divide-y divide-[#DFC9AC]/50">
                 {order.items?.map((item, i) => (
-                  <div key={i} className="py-1.5 flex justify-between items-center text-xs">
-                    <span className="text-[#301C10] font-medium">
-                      {item.quantity} × {item.name}
-                    </span>
-                    <span className="text-[#301C10] font-bold">
+                  <div key={i} className="py-1.5 flex justify-between items-start gap-2 text-xs">
+                    <div>
+                      <span className="text-[#301C10] font-medium">
+                        {item.quantity} × {item.name}
+                      </span>
+                      {item.sugarNote && (
+                        <span className="block text-[10px] font-bold text-[#623B1B]">
+                          {item.sugarNote}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[#301C10] font-bold whitespace-nowrap">
                       {formatRupees(item.subtotalMinor)}
                     </span>
                   </div>
@@ -215,6 +226,91 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
               </div>
             </div>
           )}
+
+          {/* Friendly Google Review Prompt */}
+          <div className="bg-[#FFFCF6] rounded-2xl p-4 border border-[#DFC9AC] shadow-warm space-y-3 text-center">
+            <div className="flex items-center justify-center gap-1" aria-hidden="true">
+              {[0, 1, 2, 3, 4].map((idx) => (
+                <Star
+                  key={idx}
+                  className="w-4 h-4 fill-[#E8B64F] text-[#E8B64F]"
+                />
+              ))}
+            </div>
+
+            <div className="space-y-1">
+              <h4 className="text-sm font-extrabold text-[#301C10]">
+                How’s your experience at TEA TIME?
+              </h4>
+              <p className="text-xs text-[#8A6A53] leading-relaxed">
+                We’d love to hear what you think about our shop! Your quick review helps us serve you even better.
+              </p>
+            </div>
+
+            <a
+              href={GOOGLE_REVIEW_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#0A0A0A] hover:bg-[#23140B] text-[#FFFCF6] border border-[#E8B64F]/40 text-xs font-extrabold tracking-wide shadow-warm transition active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
+            >
+              <Star className="w-3.5 h-3.5 fill-[#E8B64F] text-[#E8B64F] shrink-0" />
+              <span>Leave a Google Review</span>
+              <ExternalLink className="w-3.5 h-3.5 text-[#E8B64F] shrink-0" />
+            </a>
+          </div>
+
+          {/* Connect With Us — Social Media Profile Buttons */}
+          <div className="bg-[#FFFCF6] rounded-2xl p-3.5 border border-[#DFC9AC] shadow-warm space-y-2.5 text-center">
+            <span className="block text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#8A6A53]">
+              Connect with us
+            </span>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              <a
+                href={INSTAGRAM_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#FAF7F0] hover:bg-[#E8B64F]/25 text-[#301C10] border border-[#DFC9AC] hover:border-[#C99532] text-xs font-extrabold shadow-warm transition active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="w-4 h-4 text-[#4A290F] shrink-0"
+                  aria-hidden="true"
+                >
+                  <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+                  <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+                  <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+                </svg>
+                <span>Instagram</span>
+              </a>
+
+              <a
+                href={FACEBOOK_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#FAF7F0] hover:bg-[#E8B64F]/25 text-[#301C10] border border-[#DFC9AC] hover:border-[#C99532] text-xs font-extrabold shadow-warm transition active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="w-4 h-4 text-[#4A290F] shrink-0"
+                  aria-hidden="true"
+                >
+                  <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+                </svg>
+                <span>Facebook</span>
+              </a>
+            </div>
+          </div>
         </div>
 
         {/* Footer Actions */}

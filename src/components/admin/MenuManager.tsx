@@ -3,9 +3,9 @@ import {
   collection, 
   onSnapshot, 
   addDoc, 
-  updateDoc, 
   deleteDoc, 
   setDoc,
+  writeBatch,
   doc, 
   serverTimestamp 
 } from "firebase/firestore";
@@ -21,16 +21,26 @@ import {
   Layers,
   Link as LinkIcon,
   Check,
-  Utensils
+  Utensils,
+  Search,
+  CloudUpload
 } from "lucide-react";
 import { db, storage } from "../../lib/firebase";
 import { MenuItem, Category } from "../../types";
-import { formatRupees, getProductImages } from "../../lib/utils";
-import { INITIAL_CATEGORIES, DEFAULT_CATEGORY_ICONS } from "../../data/seedData";
+import {
+  formatRupees,
+  getProductImages,
+  productMatchesCategory,
+  mergeMenuWithSeed,
+  mergeCategoriesWithSeed,
+} from "../../lib/utils";
+import { INITIAL_CATEGORIES, INITIAL_MENU_ITEMS, DEFAULT_CATEGORY_ICONS } from "../../data/seedData";
 
 export const MenuManager: React.FC = () => {
-  const [products, setProducts] = useState<MenuItem[]>([]);
+  const [products, setProducts] = useState<MenuItem[]>(INITIAL_MENU_ITEMS);
   const [categories, setCategories] = useState<Category[]>(INITIAL_CATEGORIES);
+  const [firestoreDocCount, setFirestoreDocCount] = useState<number>(0);
+  const [syncingCatalog, setSyncingCatalog] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
 
   // Edit / Create Product modal state
@@ -50,9 +60,13 @@ export const MenuManager: React.FC = () => {
   const [inlineCategoryIconInput, setInlineCategoryIconInput] = useState("");
   const [isEditingSelectedCatIcon, setIsEditingSelectedCatIcon] = useState(false);
 
+  // Admin list filter states
+  const [adminSearch, setAdminSearch] = useState("");
+  const [adminCategoryFilter, setAdminCategoryFilter] = useState("All");
+
   // Product Form fields
   const [name, setName] = useState("");
-  const [category, setCategory] = useState("Tea");
+  const [category, setCategory] = useState("Special Menu");
   const [priceRupees, setPriceRupees] = useState<number>(250);
   const [description, setDescription] = useState("");
   const [imageUrls, setImageUrls] = useState<string[]>([""]);
@@ -60,30 +74,68 @@ export const MenuManager: React.FC = () => {
   const [uploadingSlotIndex, setUploadingSlotIndex] = useState<number | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Real-time Firestore listener for menu products
+  // Real-time Firestore listener for menu products (merged with official 107-item catalog)
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "menu"), (snap) => {
-      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as MenuItem));
-      items.sort((a, b) => (a.displayOrder || 99) - (b.displayOrder || 99));
-      setProducts(items);
-      setLoading(false);
-    });
+    const unsub = onSnapshot(
+      collection(db, "menu"),
+      (snap) => {
+        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as MenuItem));
+        setFirestoreDocCount(docs.length);
+        setProducts(mergeMenuWithSeed(docs, INITIAL_MENU_ITEMS));
+        setLoading(false);
+      },
+      (err) => {
+        console.warn("Admin menu listener fallback:", err);
+        setProducts(INITIAL_MENU_ITEMS);
+        setLoading(false);
+      }
+    );
     return () => unsub();
   }, []);
 
-  // Real-time Firestore listener for categories
+  // Real-time Firestore listener for categories (merged with official 15 categories)
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "categories"), (snap) => {
-      if (!snap.empty) {
-        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Category));
-        list.sort((a, b) => (a.displayOrder || 99) - (b.displayOrder || 99));
-        setCategories(list);
-      } else {
+    const unsub = onSnapshot(
+      collection(db, "categories"),
+      (snap) => {
+        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Category));
+        setCategories(mergeCategoriesWithSeed(docs, INITIAL_CATEGORIES));
+      },
+      (err) => {
+        console.warn("Admin categories listener fallback:", err);
         setCategories(INITIAL_CATEGORIES);
       }
-    });
+    );
     return () => unsub();
   }, []);
+
+  const handleSyncCatalogToFirestore = async () => {
+    setSyncingCatalog(true);
+    try {
+      const batch = writeBatch(db);
+      for (const oldCatId of ["cat_tea", "cat_coffee", "cat_snacks", "cat_desserts"]) {
+        batch.delete(doc(db, "categories", oldCatId));
+      }
+      for (const cat of INITIAL_CATEGORIES) {
+        batch.set(doc(db, "categories", cat.id), cat, { merge: true });
+      }
+      for (const item of products) {
+        batch.set(
+          doc(db, "menu", item.id),
+          {
+            ...item,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+      await batch.commit();
+    } catch (err) {
+      console.error("Sync catalog error:", err);
+    } finally {
+      setSyncingCatalog(false);
+    }
+  };
 
   const getCategoryIcon = (catName: string): string => {
     const found = categories.find((c) => c.name.toLowerCase() === catName.toLowerCase());
@@ -94,12 +146,10 @@ export const MenuManager: React.FC = () => {
   const openCreateModal = () => {
     setEditingProduct(null);
     setName("");
-    setCategory(categories[0]?.name || "Tea");
+    setCategory(categories[0]?.name || "Special Menu");
     setPriceRupees(250);
     setDescription("");
-    setImageUrls([
-      "https://images.unsplash.com/photo-1544787219-7f47ccb76574?auto=format&fit=crop&w=800&q=80",
-    ]);
+    setImageUrls([""]);
     setIsAvailable(true);
     setIsAddingInlineCategory(false);
     setIsEditingSelectedCatIcon(false);
@@ -112,12 +162,14 @@ export const MenuManager: React.FC = () => {
   const openEditModal = (prod: MenuItem) => {
     setEditingProduct(prod);
     setName(prod.name);
-    setCategory(prod.category || "Tea");
-    setPriceRupees(Math.round(prod.priceMinor / 100));
+    setCategory(prod.category || categories[0]?.name || "Special Menu");
+    const resolvedPrice =
+      typeof prod.price === "number" ? prod.price : Math.round((prod.priceMinor || 0) / 100);
+    setPriceRupees(resolvedPrice);
     setDescription(prod.description || "");
     const existingImages = getProductImages(prod);
     setImageUrls(existingImages.length > 0 ? existingImages : [""]);
-    setIsAvailable(prod.isAvailable !== false);
+    setIsAvailable(prod.isAvailable !== false && prod.available !== false);
     setIsAddingInlineCategory(false);
     setIsEditingSelectedCatIcon(false);
     setInlineCategoryInput("");
@@ -284,7 +336,8 @@ export const MenuManager: React.FC = () => {
       return;
     }
 
-    const priceMinor = Math.round(Number(priceRupees) * 100);
+    const roundedPrice = Math.round(Number(priceRupees));
+    const priceMinor = roundedPrice * 100;
     if (isNaN(priceMinor) || priceMinor <= 0) {
       setFormError("Please enter a valid price in rupees.");
       return;
@@ -295,27 +348,40 @@ export const MenuManager: React.FC = () => {
       .filter((u) => u.length > 0)
       .slice(0, 3);
 
-    const primaryImageUrl =
-      cleanedUrls[0] ||
-      "https://images.unsplash.com/photo-1544787219-7f47ccb76574?auto=format&fit=crop&w=800&q=80";
+    const primaryImageUrl = cleanedUrls[0] || "";
+    const finalImageUrls = cleanedUrls;
 
-    const finalImageUrls = cleanedUrls.length > 0 ? cleanedUrls : [primaryImageUrl];
+    const trimmedCat = category.trim();
+    const updatedCategories = editingProduct?.categories
+      ? Array.from(new Set([trimmedCat, ...editingProduct.categories]))
+      : undefined;
 
-    const payload = {
+    const payload: Record<string, any> = {
       name: name.trim(),
-      category: category.trim(),
+      category: trimmedCat,
+      ...(updatedCategories ? { categories: updatedCategories } : {}),
+      price: roundedPrice,
       priceMinor,
-      priceDisplay: Math.round(Number(priceRupees)),
+      priceDisplay: roundedPrice,
       description: description.trim(),
+      image: primaryImageUrl,
       imageUrl: primaryImageUrl,
       imageUrls: finalImageUrls,
+      available: isAvailable,
       isAvailable,
       updatedAt: serverTimestamp(),
     };
 
     try {
       if (editingProduct) {
-        await updateDoc(doc(db, "menu", editingProduct.id), payload);
+        await setDoc(
+          doc(db, "menu", editingProduct.id),
+          {
+            ...editingProduct,
+            ...payload,
+          },
+          { merge: true }
+        );
       } else {
         await addDoc(collection(db, "menu"), {
           ...payload,
@@ -331,11 +397,18 @@ export const MenuManager: React.FC = () => {
   };
 
   const handleToggleAvailability = async (product: MenuItem) => {
+    const nextAvail = !(product.isAvailable !== false && product.available !== false);
     try {
-      await updateDoc(doc(db, "menu", product.id), {
-        isAvailable: !product.isAvailable,
-        updatedAt: serverTimestamp(),
-      });
+      await setDoc(
+        doc(db, "menu", product.id),
+        {
+          ...product,
+          isAvailable: nextAvail,
+          available: nextAvail,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
     } catch (err) {
       console.error("Toggle availability error:", err);
     }
@@ -346,8 +419,17 @@ export const MenuManager: React.FC = () => {
       return;
     }
 
+    const isSeededItem = INITIAL_MENU_ITEMS.some((s) => s.id === productId);
     try {
-      await deleteDoc(doc(db, "menu", productId));
+      if (isSeededItem) {
+        await setDoc(
+          doc(db, "menu", productId),
+          { isDeleted: true, updatedAt: serverTimestamp() },
+          { merge: true }
+        );
+      } else {
+        await deleteDoc(doc(db, "menu", productId));
+      }
     } catch (err) {
       console.error("Delete product error:", err);
     }
@@ -376,7 +458,19 @@ export const MenuManager: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          {firestoreDocCount < INITIAL_MENU_ITEMS.length && (
+            <button
+              onClick={handleSyncCatalogToFirestore}
+              disabled={syncingCatalog}
+              className="bg-[#2C190E] hover:bg-[#4A290F] disabled:opacity-60 text-[#E8B64F] font-bold px-3.5 py-2 rounded-xl text-xs shadow-warm flex items-center gap-1.5 transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
+              title="Persist all 15 categories and 107 menu items to Cloud Firestore"
+            >
+              <CloudUpload className="w-4 h-4" />
+              <span>{syncingCatalog ? "Syncing..." : "Sync Catalog to Cloud"}</span>
+            </button>
+          )}
+
           {/* Manage Categories Button */}
           <button
             onClick={() => setIsCategoryModalOpen(true)}
@@ -395,6 +489,32 @@ export const MenuManager: React.FC = () => {
             <span>Add Menu Item</span>
           </button>
         </div>
+      </div>
+
+      {/* Search & Category Filter Bar */}
+      <div className="flex flex-col sm:flex-row gap-2.5">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A6A53]" />
+          <input
+            type="text"
+            value={adminSearch}
+            onChange={(e) => setAdminSearch(e.target.value)}
+            placeholder="Search products or categories..."
+            className="w-full bg-[#FFFCF6] border border-[#DFC9AC] rounded-xl pl-9 pr-3 py-2 text-xs text-[#301C10] placeholder-[#8A6A53] shadow-warm focus:outline-none focus:ring-2 focus:ring-[#C99532]"
+          />
+        </div>
+        <select
+          value={adminCategoryFilter}
+          onChange={(e) => setAdminCategoryFilter(e.target.value)}
+          className="bg-[#FFFCF6] border border-[#DFC9AC] rounded-xl px-3 py-2 text-xs font-semibold text-[#301C10] shadow-warm focus:outline-none focus:ring-2 focus:ring-[#C99532]"
+        >
+          <option value="All">All Categories ({products.length})</option>
+          {categories.map((c) => (
+            <option key={c.id || c.name} value={c.name}>
+              {c.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Products Table */}
@@ -418,20 +538,41 @@ export const MenuManager: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                products.map((product) => {
+                products
+                  .filter((product) => {
+                    const matchesCat = productMatchesCategory(product, adminCategoryFilter);
+                    const q = adminSearch.trim().toLowerCase();
+                    const matchesQuery =
+                      !q ||
+                      product.name.toLowerCase().includes(q) ||
+                      (product.category && product.category.toLowerCase().includes(q)) ||
+                      (product.categories && product.categories.some((c) => c.toLowerCase().includes(q)));
+                    return matchesCat && matchesQuery;
+                  })
+                  .map((product) => {
                   const catIcon = getCategoryIcon(product.category);
                   const prodImages = getProductImages(product);
+                  const thumb = prodImages[0] || "";
+                  const resolvedPriceMinor =
+                    typeof product.priceMinor === "number"
+                      ? product.priceMinor
+                      : Math.round((product.price || 0) * 100);
+                  const avail = product.isAvailable !== false && product.available !== false;
                   return (
                     <tr key={product.id} className="hover:bg-[#FAF7F0]/70 transition">
                       {/* Item */}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
-                          <div className="relative w-12 h-12 aspect-square rounded-xl overflow-hidden bg-[#FAF7F0] border border-[#DFC9AC] shrink-0 shadow-warm">
-                            <img
-                              src={prodImages[0] || product.imageUrl}
-                              alt={product.name}
-                              className="w-full h-full object-cover"
-                            />
+                          <div className="relative w-12 h-12 aspect-square rounded-xl overflow-hidden bg-[#FAF7F0] border border-[#DFC9AC] shrink-0 shadow-warm flex items-center justify-center">
+                            {thumb ? (
+                              <img
+                                src={thumb}
+                                alt={product.name}
+                                className="w-full h-full object-contain"
+                              />
+                            ) : (
+                              <Utensils className="w-4 h-4 text-[#8A6A53]" />
+                            )}
                             {prodImages.length > 1 && (
                               <span className="absolute bottom-0.5 right-0.5 bg-[#2C190E]/85 text-[#E8B64F] text-[9px] font-extrabold px-1.5 py-0.2 rounded-md">
                                 {prodImages.length}
@@ -439,7 +580,14 @@ export const MenuManager: React.FC = () => {
                             )}
                           </div>
                           <div>
-                            <p className="font-bold text-[#301C10]">{product.name}</p>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="font-bold text-[#301C10]">{product.name}</p>
+                              {product.badge && (
+                                <span className="bg-[#2C190E] text-[#E8B64F] text-[9px] font-extrabold px-2 py-0.5 rounded-full">
+                                  {product.badge}
+                                </span>
+                              )}
+                            </div>
                             <p className="text-[11px] text-[#8A6A53] line-clamp-1 max-w-xs">
                               {product.description}
                             </p>
@@ -449,39 +597,52 @@ export const MenuManager: React.FC = () => {
 
                       {/* Category with Round Icon */}
                       <td className="py-3 px-4">
-                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FAF7F0] border border-[#DFC9AC] text-[#301C10] font-semibold text-[11px]">
-                          {catIcon ? (
-                            <img
-                              src={catIcon}
-                              alt={product.category}
-                              className="w-4 h-4 rounded-full object-cover shrink-0 border border-[#DFC9AC]"
-                            />
-                          ) : null}
-                          <span>{product.category}</span>
+                        <div className="flex flex-wrap gap-1">
+                          {(product.categories && product.categories.length > 0
+                            ? product.categories
+                            : [product.category]
+                          ).map((catLabel) => {
+                            const icon = getCategoryIcon(catLabel);
+                            return (
+                              <div
+                                key={catLabel}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FAF7F0] border border-[#DFC9AC] text-[#301C10] font-semibold text-[11px]"
+                              >
+                                {icon ? (
+                                  <img
+                                    src={icon}
+                                    alt={catLabel}
+                                    className="w-4 h-4 rounded-full object-cover shrink-0 border border-[#DFC9AC]"
+                                  />
+                                ) : null}
+                                <span>{catLabel}</span>
+                              </div>
+                            );
+                          })}
                         </div>
                       </td>
 
                       {/* Price */}
-                      <td className="py-3 px-4 font-bold text-[#301C10]">
-                        {formatRupees(product.priceMinor)}
+                      <td className="py-3 px-4 font-bold text-[#301C10] whitespace-nowrap">
+                        {formatRupees(resolvedPriceMinor)}
                       </td>
 
                       {/* Availability Toggle */}
                       <td className="py-3 px-4">
                         <button
                           onClick={() => handleToggleAvailability(product)}
-                          className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition flex items-center gap-1 ${
-                            product.isAvailable !== false
+                          className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition flex items-center gap-1 whitespace-nowrap ${
+                            avail
                               ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
                               : "bg-red-100 text-red-800 hover:bg-red-200"
                           }`}
                         >
                           <span
                             className={`w-1.5 h-1.5 rounded-full ${
-                              product.isAvailable !== false ? "bg-emerald-600" : "bg-red-600"
+                              avail ? "bg-emerald-600" : "bg-red-600"
                             }`}
                           />
-                          <span>{product.isAvailable !== false ? "In Stock" : "Sold Out"}</span>
+                          <span>{avail ? "In Stock" : "Sold Out"}</span>
                         </button>
                       </td>
 
@@ -599,10 +760,10 @@ export const MenuManager: React.FC = () => {
                           )}
                         </div>
                         <input
-                          type="url"
+                          type="text"
                           value={inlineCategoryIconInput}
                           onChange={(e) => setInlineCategoryIconInput(e.target.value)}
-                          placeholder="Round icon image link (https://...)"
+                          placeholder="Round icon image path or URL (/images/... or https://...)"
                           className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-[#DFC9AC] focus:outline-none focus:ring-2 focus:ring-[#C99532]/40 bg-[#FAF7F0] text-[#301C10] placeholder-[#8A6A53]"
                           onKeyDown={(e) => {
                             if (e.key === "Enter") {
@@ -703,10 +864,10 @@ export const MenuManager: React.FC = () => {
                       </label>
                       <div className="flex gap-1.5">
                         <input
-                          type="url"
+                          type="text"
                           value={editingCatIconUrl}
                           onChange={(e) => setEditingCatIconUrl(e.target.value)}
-                          placeholder="https://..."
+                          placeholder="/images/... or https://..."
                           className="flex-1 px-2 py-1 text-xs rounded-lg border border-[#DFC9AC] focus:outline-none focus:ring-2 focus:ring-[#C99532]/40 bg-[#FAF7F0] text-[#301C10]"
                         />
                         <button
@@ -797,10 +958,10 @@ export const MenuManager: React.FC = () => {
                       {/* URL Input + Upload & Remove Actions */}
                       <div className="flex-1 min-w-0 space-y-1.5">
                         <input
-                          type="url"
+                          type="text"
                           value={url}
                           onChange={(e) => handleImageSlotChange(idx, e.target.value)}
-                          placeholder={`Photo ${idx + 1} URL (https://...)`}
+                          placeholder={`Photo ${idx + 1} path or URL (/images/menu/... or https://...)`}
                           className="w-full px-2.5 py-1.5 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] placeholder-[#8A6A53] focus:border-[#C99532] focus:ring-2 focus:ring-[#C99532]/30 outline-none text-xs"
                         />
 
@@ -921,10 +1082,10 @@ export const MenuManager: React.FC = () => {
                       className="w-full px-3 py-1.5 rounded-xl border border-[#DFC9AC] focus:border-[#C99532] focus:ring-2 focus:ring-[#C99532]/30 outline-none bg-[#FAF7F0] text-[#301C10] placeholder-[#8A6A53]"
                     />
                     <input
-                      type="url"
+                      type="text"
                       value={newCategoryIconUrl}
                       onChange={(e) => setNewCategoryIconUrl(e.target.value)}
-                      placeholder="Round Icon Image Link (https://...)"
+                      placeholder="Round Icon Path or Link (/images/... or https://...)"
                       className="w-full px-3 py-1.5 rounded-xl border border-[#DFC9AC] focus:border-[#C99532] focus:ring-2 focus:ring-[#C99532]/30 outline-none bg-[#FAF7F0] text-[#301C10] placeholder-[#8A6A53]"
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
@@ -955,8 +1116,8 @@ export const MenuManager: React.FC = () => {
                 </label>
                 <div className="bg-[#FFFCF6] rounded-2xl border border-[#DFC9AC] divide-y divide-[#DFC9AC]/70 max-h-64 overflow-y-auto shadow-warm">
                   {categories.map((cat) => {
-                    const itemCount = products.filter(
-                      (p) => p.category?.toLowerCase() === cat.name.toLowerCase()
+                    const itemCount = products.filter((p) =>
+                      productMatchesCategory(p, cat.name)
                     ).length;
                     const resolvedIcon =
                       cat.iconUrl || DEFAULT_CATEGORY_ICONS[cat.name.toLowerCase()] || "";
@@ -1025,11 +1186,11 @@ export const MenuManager: React.FC = () => {
                         {isEditingThis && (
                           <div className="flex items-center gap-1.5 pt-1 animate-fadeIn">
                             <input
-                              type="url"
+                              type="text"
                               autoFocus
                               value={editingCatIconUrl}
                               onChange={(e) => setEditingCatIconUrl(e.target.value)}
-                              placeholder="Paste round icon image link (https://...)"
+                              placeholder="Paste round icon path or link (/images/... or https://...)"
                               className="flex-1 px-2.5 py-1.5 rounded-lg border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] placeholder-[#8A6A53] text-xs focus:outline-none focus:ring-2 focus:ring-[#C99532]/40"
                               onKeyDown={(e) => {
                                 if (e.key === "Enter") {

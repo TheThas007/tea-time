@@ -1,16 +1,32 @@
 export type OrderStatus = 'new' | 'preparing' | 'ready' | 'served' | 'cancelled';
 
-export interface MenuItem {
+export interface MenuProduct {
   id: string;
   name: string;
+  price: number;
+  category: string;
+  image: string;
+  available: boolean;
+  featured?: boolean;
+  description?: string;
+}
+
+export interface MenuItem extends MenuProduct {
   description: string;
-  category: string; // "Tea" | "Coffee" | "Snacks" | "Desserts"
-  priceMinor: number; // e.g. 25000 (cents) or 250
-  priceDisplay: number; // e.g. 250
+  categories?: string[]; // Supports multi-category products without duplicating records
+  priceMinor: number; // LKR minor units (e.g. 40000 for Rs. 400)
+  priceDisplay: number; // LKR integer display price (e.g. 400)
   imageUrl: string;
-  imageUrls?: string[]; // Up to 3 product photos
+  imageUrls?: string[]; // Up to 3 verified product photos
   isAvailable: boolean;
   displayOrder: number;
+  badge?: string; // e.g. "Wednesday Special"
+  availabilityNote?: string; // e.g. "Wednesday only • Pre-order before 10:00 AM"
+  imageMatchStatus?:
+    | "VERIFIED"
+    | "IMAGE_MISSING"
+    | "IMAGE_REVIEW_REQUIRED"
+    | "PRICE_REVIEW_REQUIRED";
   createdAt?: any;
   updatedAt?: any;
 }
@@ -40,6 +56,7 @@ export interface OrderItemSnapshot {
   quantity: number;
   subtotalMinor: number;
   imageUrl?: string | null;
+  sugarNote?: string | null;
 }
 
 export interface Order {
@@ -78,5 +95,6 @@ export interface CafeSettings {
 export interface CartItem {
   product: MenuItem;
   quantity: number;
+  sugarSpoons?: number | null;
 }
 

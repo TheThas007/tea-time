@@ -379,13 +379,20 @@ const OrderKanbanCard: React.FC<OrderKanbanCardProps> = ({
       </div>
 
       {/* Items list */}
-      <div className="space-y-1 text-xs text-[#301C10] border-y border-[#DFC9AC]/60 py-2">
+      <div className="space-y-1.5 text-xs text-[#301C10] border-y border-[#DFC9AC]/60 py-2">
         {order.items?.map((item, idx) => (
-          <div key={idx} className="flex justify-between font-medium">
-            <span>
-              {item.quantity} × {item.name}
-            </span>
-            <span className="text-[#8A6A53] text-[11px]">
+          <div key={idx} className="flex justify-between items-start gap-2 font-medium">
+            <div>
+              <span>
+                {item.quantity} × {item.name}
+              </span>
+              {item.sugarNote && (
+                <span className="block text-[10px] font-bold text-[#623B1B]">
+                  {item.sugarNote}
+                </span>
+              )}
+            </div>
+            <span className="text-[#8A6A53] text-[11px] whitespace-nowrap">
               {formatRupees(item.subtotalMinor)}
             </span>
           </div>

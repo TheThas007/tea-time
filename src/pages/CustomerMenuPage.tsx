@@ -14,6 +14,12 @@ import { CartDrawer } from "../components/customer/CartDrawer";
 import { LiveOrderTracker } from "../components/customer/LiveOrderTracker";
 import { WelcomeScreen } from "../components/customer/WelcomeScreen";
 import { INITIAL_CATEGORIES, INITIAL_MENU_ITEMS, INITIAL_TABLES } from "../data/seedData";
+import {
+  getProductImages,
+  productMatchesCategory,
+  mergeMenuWithSeed,
+  mergeCategoriesWithSeed,
+} from "../lib/utils";
 
 export const CustomerMenuPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -145,58 +151,66 @@ export const CustomerMenuPage: React.FC = () => {
     };
   }, [rawTableToken, setCurrentTable]);
 
-  // Real-time listener for Menu Items
+  // Real-time listener for Menu Items (merged idempotently with official catalog)
   useEffect(() => {
     const unsub = onSnapshot(
       collection(db, "menu"),
       (snap) => {
-        if (!snap.empty) {
-          const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as MenuItem));
-          items.sort((a, b) => (a.displayOrder || 99) - (b.displayOrder || 99));
-          setMenuItems(items);
-        }
+        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as MenuItem));
+        setMenuItems(mergeMenuWithSeed(docs, INITIAL_MENU_ITEMS));
       },
       (err) => {
         console.warn("Firestore menu listener fallback to initial seed:", err);
+        setMenuItems(INITIAL_MENU_ITEMS);
       }
     );
 
     return () => unsub();
   }, []);
 
-  // Real-time listener for Categories
+  // Real-time listener for Categories (merged idempotently with official 15 categories)
   useEffect(() => {
     const unsub = onSnapshot(
       collection(db, "categories"),
       (snap) => {
-        if (!snap.empty) {
-          const cats = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Category));
-          cats.sort((a, b) => (a.displayOrder || 99) - (b.displayOrder || 99));
-          setCategories(cats);
-        }
+        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Category));
+        setCategories(mergeCategoriesWithSeed(docs, INITIAL_CATEGORIES));
       },
       (err) => {
         console.warn("Firestore categories listener fallback:", err);
+        setCategories(INITIAL_CATEGORIES);
       }
     );
 
     return () => unsub();
   }, []);
 
-  // Filtered menu items based on category and search
+  // Filtered & deduplicated menu items based on category and case-insensitive search
   const filteredProducts = useMemo(() => {
-    return menuItems.filter((item) => {
-      const matchesCategory =
-        activeCategory.toLowerCase() === "all" ||
-        item.category.toLowerCase() === activeCategory.toLowerCase();
+    const queryLower = searchQuery.trim().toLowerCase();
+    const seenIds = new Set<string>();
+    const result: MenuItem[] = [];
+
+    for (const item of menuItems) {
+      if (seenIds.has(item.id)) continue;
+
+      const matchesCategory = productMatchesCategory(item, activeCategory);
+      if (!matchesCategory) continue;
 
       const matchesSearch =
-        !searchQuery.trim() ||
-        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
+        !queryLower ||
+        item.name.toLowerCase().includes(queryLower) ||
+        (item.category && item.category.toLowerCase().includes(queryLower)) ||
+        (Array.isArray(item.categories) &&
+          item.categories.some((c) => c.toLowerCase().includes(queryLower)));
 
-      return matchesCategory && matchesSearch;
-    });
+      if (matchesSearch) {
+        seenIds.add(item.id);
+        result.push(item);
+      }
+    }
+
+    return result;
   }, [menuItems, activeCategory, searchQuery]);
 
   // Quantity mapping from cart
@@ -208,22 +222,45 @@ export const CustomerMenuPage: React.FC = () => {
 
   const categoryTabItems = useMemo(() => {
     const iconMap = new Map<string, string>();
+    iconMap.set("all", "/assets/favicon.png");
+
     menuItems.forEach((m) => {
-      if (m.category && m.imageUrl && !iconMap.has(m.category.toLowerCase())) {
-        iconMap.set(m.category.toLowerCase(), m.imageUrl);
-      }
-    });
-    categories.forEach((c) => {
-      if (c.name && c.iconUrl) {
-        iconMap.set(c.name.toLowerCase(), c.iconUrl);
+      const primaryImg = getProductImages(m)[0];
+      if (!primaryImg) return;
+      const itemCats = [m.category, ...(m.categories || [])].filter(Boolean);
+      for (const catName of itemCats) {
+        const key = catName.toLowerCase();
+        if (!iconMap.has(key)) {
+          iconMap.set(key, primaryImg);
+        }
       }
     });
 
-    const fromCats = categories.map((c) => c.name);
-    const fromItems = menuItems.map((m) => m.category).filter(Boolean);
-    const uniqueNames = Array.from(
-      new Set(["All", ...fromCats, ...fromItems].filter(Boolean))
+    categories.forEach((c) => {
+      if (c.name && c.iconUrl && c.iconUrl.trim()) {
+        iconMap.set(c.name.toLowerCase(), c.iconUrl.trim());
+      }
+    });
+
+    const sortedCats = [...categories].sort(
+      (a, b) => (a.displayOrder || 999) - (b.displayOrder || 999)
     );
+    const fromCats = sortedCats.map((c) => c.name);
+    const fromItems = menuItems
+      .flatMap((m) => [m.category, ...(m.categories || [])])
+      .filter(Boolean);
+
+    const seenLower = new Set<string>();
+    const uniqueNames: string[] = [];
+    for (const rawName of ["All", ...fromCats, ...fromItems]) {
+      const trimmed = rawName?.trim();
+      if (!trimmed) continue;
+      const lower = trimmed.toLowerCase();
+      if (!seenLower.has(lower)) {
+        seenLower.add(lower);
+        uniqueNames.push(trimmed);
+      }
+    }
 
     return uniqueNames.map((name) => ({
       name,
@@ -294,7 +331,7 @@ export const CustomerMenuPage: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search for tea, coffee, snacks..."
+            placeholder="Search menu items or categories..."
             className="w-full bg-[#FFFCF6] rounded-xl md:rounded-2xl border border-[#DFC9AC] pl-10 md:pl-12 pr-4 py-2.5 md:py-3.5 text-xs md:text-sm text-[#301C10] placeholder-[#8A6A53] shadow-warm focus:outline-none focus:ring-2 focus:ring-[#C99532] focus:border-transparent transition"
           />
           {searchQuery && (
@@ -346,12 +383,79 @@ export const CustomerMenuPage: React.FC = () => {
         )}
       </main>
 
+      {/* Bottom Connect With Us Footer */}
+      <footer className="relative z-10 max-w-md md:max-w-3xl lg:max-w-6xl xl:max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-8 pb-4">
+        <div className="bg-[#FFFCF6]/95 backdrop-blur-sm rounded-2xl border border-[#DFC9AC] p-4 md:p-5 shadow-warm flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="text-center sm:text-left">
+            <span className="block text-[11px] font-extrabold uppercase tracking-[0.16em] text-[#8A6A53]">
+              Connect with us
+            </span>
+            <p className="text-xs font-semibold text-[#301C10] mt-0.5">
+              Follow TEA TIME for daily specials & updates
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+            <a
+              href="https://www.instagram.com/teatime_vavuniya/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#0A0A0A] hover:bg-[#23140B] text-[#FFFCF6] border border-[#E8B64F]/40 text-xs font-extrabold shadow-warm transition active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="w-4 h-4 text-[#E8B64F] shrink-0"
+                aria-hidden="true"
+              >
+                <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+                <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+                <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+              </svg>
+              <span>Instagram</span>
+            </a>
+
+            <a
+              href="https://www.facebook.com/teatime.vavuniya/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#0A0A0A] hover:bg-[#23140B] text-[#FFFCF6] border border-[#E8B64F]/40 text-xs font-extrabold shadow-warm transition active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="w-4 h-4 text-[#E8B64F] shrink-0"
+                aria-hidden="true"
+              >
+                <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+              </svg>
+              <span>Facebook</span>
+            </a>
+          </div>
+        </div>
+      </footer>
+
       {/* Product Detail Bottom Sheet (mobile) / Centred Modal (desktop) */}
       <ProductDetailModal
         product={selectedProduct}
         onClose={() => setSelectedProduct(null)}
-        onAddToOrder={(product, quantity) => addItem(product, quantity)}
+        onAddToOrder={(product, quantity, sugarSpoons) =>
+          addItem(product, quantity, sugarSpoons)
+        }
         cartQuantity={selectedProduct ? cartQuantityMap.get(selectedProduct.id) || 0 : 0}
+        initialSugarSpoons={
+          selectedProduct
+            ? cartItems.find((ci) => ci.product.id === selectedProduct.id)?.sugarSpoons ?? null
+            : null
+        }
       />
 
       {/* Sticky Bottom Cart Bar */}

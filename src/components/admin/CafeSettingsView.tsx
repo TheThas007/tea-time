@@ -71,7 +71,7 @@ export const CafeSettingsView: React.FC = () => {
   };
 
   const handleSeedSampleData = async () => {
-    if (!window.confirm("Seed sample categories, menu items, tables, and settings into Firestore? Existing items with matching IDs will be updated.")) {
+    if (!window.confirm("Sync all 15 official TEA TIME categories, 107 menu items, and tables into Firestore? Existing items with matching IDs will be updated without affecting orders.")) {
       return;
     }
 
@@ -82,12 +82,32 @@ export const CafeSettingsView: React.FC = () => {
     try {
       const batch = writeBatch(db);
 
-      // Categories
+      // Remove legacy demo categories & Unsplash sample items if present
+      const legacyCategoryIds = ["cat_tea", "cat_coffee", "cat_snacks", "cat_desserts"];
+      for (const oldCatId of legacyCategoryIds) {
+        batch.delete(doc(db, "categories", oldCatId));
+      }
+      const legacyMenuIds = [
+        "prod_ceylon_milk_tea",
+        "prod_masala_chai",
+        "prod_iced_lemon_tea",
+        "prod_chocolate_cake",
+        "prod_cappuccino",
+        "prod_iced_caramel_latte",
+        "prod_vegetable_roti",
+        "prod_fish_cutlets",
+        "prod_butter_cake",
+      ];
+      for (const oldProdId of legacyMenuIds) {
+        batch.delete(doc(db, "menu", oldProdId));
+      }
+
+      // Categories (15 official categories)
       for (const cat of INITIAL_CATEGORIES) {
         batch.set(doc(db, "categories", cat.id), cat, { merge: true });
       }
 
-      // Menu
+      // Menu (107 unique official products)
       for (const item of INITIAL_MENU_ITEMS) {
         batch.set(doc(db, "menu", item.id), {
           ...item,
@@ -103,17 +123,15 @@ export const CafeSettingsView: React.FC = () => {
         }, { merge: true });
       }
 
-      // Settings
-      batch.set(doc(db, "settings", "cafe"), {
-        ...INITIAL_SETTINGS,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-
-      // Counter
-      batch.set(doc(db, "counters", "orders"), {
-        lastOrderNumber: 1041,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
+      // Initialize counter only if it doesn't exist yet
+      const counterRef = doc(db, "counters", "orders");
+      const counterSnap = await getDoc(counterRef);
+      if (!counterSnap.exists()) {
+        batch.set(counterRef, {
+          lastOrderNumber: 1041,
+          updatedAt: serverTimestamp(),
+        });
+      }
 
       await batch.commit();
       setSeedSuccess(true);

@@ -53,7 +53,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         <img
           src="/assets/welcome-logo.png?v=2"
           alt="TEA TIME"
-          fetchPriority="high"
+          {...({ fetchpriority: "high" } as React.ImgHTMLAttributes<HTMLImageElement>)}
           decoding="async"
           className="w-[235px] max-w-[74vw] max-h-[48svh] sm:w-[285px] md:w-[320px] lg:w-[350px] h-auto object-contain select-none pointer-events-none"
         />

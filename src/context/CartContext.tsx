@@ -5,7 +5,8 @@ interface CartContextType {
   items: CartItem[];
   specialInstructions: string;
   setSpecialInstructions: (val: string) => void;
-  addItem: (product: MenuItem, quantity?: number) => void;
+  addItem: (product: MenuItem, quantity?: number, sugarSpoons?: number | null) => void;
+  updateItemSugar: (productId: string, sugarSpoons: number | null) => void;
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, deltaOrQuantity: number, isAbsolute?: boolean) => void;
   clearCart: () => void;
@@ -90,19 +91,42 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const addItem = (product: MenuItem, quantity: number = 1) => {
+  const addItem = (
+    product: MenuItem,
+    quantity: number = 1,
+    sugarSpoons?: number | null
+  ) => {
     if (product.isAvailable === false || quantity <= 0) return;
     setItems((prev) => {
       const existing = prev.find((item) => item.product.id === product.id);
       if (existing) {
         return prev.map((item) =>
           item.product.id === product.id
-            ? { ...item, quantity: item.quantity + quantity }
+            ? {
+                ...item,
+                quantity: item.quantity + quantity,
+                ...(sugarSpoons !== undefined ? { sugarSpoons } : {}),
+              }
             : item
         );
       }
-      return [...prev, { product, quantity }];
+      return [
+        ...prev,
+        {
+          product,
+          quantity,
+          ...(sugarSpoons !== undefined ? { sugarSpoons } : {}),
+        },
+      ];
     });
+  };
+
+  const updateItemSugar = (productId: string, sugarSpoons: number | null) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, sugarSpoons } : item
+      )
+    );
   };
 
   const removeItem = (productId: string) => {
@@ -144,6 +168,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         specialInstructions,
         setSpecialInstructions,
         addItem,
+        updateItemSugar,
         removeItem,
         updateQuantity,
         clearCart,
