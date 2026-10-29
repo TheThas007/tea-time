@@ -22,3 +22,7 @@ ui-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Local raw product image source folder (verified assets live in public/images/menu/)
+menu product/
+
