@@ -37,7 +37,46 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
   useEffect(() => {
     if (!orderId) return;
 
-    // Real-time Firestore document listener
+    // Simulated Demo Order Handling (Zero Firestore Pollution)
+    if (orderId.startsWith("demo_")) {
+      const demoNum = parseInt(orderId.replace(/\D/g, "").slice(-4), 10) || 1042;
+      setOrder({
+        id: orderId,
+        orderNumber: demoNum,
+        orderNumberDisplay: `#DEMO-${demoNum}`,
+        tableNumber: "Table 07 (Demo)",
+        status: "preparing",
+        items: [
+          {
+            productId: "demo_item_1",
+            name: "Masala Chai (Demo)",
+            category: "Hot Teas",
+            priceMinor: 25000,
+            quantity: 1,
+            subtotalMinor: 25000,
+            imageUrl: null,
+          },
+          {
+            productId: "demo_item_2",
+            name: "Classic Milk Tea (Demo)",
+            category: "Milk Teas",
+            priceMinor: 30000,
+            quantity: 1,
+            subtotalMinor: 30000,
+            imageUrl: null,
+          },
+        ],
+        itemCount: 2,
+        totalMinor: 55000,
+        currency: "LKR",
+        createdAt: { seconds: Math.floor(Date.now() / 1000) } as any,
+        updatedAt: { seconds: Math.floor(Date.now() / 1000) } as any,
+      } as Order);
+      setLoading(false);
+      return;
+    }
+
+    // Real-time Firestore document listener for actual customer orders
     const unsubscribe = onSnapshot(
       doc(db, "orders", orderId),
       (snap) => {

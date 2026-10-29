@@ -85,15 +85,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             alt={product.name}
             loading="lazy"
             onError={() => setImgFailed(true)}
-            className={`w-full h-full object-contain transition duration-300 group-hover:scale-105 ${
-              !isAvailable ? "grayscale opacity-50" : ""
-            }`}
+            className={`w-full h-full object-contain transition duration-300 group-hover:scale-105 ${!isAvailable ? "grayscale opacity-50" : ""
+              }`}
           />
         ) : (
           <div
-            className={`w-full h-full flex flex-col items-center justify-center p-4 text-center bg-gradient-to-b from-[#FFFCF6] to-[#F3ECE0] select-none ${
-              !isAvailable ? "grayscale opacity-50" : ""
-            }`}
+            className={`w-full h-full flex flex-col items-center justify-center p-4 text-center bg-gradient-to-b from-[#FFFCF6] to-[#F3ECE0] select-none ${!isAvailable ? "grayscale opacity-50" : ""
+              }`}
           >
             <div className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-[#FFFCF6] border border-[#DFC9AC] shadow-warm flex items-center justify-center mb-2 transition-transform duration-300 group-hover:scale-105">
               {renderCategoryEmblem(product.category)}
@@ -177,11 +175,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               }
             }}
             disabled={!isAvailable}
-            className={`flex items-center justify-center gap-1 px-3 py-1.5 md:px-4 md:py-2 rounded-lg md:rounded-xl text-xs md:text-[13px] font-extrabold transition active:scale-95 shadow-warm shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532] ${
-              isAvailable
-                ? "bg-[#E8B64F] text-[#1A0F08] hover:bg-[#d9a53d]"
-                : "bg-[#DFC9AC]/50 text-[#8A6A53] cursor-not-allowed"
-            }`}
+            className={`flex items-center justify-center gap-1 px-3 py-1.5 md:px-4 md:py-2 rounded-lg md:rounded-xl text-xs md:text-[13px] font-extrabold transition active:scale-95 shadow-warm shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532] ${isAvailable
+              ? "bg-[#E8B64F] text-[#1A0F08] hover:bg-[#d9a53d]"
+              : "bg-[#DFC9AC]/50 text-[#8A6A53] cursor-not-allowed"
+              }`}
           >
             <Plus className="w-3.5 h-3.5 md:w-4 md:h-4 stroke-[2.5]" />
             <span>Add</span>

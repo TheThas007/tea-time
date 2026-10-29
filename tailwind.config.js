@@ -28,6 +28,15 @@ export default {
           surface: "#FAF7F0",
           "surface-alt": "#F4EFE4",
           border: "#DFC9AC",
+        },
+        menyo: {
+          navy: "#050F2A",
+          sky: "#7BBBFF",
+          bg: "#F2FDFF",
+          lavender: "#B8A9FF",
+          surface: "#FFFFFF",
+          border: "rgba(5, 15, 42, 0.12)",
+          "border-subtle": "rgba(123, 187, 255, 0.25)",
         }
       },
       boxShadow: {

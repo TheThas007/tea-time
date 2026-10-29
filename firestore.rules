@@ -7,78 +7,148 @@ service cloud.firestore {
     // Assumed Data Model
     // ===============================================================
     //
-    // This security rules file assumes the following data structures
-    // for the "TEA TIME" café digital ordering application:
+    // AEVONIX Restaurant Menu SaaS Multi-Tenant Platform & Legacy Tea Time Fallback
     //
-    // Collection: /menu/{productId}
-    // Fields:
-    //   - name: string (required) - Name of the menu item
-    //   - description: string (optional) - Item description
-    //   - category: string (required) - Category identifier or name
-    //   - priceMinor: number (required) - Price in minor currency units (cents/LKR)
-    //   - isAvailable: bool (required) - Real-time item availability toggle
-    //   - imageUrl: string (optional) - Cloud Storage image download URL
-    //   - displayOrder: number (optional) - Sort priority in UI
-    //   - createdAt: timestamp (optional) - Item creation timestamp
-    //   - updatedAt: timestamp (optional) - Last updated timestamp
+    // Multi-Tenant Collections:
     //
-    // Collection: /categories/{categoryId}
+    // Collection: /businesses/{businessId}
     // Fields:
-    //   - name: string (required) - Category display label (e.g., "Tea", "Bites")
-    //   - displayOrder: number (optional) - Category ordering priority
-    //   - icon: string (optional) - Icon identifier or icon URL
-    //   - active: bool (optional) - Category visibility toggle
+    //   - id: string (required, immutable) - Unique business identifier
+    //   - slug: string (required, immutable) - URL routing slug (e.g. 'teatime')
+    //   - name: string (required) - Public business display name
+    //   - tagline: string (optional) - Short business slogan
+    //   - logoUrl: string (optional) - Public brand logo image URL
+    //   - primaryColor: string (optional) - Brand theme header hex color
+    //   - accentColor: string (optional) - Brand accent / CTA hex color
+    //   - phone: string (optional) - Customer contact phone
+    //   - whatsapp: string (optional) - WhatsApp customer ordering / support number
+    //   - address: string (optional) - Physical café/restaurant address
+    //   - openingHours: string (optional) - Store operating hours
+    //   - currencyCode: string (required) - ISO currency code (e.g. 'LKR')
+    //   - currencySymbol: string (required) - Currency symbol (e.g. 'Rs.')
+    //   - socialLinks: map (optional) - Social profile links
+    //   - isOrderingPaused: bool (required) - Emergency order freeze toggle
+    //   - pauseMessage: string (optional) - Customer notice displayed when paused
+    //   - ownerUid: string (immutable) - Firebase Auth UID of assigned owner
+    //   - operationalStatus: string (immutable by owner) - Internal operating state
+    //   - createdAt: timestamp (optional, immutable) - Provisioning timestamp
+    //   - updatedAt: timestamp (optional) - Last profile modification timestamp
     //
-    // Collection: /tables/{tableId}
+    // Subcollection: /businesses/{businessId}/categories/{categoryId}
     // Fields:
-    //   - number: string (required) - Table number identifier (e.g., "Table 07")
-    //   - token: string (required) - High-entropy QR verification token
+    //   - name: string (required) - Category display label
+    //   - slug: string (required) - URL slug
+    //   - displayOrder: number (required) - Menu ordering sequence
+    //   - iconUrl: string (optional) - Category visual icon URL
+    //   - isVisible: bool (optional) - Category visibility toggle
+    //
+    // Subcollection: /businesses/{businessId}/products/{productId}
+    // Fields:
+    //   - name: string (required) - Product name
+    //   - priceMinor: number (required) - Price in minor units
+    //   - priceDisplay: number (required) - Price in major units
+    //   - category: string (required) - Primary category identifier
+    //   - imageUrl: string (optional) - Primary product photo URL
+    //   - isAvailable: bool (required) - Real-time product availability toggle
+    //   - displayOrder: number (required) - Sorting sequence in menu
+    //
+    // Subcollection: /businesses/{businessId}/tables/{tableId}
+    // Fields:
+    //   - number: string (required) - Physical table identifier (e.g. 'Table 07')
+    //   - token: string (required) - High-entropy QR token linked to table
     //   - active: bool (required) - Table operational status
-    //   - capacity: number (optional) - Seating capacity
     //
-    // Collection: /settings/{settingId} (e.g., 'cafe')
+    // Subcollection: /businesses/{businessId}/tableTokens/{token}
     // Fields:
-    //   - isOrderingPaused: bool (optional) - Global café ordering freeze toggle
-    //   - pauseMessage: string (optional) - Message displayed when ordering is paused
-    //   - cafeName: string (optional) - Café display name
-    //   - currency: string (optional) - Base currency code (e.g., "LKR")
-    //   - openingHours: map/string (optional) - Operating hours description
+    //   - tableId: string (required) - Table document reference
+    //   - number: string (required) - Table label snapshot
+    //   - active: bool (required) - Active state snapshot
     //
-    // Collection: /orders/{orderId}
-    // (Note: Supports client-side order creation fallback when Cloud Functions are not yet deployed;
-    //  customers can create orders where customerId == request.auth.uid, read their own orders;
-    //  administrators have full read/update/delete access)
+    // Subcollection: /businesses/{businessId}/orders/{orderId}
     // Fields:
-    //   - orderNumber: number (required) - Sequential order number (e.g., 1042)
-    //   - orderNumberDisplay: string (required) - Display string (e.g., "#1042")
-    //   - tableId: string (required) - Firestore document ID of table
+    //   - orderNumber: number (required) - Sequential order number
+    //   - orderNumberDisplay: string (required) - Display format (e.g. '#1042')
+    //   - tableId: string (required) - Target table ID
     //   - tableNumber: string (required) - Human readable table label
-    //   - tableToken: string (required) - QR token validated during checkout
-    //   - customerId: string (required) - Firebase Auth UID of placing customer
-    //   - status: string (required) - Order state: 'new'|'preparing'|'ready'|'served'|'cancelled'
-    //   - items: list (required) - Snapshot array of order items
-    //   - itemCount: number (required) - Total items in order
-    //   - totalMinor: number (required) - Server-computed total in minor units
-    //   - currency: string (required) - Currency code (e.g., "LKR")
-    //   - specialInstructions: string (optional) - Customer prep notes
-    //   - idempotencyKey: string (required) - Client duplicate-prevention key
-    //   - paymentStatus: string (required) - Payment workflow state
-    //   - createdAt: timestamp (required) - Server creation timestamp
-    //   - updatedAt: timestamp (required) - Last modification timestamp
-    //   - updatedBy: string (optional) - UID of admin who modified status
-    //   - cancelReason: string (optional) - Reason if cancelled
-    //   - servedAt: timestamp (optional) - Timestamp when served
+    //   - tableToken: string (required) - Validated table QR token
+    //   - customerId: string (required) - Client order identifier / customer UID
+    //   - status: string (required) - Order state: 'new'|'accepted'|'preparing'|'ready'|'served'|'cancelled'
+    //   - items: list (required) - Snapshot array of ordered items
+    //   - itemCount: number (required) - Total quantity of items
+    //   - totalMinor: number (required) - Server-computed order total in minor units
+    //   - currency: string (required) - Order currency ('LKR')
+    //   - paymentStatus: string (required) - Payment workflow state ('pay_at_counter')
+    //   - trackingToken: string (required) - Public tracking token
+    //   - createdAt: timestamp (required) - Order creation timestamp
+    //   - updatedAt: timestamp (required) - Status change timestamp
     //
-    // Collection: /admins/{adminId}
+    // Subcollection: /businesses/{businessId}/orderTracking/{trackingToken}
     // Fields:
-    //   - email: string (required) - Administrator email address
-    //   - active: bool (required) - Active admin privileges indicator
-    //   - grantedAt: timestamp (optional) - Timestamp when admin role was granted
+    //   - orderId: string (required) - Associated order document ID
+    //   - orderNumberDisplay: string (required) - Display order number
+    //   - status: string (required) - Public progress status
+    //   - updatedAt: timestamp (required) - Status update timestamp
     //
-    // Collection: /counters/{counterId} (e.g., 'orders')
+    // Root Collection: /businessAccess/{businessId}
     // Fields:
-    //   - lastOrderNumber: number (required) - Latest sequential integer order counter
-    //   - updatedAt: timestamp (optional) - Counter increment timestamp
+    //   - businessId: string (required) - Target business identifier
+    //   - operationalStatus: string (required) - 'ACTIVE' | 'active' | 'suspended' | 'archived'
+    //   - packageId: string (required) - Active subscription tier ID
+    //   - isLifetime: bool (required) - Lifetime licensing indicator
+    //   - expiresAt: timestamp (optional) - Exclusive subscription expiry timestamp
+    //   - expiresAtMs: number (optional) - Epoch milliseconds expiry timestamp
+    //
+    // Root Collection: /businessPrivate/{businessId}
+    // Fields:
+    //   - businessId: string (required) - Target business identifier
+    //   - ownerUid: string (required) - Firebase Auth UID of business owner
+    //   - ownerEmail: string (required) - Owner contact email
+    //   - ownerUsername: string (required) - Owner login username
+    //   - provisioningState: string (required) - Status of business setup
+    //
+    // Root Collection: /businessSlugs/{slug}
+    // Fields:
+    //   - businessId: string (required) - ID of mapped business
+    //
+    // Root Collection: /usernames/{username}
+    // Fields:
+    //   - uid: string (required) - Associated user UID
+    //
+    // Root Collection: /users/{uid} & /userProfiles/{uid}
+    // Fields:
+    //   - uid: string (required, immutable) - Firebase Auth UID
+    //   - role: string (required, immutable by user) - 'SUPER_ADMIN' | 'BUSINESS_OWNER'
+    //   - businessId: string (optional, immutable by user) - Associated business ID
+    //   - username: string (required, immutable by user) - Normalized username
+    //   - displayName: string (required) - User display name
+    //   - email: string (required) - User email address
+    //   - mustChangePassword: bool (required) - First login password change flag
+    //   - active: bool (required) - User account active flag
+    //   - createdAt: timestamp (optional, immutable) - Creation timestamp
+    //
+    // Root Collection: /platformSettings/public & /platformSettings/{settingId}
+    // Fields:
+    //   - platformName: string (required) - Public platform branding
+    //   - productTitle: string (required) - Product title
+    //   - supportEmail: string (required) - Platform support email
+    //   - packages: list (required) - Subscription packages catalog
+    //
+    // Root Collection: /payments/{paymentId}
+    // Fields:
+    //   - businessId: string (required) - Payer business ID
+    //   - amountMinor: number (required) - Payment amount in minor units
+    //   - method: string (required) - Payment method
+    //   - reference: string (required) - Bank / cash receipt reference
+    //
+    // Root Collection: /auditLogs/{logId}
+    // Fields:
+    //   - actorUid: string (required) - UID of acting administrator / owner
+    //   - action: string (required) - Action performed
+    //   - summary: string (required) - Audit log summary
+    //
+    // Legacy Tea Time Collections:
+    //   - /menu/{id}, /menuItems/{id}, /categories/{id}, /settings/{id}
+    //   - /tables/{id}, /tableTokens/{id}, /orders/{id}, /admins/{id}, /counters/{counterId}
     //
     // ===============================================================
 
@@ -91,68 +161,267 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Checks if the authenticated user has administrative privileges
-    // via Firebase Auth custom claims or active entry in /admins/{uid}
-    function isAdmin() {
+    // Checks if the authenticated user has platform Super Admin privileges
+    function isSuperAdmin() {
       return isAuthenticated() && (
-        request.auth.token.admin == true ||
+        request.auth.token.role == 'SUPER_ADMIN' ||
+        request.auth.token.admin == true
+      );
+    }
+
+    // Checks if the user is the assigned Business Owner for this businessId
+    function isAssignedOwner(businessId) {
+      return isAuthenticated() &&
+        request.auth.token.role == 'BUSINESS_OWNER' &&
+        request.auth.token.businessId == businessId;
+    }
+
+    // Safely reads the businessAccess record and evaluates operational validity
+    function isBusinessActive(businessId) {
+      return exists(/databases/$(database)/documents/businessAccess/$(businessId)) &&
+        isBusinessAccessRecordValid(get(/databases/$(database)/documents/businessAccess/$(businessId)).data);
+    }
+
+    // Checks if operationalStatus is active and the subscription has not expired
+    function isBusinessAccessRecordValid(access) {
+      return (access.operationalStatus == 'ACTIVE' || access.operationalStatus == 'active') &&
+        (!('expiresAt' in access) || access.expiresAt == null || request.time < access.expiresAt);
+    }
+
+    // Checks if user is the assigned owner AND the business subscription/access is actively valid
+    function isValidActiveOwner(businessId) {
+      return isAssignedOwner(businessId) && isBusinessActive(businessId);
+    }
+
+    // Legacy admin check supporting custom claims and existing /admins/{uid} collection
+    function isAdmin() {
+      return isSuperAdmin() || (
+        isAuthenticated() &&
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
     }
 
     // ===============================================================
-    // Collection Rules
+    // Multi-Tenant Collections
     // ===============================================================
 
-    // Menu: Publicly readable for anonymous & registered customer browsing.
-    // Modifications restricted strictly to cafe administrators.
+    // Businesses collection:
+    // - Read: Publicly readable for customer storefront and branding
+    // - Create/Delete: Super Admin only
+    // - Update: Super Admin OR assigned active Business Owner (protecting critical identity & status fields)
+    match /businesses/{businessId} {
+      allow read: if true;
+      allow create, delete: if isSuperAdmin();
+      allow update: if isSuperAdmin() || (
+        isValidActiveOwner(businessId) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'id', 'slug', 'ownerUid', 'createdAt', 'operationalStatus'
+        ])
+      );
+
+      // Categories subcollection:
+      // Publicly readable for customer menu navigation; editable by Super Admin or active Business Owner
+      match /categories/{categoryId} {
+        allow read: if true;
+        allow write: if isSuperAdmin() || isValidActiveOwner(businessId);
+      }
+
+      // Products subcollection:
+      // Publicly readable for customer menu browsing; editable by Super Admin or active Business Owner
+      match /products/{productId} {
+        allow read: if true;
+        allow write: if isSuperAdmin() || isValidActiveOwner(businessId);
+      }
+
+      // Tables subcollection:
+      // Internal table definitions readable by Super Admin and assigned Owner; editable by active Owner
+      match /tables/{tableId} {
+        allow read: if isSuperAdmin() || isAssignedOwner(businessId);
+        allow write: if isSuperAdmin() || isValidActiveOwner(businessId);
+      }
+
+      // Table tokens subcollection:
+      // Public customers scanning QR codes can fetch a single token; listing is restricted to prevent enumeration
+      match /tableTokens/{token} {
+        allow get: if true;
+        allow list: if isSuperAdmin() || isAssignedOwner(businessId);
+        allow write: if isSuperAdmin() || isValidActiveOwner(businessId);
+      }
+
+      // Orders subcollection:
+      // Readable by Super Admin and assigned Business Owner.
+      // Order creation is managed by Cloud Functions Admin SDK / Super Admin.
+      // Assigned Business Owner can update only order status and timestamps.
+      match /orders/{orderId} {
+        allow read: if isSuperAdmin() || isAssignedOwner(businessId);
+        allow create, delete: if isSuperAdmin();
+        allow update: if isSuperAdmin() || (
+          isAssignedOwner(businessId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'updatedAt', 'updatedAtMs'
+          ])
+        );
+      }
+
+      // Order tracking subcollection:
+      // Public customers with trackingToken can fetch their single order tracking status; listing restricted
+      match /orderTracking/{trackingToken} {
+        allow get: if true;
+        allow list: if isSuperAdmin() || isAssignedOwner(businessId);
+        allow write: if isSuperAdmin();
+      }
+
+      // Counters & idempotency subcollections:
+      // Maintained by Cloud Functions Admin SDK; direct client access restricted to Super Admin
+      match /counters/{counterId} {
+        allow read, write: if isSuperAdmin();
+      }
+
+      match /orderIdempotency/{idemHash} {
+        allow read, write: if isSuperAdmin();
+      }
+    }
+
+    // Business Access records:
+    // Evaluated for subscription gates; strictly private to Super Admin and assigned Business Owner
+    match /businessAccess/{businessId} {
+      allow read: if isSuperAdmin() || isAssignedOwner(businessId);
+      allow write: if isSuperAdmin();
+    }
+
+    // Business Private records:
+    // Internal notes & owner contact metadata; strictly private to Super Admin and assigned Business Owner
+    match /businessPrivate/{businessId} {
+      allow read: if isSuperAdmin() || isAssignedOwner(businessId);
+      allow write: if isSuperAdmin();
+    }
+
+    // Business Slugs registry:
+    // Public slug-to-businessId lookup for tenant URL routing (e.g. /teatime -> businessId)
+    match /businessSlugs/{slug} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // Unique Username registry:
+    // Super Admin only (checked & maintained by Cloud Functions Admin SDK)
+    match /usernames/{username} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // User accounts (/users/{uid} and /userProfiles/{uid}):
+    // - Read: Super Admin OR the authenticated account owner
+    // - Create/Delete: Super Admin only
+    // - Update: Super Admin OR account owner (protecting role, businessId, username, createdAt)
+    match /users/{uid} {
+      allow read: if isSuperAdmin() || (isAuthenticated() && request.auth.uid == uid);
+      allow create, delete: if isSuperAdmin();
+      allow update: if isSuperAdmin() || (
+        isAuthenticated() &&
+        request.auth.uid == uid &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'role', 'businessId', 'username', 'createdAt'
+        ])
+      );
+    }
+
+    match /userProfiles/{uid} {
+      allow read: if isSuperAdmin() || (isAuthenticated() && request.auth.uid == uid);
+      allow create, delete: if isSuperAdmin();
+      allow update: if isSuperAdmin() || (
+        isAuthenticated() &&
+        request.auth.uid == uid &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'role', 'businessId', 'username', 'createdAt'
+        ])
+      );
+    }
+
+    // Platform Settings:
+    // Public settings (branding, pricing tiers) are public; all other configuration is Super Admin only
+    match /platformSettings/public {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    match /platformSettings/{document=**} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // Manual Payment records:
+    // Private financial records, accessible strictly to Super Admin
+    match /payments/{paymentId} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // Subscriptions history records:
+    // Licensing history, accessible strictly to Super Admin
+    match /subscriptions/{subId} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // Platform Audit Logs:
+    // Compliance and security event logging, Super Admin only
+    match /auditLogs/{logId} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // ===============================================================
+    // Legacy Collections (Tea Time backward compatibility)
+    // ===============================================================
+
+    // Legacy Menu: Public read, admin write
     match /menu/{productId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // Categories: Publicly readable so customers can browse menu sections.
-    // Modifications restricted strictly to cafe administrators.
+    match /menuItems/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Legacy Categories: Public read, admin write
     match /categories/{categoryId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // Tables: Publicly readable so customers scanning QR codes can verify table tokens.
-    // Modifications restricted strictly to cafe administrators.
-    match /tables/{tableId} {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    // Settings: Publicly readable so customers can check cafe status, pauses, and hours.
-    // Modifications restricted strictly to cafe administrators.
+    // Legacy Settings: Public read, admin write
     match /settings/{settingId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // Orders:
-    // - Read: Customers can read only their own orders (customerId == request.auth.uid).
-    //         Administrators can read all orders.
-    // - Create: Authenticated customers (anonymous or registered) can place orders directly
-    //           with customerId == request.auth.uid (supports Cloud Function fallback).
-    // - Update / Delete: Only administrators can update status or manage orders.
+    // Legacy Tables: Admin read & write
+    match /tables/{tableId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Legacy Table Tokens: Public get for single QR scan token lookup; list and write for admin
+    match /tableTokens/{tokenId} {
+      allow get: if true;
+      allow list, write: if isAdmin();
+    }
+
+    // Legacy Orders:
+    // Admin full access; customers can read and place their own orders
     match /orders/{orderId} {
       allow read: if isAdmin() || (
         isAuthenticated() && resource.data.customerId == request.auth.uid
       );
-      allow create: if isAuthenticated() && request.resource.data.customerId == request.auth.uid;
+      allow create: if isAdmin() || (
+        isAuthenticated() && request.resource.data.customerId == request.auth.uid
+      );
       allow update, delete: if isAdmin();
     }
 
-    // Admins: Access strictly confined to administrators.
+    // Legacy Admins: Admin only
     match /admins/{adminId} {
       allow read, write: if isAdmin();
     }
 
-    // Counters: Internal sequential counters (e.g., lastOrderNumber).
-    // Maintained by Cloud Functions Admin SDK; client access restricted to admin.
+    // Legacy Counters: Admin only
     match /counters/{counterId} {
       allow read, write: if isAdmin();
     }

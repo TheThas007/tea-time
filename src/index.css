@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Platform Design Tokens - Menyo (by AEVONIX) */
+  --menyo-navy: #050F2A;
+  --menyo-sky: #7BBBFF;
+  --menyo-bg: #F2FDFF;
+  --menyo-lavender: #B8A9FF;
+  --menyo-border: rgba(5, 15, 42, 0.12);
+  --menyo-border-subtle: rgba(123, 187, 255, 0.25);
+
+  /* Tenant Dynamic Tokens (overridden per-business in customer views) */
+  --tenant-primary: #7BBBFF;
+  --tenant-accent: #B8A9FF;
+  --tenant-bg: #F2FDFF;
+  --tenant-text: #050F2A;
+  --tenant-header-bg: #050F2A;
+  --tenant-header-text: #F2FDFF;
+}
+
 @layer utilities {
   /* Hide scrollbar for Chrome, Safari and Opera */
   .no-scrollbar::-webkit-scrollbar {

@@ -20,13 +20,14 @@ import {
   Download
 } from "lucide-react";
 import { db } from "../../lib/firebase";
-import { TableItem } from "../../types";
+import { TableItem, CafeSettings } from "../../types";
 import { Logo } from "../common/Logo";
-import { INITIAL_TABLES } from "../../data/seedData";
+import { INITIAL_TABLES, INITIAL_SETTINGS } from "../../data/seedData";
 
 export const TableManager: React.FC = () => {
   const [tables, setTables] = useState<TableItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState<CafeSettings>(INITIAL_SETTINGS);
 
   // Selected table for printable tent card preview
   const [previewTable, setPreviewTable] = useState<TableItem | null>(null);
@@ -34,6 +35,22 @@ export const TableManager: React.FC = () => {
   // Create table modal
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newTableNumber, setNewTableNumber] = useState("");
+
+  // Real-time Firestore listener for cafe settings (branding & custom QR text)
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, "settings", "cafe"),
+      (snap) => {
+        if (snap.exists()) {
+          setSettings({ ...INITIAL_SETTINGS, ...snap.data() } as CafeSettings);
+        }
+      },
+      (err) => {
+        console.warn("Settings listener fallback:", err);
+      }
+    );
+    return () => unsub();
+  }, []);
 
   // Real-time Firestore listener for tables
   useEffect(() => {
@@ -272,36 +289,93 @@ export const TableManager: React.FC = () => {
 
       {/* Printable Tent Card Modal matching the mockup tent */}
       {previewTable && (
-        <div className="fixed inset-0 z-50 bg-[#2C190E]/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-[#FAF7F0] rounded-3xl shadow-warm-xl max-w-md w-full overflow-hidden border border-[#DFC9AC] flex flex-col">
+        <div className="fixed inset-0 z-50 bg-[#2C190E]/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn print:p-0 print:bg-white print:fixed print:inset-0">
+          <style>{`
+            @media print {
+              @page {
+                size: 4in 6in;
+                margin: 0;
+              }
+              body {
+                margin: 0 !important;
+                padding: 0 !important;
+                background: transparent !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              .print-hidden {
+                display: none !important;
+              }
+              .print-page-wrapper {
+                position: fixed !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                background: transparent !important;
+                padding: 0 !important;
+                margin: 0 !important;
+              }
+              .print-card-exact {
+                width: 3.8in !important;
+                height: 5.75in !important;
+                border-radius: 24px !important;
+                box-shadow: none !important;
+                page-break-inside: avoid !important;
+              }
+            }
+          `}</style>
+          <div className="bg-[#FAF7F0] rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-[#DFC9AC] flex flex-col print:border-0 print:shadow-none print:w-full print:max-w-none print:bg-transparent print-page-wrapper">
             {/* Modal Header */}
-            <div className="bg-[#2C190E] text-[#FFFCF6] p-4 flex items-center justify-between border-b border-[#4A290F]">
-              <h3 className="font-extrabold text-sm">
+            <div className="bg-[#2C190E] text-[#FFFCF6] px-5 py-3.5 flex items-center justify-between border-b border-[#4A290F] print-hidden">
+              <h3 className="font-extrabold text-sm tracking-tight text-[#FFFCF6]">
                 Printable Table QR Card: {previewTable.number}
               </h3>
               <button
                 onClick={() => setPreviewTable(null)}
-                className="text-[#8A6A53] hover:text-[#FFFCF6]"
+                className="p-1 rounded-lg text-[#8A6A53] hover:text-[#FFFCF6] hover:bg-white/10 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Printable Preview Container */}
-            <div className="p-6 bg-[#FAF7F0] flex items-center justify-center">
-              {/* Exact Tent Card Recreation in Espresso & Gold Palette */}
+            <div className="p-6 sm:p-8 bg-[#FAF7F0] flex items-center justify-center print:p-0 print:m-0 print:bg-transparent">
+              {/* Dynamic Tent Card Recreation matching exact uploaded 4x6" card style */}
               <div
                 id="printable-tent-card"
-                className="w-64 bg-[#2C190E] text-[#FFFCF6] rounded-2xl p-6 shadow-warm-xl flex flex-col items-center text-center space-y-4 border border-[#4A290F]"
+                className="w-64 sm:w-72 rounded-[28px] p-6 pt-7 pb-6 shadow-2xl flex flex-col items-center text-center space-y-4 border print-card-exact"
+                style={{
+                  backgroundColor: "#2C190E",
+                  color: "#FFFCF6",
+                  borderColor: settings.accentColor || "#E8B64F",
+                }}
               >
-                {/* Brand Logo */}
-                <Logo size="lg" theme="dark" orientation="vertical" />
+                {/* Large Stacked Brand Logo */}
+                <div className="pt-1 pb-1 flex flex-col items-center justify-center">
+                  {settings.logoUrl && !settings.logoUrl.includes("logo-horizontal") ? (
+                    <img
+                      src={settings.logoUrl}
+                      alt={settings.cafeName || "Logo"}
+                      className="h-28 sm:h-32 max-h-36 max-w-[210px] w-auto object-contain select-none drop-shadow-md"
+                    />
+                  ) : (
+                    <img
+                      src="/assets/logo.png"
+                      alt="TEA TIME"
+                      className="w-48 sm:w-52 h-auto object-contain select-none drop-shadow-md"
+                    />
+                  )}
+                </div>
 
-                {/* QR Code in soft ivory square */}
-                <div className="bg-[#FFFCF6] p-3.5 rounded-xl shadow-warm border border-[#DFC9AC]">
+                {/* QR Code in Soft Ivory Container */}
+                <div className="bg-[#FFFCF6] p-3.5 rounded-2xl shadow-xl border border-[#DFC9AC]/60">
                   <QRCodeSVG
                     value={getTableMenuUrl(previewTable.token)}
-                    size={140}
+                    size={148}
                     level="H"
                     includeMargin={false}
                     fgColor="#2C190E"
@@ -309,27 +383,31 @@ export const TableManager: React.FC = () => {
                   />
                 </div>
 
-                {/* Table details */}
-                <div className="space-y-1">
-                  <h4 className="text-xl font-black text-[#FFFCF6] tracking-wide">
+                {/* Table Details */}
+                <div className="space-y-0.5">
+                  <h4 className="text-2xl font-black tracking-wide text-white">
                     {previewTable.number}
                   </h4>
-                  <p className="text-xs font-semibold text-[#E8B64F] uppercase tracking-wider">
-                    Scan to order
+                  <p
+                    className="text-xs font-black uppercase tracking-widest text-[#E8B64F]"
+                  >
+                    {settings.qrSubtitle || "SCAN TO ORDER"}
                   </p>
                 </div>
 
-                {/* Slogan */}
-                <div className="pt-2 border-t border-[#4A290F] w-full text-[10px] text-[#DFC9AC] italic">
-                  ☕ Good tea brings people together.
+                {/* Divider Line & Footer Slogan */}
+                <div
+                  className="pt-2.5 border-t border-white/20 w-full text-[11px] italic leading-tight text-white/80"
+                >
+                  <span>{settings.qrFooterNote || "☕ Good tea brings people together."}</span>
                 </div>
               </div>
             </div>
 
             {/* Modal Actions */}
-            <div className="p-4 bg-[#FFFCF6] border-t border-[#DFC9AC] flex items-center justify-between text-xs">
-              <span className="text-[#8A6A53] font-medium">
-                Print on 4x6" cardstock or table stand
+            <div className="p-4 bg-[#FFFCF6] border-t border-[#DFC9AC] flex items-center justify-between text-xs print-hidden">
+              <span className="text-[#8A6A53] font-medium text-[11px] sm:text-xs">
+                Print on 4×6" cardstock or table stand
               </span>
 
               <div className="flex gap-2">
@@ -342,7 +420,7 @@ export const TableManager: React.FC = () => {
                 </button>
                 <button
                   onClick={() => setPreviewTable(null)}
-                  className="px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] font-bold hover:bg-[#DFC9AC]/30"
+                  className="px-4 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] font-bold hover:bg-[#DFC9AC]/30 transition"
                 >
                   Done
                 </button>

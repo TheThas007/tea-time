@@ -10,8 +10,8 @@ export const AdminLoginPage: React.FC = () => {
   const navigate = useNavigate();
   const { refreshAdminClaims } = useAuth();
 
-  const [email, setEmail] = useState("admin@teatime.lk");
-  const [password, setPassword] = useState("Admin@TeaTime2026!");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -131,14 +131,6 @@ export const AdminLoginPage: React.FC = () => {
               )}
             </button>
           </form>
-
-          {/* Quick Helper Note */}
-          <div className="pt-3 border-t border-[#DFC9AC] text-[11px] text-[#8A6A53] text-center">
-            <p>Default admin credentials:</p>
-            <code className="text-[#4A290F] font-bold font-mono text-[10px]">
-              admin@teatime.lk / Admin@TeaTime2026!
-            </code>
-          </div>
         </div>
       </div>
     </div>

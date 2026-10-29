@@ -2,30 +2,59 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Helper function for admin check
-    function isAdmin() {
-      return request.auth != null && (
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'SUPER_ADMIN' ||
         request.auth.token.admin == true ||
         firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid))
       );
     }
 
-    // Public read for menu product images
-    match /products/{imageId} {
-      allow read: if true;
-      allow write: if isAdmin()
-                   && request.resource.contentType.matches('image/.*')
-                   && request.resource.size <= 5 * 1024 * 1024; // 5 MB limit
-      allow delete: if isAdmin();
+    function isBusinessOwner(businessId) {
+      return isAuthenticated() && (
+        isSuperAdmin() ||
+        (request.auth.token.role == 'BUSINESS_OWNER' && request.auth.token.businessId == businessId)
+      );
     }
 
-    // Branding & logo assets
-    match /branding/{imageId} {
+    // Public read for menu product images (both root legacy and tenant scoped)
+    match /products/{imageId} {
       allow read: if true;
-      allow write: if isAdmin()
+      allow write: if isSuperAdmin()
                    && request.resource.contentType.matches('image/.*')
                    && request.resource.size <= 5 * 1024 * 1024;
-      allow delete: if isAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    // Tenant scoped product images: /tenants/{businessId}/products/{imageId}
+    match /tenants/{businessId}/products/{imageId} {
+      allow read: if true;
+      allow write: if isBusinessOwner(businessId)
+                   && request.resource.contentType.matches('image/.*')
+                   && request.resource.size <= 5 * 1024 * 1024;
+      allow delete: if isBusinessOwner(businessId);
+    }
+
+    // Tenant scoped branding logos: /tenants/{businessId}/branding/{imageId}
+    match /tenants/{businessId}/branding/{imageId} {
+      allow read: if true;
+      allow write: if isBusinessOwner(businessId)
+                   && request.resource.contentType.matches('image/.*')
+                   && request.resource.size <= 5 * 1024 * 1024;
+      allow delete: if isBusinessOwner(businessId);
+    }
+
+    // Branding & logo assets (legacy)
+    match /branding/{imageId} {
+      allow read: if true;
+      allow write: if isSuperAdmin()
+                   && request.resource.contentType.matches('image/.*')
+                   && request.resource.size <= 5 * 1024 * 1024;
+      allow delete: if isSuperAdmin();
     }
 
     // Fallback: deny all other paths
@@ -34,4 +63,3 @@ service firebase.storage {
     }
   }
 }
-

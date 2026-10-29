@@ -13,6 +13,7 @@ import {
   formatSugarLabel,
 } from "../../lib/utils";
 import { auth, db, callCreateOrder } from "../../lib/firebase";
+import { platformApi } from "../../lib/apiClient";
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -23,12 +24,16 @@ interface CartDrawerProps {
     orderNumberDisplay: string;
     tableNumber: string;
   }) => void;
+  businessSlug?: string;
+  isDemo?: boolean;
 }
 
 export const CartDrawer: React.FC<CartDrawerProps> = ({
   isOpen,
   onClose,
   onOrderPlaced,
+  businessSlug = "teatime",
+  isDemo = false,
 }) => {
   const {
     items,
@@ -103,57 +108,110 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     let orderNumDisplay = `#${orderNum}`;
     let resolvedTableNumber = currentTable?.number || "Table 07";
 
-    try {
-      // 1. Attempt via Cloud Function first (server-authoritative)
-      try {
-        const response = await callCreateOrder(payload);
-        const data = response.data;
-        if (data && data.success) {
-          orderId = data.orderId;
-          orderNum = data.orderNumber;
-          orderNumDisplay = data.orderNumberDisplay;
-          resolvedTableNumber = data.tableNumber || resolvedTableNumber;
-        }
-      } catch (cloudFnErr: any) {
-        console.warn(
-          "Cloud function createOrder unavailable (not yet deployed). Falling back to direct Firestore order placement:",
-          cloudFnErr
-        );
+    // DEMO SAFEGUARD: When testing in Demo mode, DO NOT pollute real client's kitchen order queue!
+    if (isDemo) {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      const demoNum = 1000 + Math.floor(Math.random() * 900);
+      const demoId = `demo_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const demoDisplay = `#DEMO-${demoNum}`;
 
-        // 2. Direct Firestore fallback (works immediately even without Cloud Functions deployed)
-        const currentUid = currentUser?.uid || "guest_" + Math.random().toString(36).substring(2, 9);
-        const orderData = {
-          orderNumber: orderNum,
-          orderNumberDisplay: orderNumDisplay,
-          tableNumber: resolvedTableNumber,
+      try {
+        confetti({
+          particleCount: 80,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: ["#7BBBFF", "#B8A9FF", "#050F2A"],
+        });
+      } catch {
+        // Non-critical
+      }
+
+      clearCart();
+      setSpecialInstructions("");
+      onClose();
+      onOrderPlaced({
+        orderId: demoId,
+        orderNumber: demoNum,
+        orderNumberDisplay: demoDisplay,
+        tableNumber: resolvedTableNumber + " (Demo)",
+      });
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      // 1. Attempt via Platform Engine API (server-authoritative)
+      try {
+        const tenantRes = await platformApi.createTenantOrder({
+          businessSlug,
           tableToken: tableToken.trim(),
-          customerId: currentUid,
-          status: "new",
           items: items.map((i) => ({
             productId: i.product.id,
-            name: i.product.name,
-            category: i.product.category || "General",
-            priceMinor: i.product.priceMinor,
             quantity: i.quantity,
-            subtotalMinor: i.product.priceMinor * i.quantity,
-            imageUrl: i.product.imageUrl || null,
-            sugarNote:
-              supportsSugarSelection(i.product) && typeof i.sugarSpoons === "number"
-                ? formatSugarLabel(i.sugarSpoons)
-                : null,
+            sugarSpoons: typeof i.sugarSpoons === "number" ? i.sugarSpoons : undefined,
           })),
-          itemCount: totalItems,
-          totalMinor: totalMinor,
-          currency: "LKR",
           specialInstructions: combinedSpecialInstructions,
           idempotencyKey,
-          paymentStatus: "pay_at_counter",
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        };
+        });
 
-        const docRef = await addDoc(collection(db, "orders"), orderData);
-        orderId = docRef.id;
+        if (tenantRes && tenantRes.success) {
+          orderId = tenantRes.orderId;
+          orderNum = parseInt(tenantRes.orderNumber.replace(/\D/g, ""), 10) || 1001;
+          orderNumDisplay = tenantRes.orderNumber;
+        }
+      } catch (tenantErr: any) {
+        if (tenantErr?.code === "failed-precondition" || tenantErr?.code === "resource-exhausted") {
+          throw tenantErr;
+        }
+
+        // Fallback to legacy Cloud function if platform API route is unreachable
+        try {
+          const response = await callCreateOrder(payload);
+          const data = response.data;
+          if (data && data.success) {
+            orderId = data.orderId;
+            orderNum = data.orderNumber;
+            orderNumDisplay = data.orderNumberDisplay;
+            resolvedTableNumber = data.tableNumber || resolvedTableNumber;
+          }
+        } catch (cloudFnErr: any) {
+          console.warn("Falling back to direct Firestore order placement:", cloudFnErr);
+
+          // 2. Direct Firestore fallback (works immediately even without Cloud Functions deployed)
+          const currentUid = currentUser?.uid || "guest_" + Math.random().toString(36).substring(2, 9);
+          const orderData = {
+            orderNumber: orderNum,
+            orderNumberDisplay: orderNumDisplay,
+            tableNumber: resolvedTableNumber,
+            tableToken: tableToken.trim(),
+            customerId: currentUid,
+            status: "new",
+            items: items.map((i) => ({
+              productId: i.product.id,
+              name: i.product.name,
+              category: i.product.category || "General",
+              priceMinor: i.product.priceMinor,
+              quantity: i.quantity,
+              subtotalMinor: i.product.priceMinor * i.quantity,
+              imageUrl: i.product.imageUrl || null,
+              sugarNote:
+                supportsSugarSelection(i.product) && typeof i.sugarSpoons === "number"
+                  ? formatSugarLabel(i.sugarSpoons)
+                  : null,
+            })),
+            itemCount: totalItems,
+            totalMinor: totalMinor,
+            currency: "LKR",
+            specialInstructions: combinedSpecialInstructions,
+            idempotencyKey,
+            paymentStatus: "pay_at_counter",
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          };
+
+          const docRef = await addDoc(collection(db, "orders"), orderData);
+          orderId = docRef.id;
+        }
       }
 
       if (orderId) {

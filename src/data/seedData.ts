@@ -2197,4 +2197,13 @@ export const INITIAL_SETTINGS: CafeSettings = {
   isOrderingPaused: false,
   pauseMessage: "New orders are temporarily paused by café staff. Please check back shortly.",
   logoUrl: "/assets/logo.png",
+  primaryColor: "#2C190E",
+  accentColor: "#E8B64F",
+  backgroundColor: "#FAF7F0",
+  textColor: "#301C10",
+  headerBackgroundColor: "#2C190E",
+  headerTextColor: "#FAF7F0",
+  qrHeaderTitle: "Scan to Order • TEA TIME",
+  qrSubtitle: "Point camera to view menu & order",
+  qrFooterNote: "☕ Good tea brings people together",
 };

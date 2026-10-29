@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
-import { collection, query, where, getDocs, onSnapshot } from "firebase/firestore";
+import { useSearchParams, useParams } from "react-router-dom";
+import { collection, query, where, getDocs, onSnapshot, doc } from "firebase/firestore";
 import { Search, AlertTriangle } from "lucide-react";
 import { db } from "../lib/firebase";
-import { MenuItem, Category, TableItem } from "../types";
+import { MenuItem, Category, TableItem, CafeSettings } from "../types";
 import { useCart } from "../context/CartContext";
 import { CustomerHeader } from "../components/customer/CustomerHeader";
 import { CategoryTabs } from "../components/customer/CategoryTabs";
@@ -20,10 +20,18 @@ import {
   mergeMenuWithSeed,
   mergeCategoriesWithSeed,
 } from "../lib/utils";
+import { platformApi } from "../lib/apiClient";
 
 export const CustomerMenuPage: React.FC = () => {
+  const { businessSlug: rawSlug } = useParams<{ businessSlug?: string }>();
+  const businessSlug = rawSlug ? rawSlug.toLowerCase().trim() : "teatime";
+
   const [searchParams, setSearchParams] = useSearchParams();
+  const isDemoMode = searchParams.get("demo") === "true";
   const rawTableToken = searchParams.get("table") || localStorage.getItem("teatime_table_token") || "tbl_07_k8j3m";
+
+  const [tenantBusiness, setTenantBusiness] = useState<any | null>(null);
+  const [isTenantUnavailable, setIsTenantUnavailable] = useState(false);
 
   const {
     items: cartItems,
@@ -45,6 +53,23 @@ export const CustomerMenuPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [tableLoading, setTableLoading] = useState<boolean>(true);
   const [tableError, setTableError] = useState<string | null>(null);
+  const [cafeSettings, setCafeSettings] = useState<CafeSettings | null>(null);
+
+  // Real-time listener for cafe settings (theme, colors, logo, pause state)
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, "settings", "cafe"),
+      (snap) => {
+        if (snap.exists()) {
+          setCafeSettings(snap.data() as CafeSettings);
+        }
+      },
+      (err) => {
+        console.warn("Cafe settings listener fallback:", err);
+      }
+    );
+    return () => unsub();
+  }, []);
 
   // Tracking & Selected Product state
   const [activeTrackerOrderId, setActiveTrackerOrderId] = useState<string | null>(null);
@@ -79,6 +104,53 @@ export const CustomerMenuPage: React.FC = () => {
     }
     return "Table 07";
   }, [currentTable, rawTableToken]);
+
+  // Resolve tenant and table from Platform API
+  useEffect(() => {
+    let isMounted = true;
+    const fetchTenant = async () => {
+      try {
+        const res = await platformApi.resolvePublicMenuTenant({
+          businessSlug,
+          tableToken: rawTableToken,
+        });
+
+        if (!isMounted) return;
+
+        if (res.business) {
+          setTenantBusiness(res.business);
+          if (!res.business.isAvailable) {
+            setIsTenantUnavailable(true);
+            return;
+          } else {
+            setIsTenantUnavailable(false);
+          }
+        }
+
+        if (res.categories && res.categories.length > 0) {
+          setCategories(res.categories);
+        }
+        if (res.products && res.products.length > 0) {
+          setMenuItems(res.products);
+        }
+        if (res.table) {
+          setCurrentTable({
+            id: res.table.id,
+            number: res.table.tableNumber,
+            token: res.table.token,
+            active: true,
+          });
+        }
+      } catch (err: any) {
+        console.warn("Tenant resolution notice:", err);
+      }
+    };
+
+    fetchTenant();
+    return () => {
+      isMounted = false;
+    };
+  }, [businessSlug, rawTableToken, setCurrentTable]);
 
   // Set table token in context
   useEffect(() => {
@@ -268,40 +340,133 @@ export const CustomerMenuPage: React.FC = () => {
     }));
   }, [categories, menuItems]);
 
-  return (
-    <div className="relative min-h-screen pb-24 text-[#301C10] selection:bg-[#E8B64F]/30 overflow-x-hidden">
-      {/* Welcome Screen (shown once per browser tab session until "Explore Our Menu" is clicked) */}
-      {showWelcome && (
-        <WelcomeScreen
-          onExplore={handleDismissWelcome}
-          tableNumber={welcomeTableLabel}
-        />
-      )}
-
-      {/* Dedicated Viewport-Fixed Background Layer (Non-interactive, centred cover, no repeat) */}
-      <div
-        aria-hidden="true"
-        className="fixed inset-0 z-0 pointer-events-none select-none overflow-hidden bg-[#FAF7F0]"
-      >
-        <div
-          className="w-full h-full bg-cover bg-center bg-no-repeat"
-          style={{ backgroundImage: "url('/assets/menu-bg.webp'), url('/assets/menu-bg.jpg'), url('/assets/menu-bg.png')" }}
-        />
+  if (isTenantUnavailable) {
+    return (
+      <div className="min-h-screen bg-[#09090b] text-white flex flex-col items-center justify-center p-4">
+        <div className="bg-[#121214] border border-[#27272a] rounded-3xl max-w-md w-full p-8 text-center shadow-2xl">
+          <div className="w-14 h-14 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-400 mx-auto mb-4">
+            <AlertTriangle className="w-8 h-8" />
+          </div>
+          <h1 className="text-2xl font-black text-white mb-2">Menu Temporarily Unavailable</h1>
+          <p className="text-sm text-zinc-400 leading-relaxed">
+            This menu is currently unavailable. Please ask a staff member for assistance.
+          </p>
+        </div>
       </div>
+    );
+  }
 
-      {/* Customer Header */}
-      <CustomerHeader
-        tableNumber={currentTable?.number || (tableLoading ? "Loading..." : "Table ---")}
-        activeOrderCount={customerOrderIds.length}
-        onOpenOrderTracker={() => {
-          if (customerOrderIds.length > 0) {
-            setActiveTrackerOrderId(customerOrderIds[0]);
-          }
-        }}
-      />
+    const isTeaTime = !tenantBusiness || tenantBusiness.slug === "teatime" || businessSlug === "teatime";
+    const tenantTheme = {
+      primary: isTeaTime
+        ? "#2C190E"
+        : (cafeSettings?.primaryColor || tenantBusiness?.branding?.primaryColor || "#7BBBFF"),
+      accent: isTeaTime
+        ? "#E8B64F"
+        : (cafeSettings?.accentColor || tenantBusiness?.branding?.accentColor || "#B8A9FF"),
+      bg: isTeaTime
+        ? "#FAF7F0"
+        : (cafeSettings?.backgroundColor || tenantBusiness?.branding?.backgroundColor || "#F2FDFF"),
+      text: isTeaTime
+        ? "#301C10"
+        : (cafeSettings?.textColor || tenantBusiness?.branding?.textColor || "#050F2A"),
+      headerBg: isTeaTime
+        ? "#0A0A0A"
+        : (cafeSettings?.headerBackgroundColor || cafeSettings?.primaryColor || tenantBusiness?.branding?.headerBackgroundColor || "#050F2A"),
+      headerText: isTeaTime
+        ? "#FFFCF6"
+        : (cafeSettings?.headerTextColor || tenantBusiness?.branding?.headerTextColor || "#F2FDFF"),
+      logoUrl: isTeaTime
+        ? null
+        : (cafeSettings?.logoUrl || tenantBusiness?.branding?.logoUrl || null),
+    };
+
+    return (
+      <div
+        className="relative min-h-screen pb-24 overflow-x-hidden"
+        style={{
+          backgroundColor: tenantTheme.bg,
+          color: tenantTheme.text,
+          "--tenant-primary": tenantTheme.primary,
+          "--tenant-accent": tenantTheme.accent,
+          "--tenant-bg": tenantTheme.bg,
+          "--tenant-text": tenantTheme.text,
+          "--tenant-header-bg": tenantTheme.headerBg,
+          "--tenant-header-text": tenantTheme.headerText,
+        } as React.CSSProperties}
+      >
+        {/* Interactive Demo Mode Top Banner */}
+        {isDemoMode && (
+          <div className="bg-[#050F2A] text-white px-4 py-2.5 text-xs font-semibold flex items-center justify-between sticky top-0 z-50 shadow-md">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span className="font-bold text-[#7BBBFF]">Menyo Live Demo</span>
+              <span className="text-white/70 hidden sm:inline">
+                • Interactive preview. Orders here are simulated and will not be prepared by the kitchen.
+              </span>
+            </div>
+            <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-white/10 text-white/90">
+              Demo Safe
+            </span>
+          </div>
+        )}
+
+        {/* Welcome Screen (shown once per browser tab session until "Explore Our Menu" is clicked) */}
+        {showWelcome && (
+          <WelcomeScreen
+            onExplore={handleDismissWelcome}
+            tableNumber={welcomeTableLabel}
+          />
+        )}
+
+        {/* Dedicated Viewport-Fixed Background Layer */}
+        <div
+          aria-hidden="true"
+          className="fixed inset-0 z-0 pointer-events-none select-none overflow-hidden"
+          style={{ backgroundColor: tenantTheme.bg }}
+        >
+          {isTeaTime ? (
+            <div
+              className="w-full h-full bg-cover bg-center bg-no-repeat"
+              style={{
+                backgroundImage:
+                  "url('/assets/menu-bg.webp'), url('/assets/menu-bg.jpg'), url('/assets/menu-bg.png')",
+              }}
+            />
+          ) : null}
+        </div>
+
+        {/* Customer Header */}
+        <CustomerHeader
+          brandName={cafeSettings?.cafeName || tenantBusiness?.name}
+          logoUrl={tenantTheme.logoUrl}
+          primaryColor={tenantTheme.headerBg}
+          accentColor={tenantTheme.accent}
+          tableNumber={currentTable?.number || (tableLoading ? "Loading..." : "Table ---")}
+          activeOrderCount={customerOrderIds.length}
+          onOpenOrderTracker={() => {
+            if (customerOrderIds.length > 0) {
+              setActiveTrackerOrderId(customerOrderIds[0]);
+            }
+          }}
+        />
 
       {/* Main Container */}
       <main className="relative z-10 max-w-md md:max-w-3xl lg:max-w-6xl xl:max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-4 md:pt-6 lg:pt-8 space-y-4 md:space-y-6">
+        {/* Ordering Paused Banner */}
+        {cafeSettings?.isOrderingPaused && (
+          <div className="bg-amber-500/10 border border-amber-500/30 text-amber-900 rounded-2xl p-4 shadow-warm flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-extrabold text-xs text-amber-950">
+                New Orders Temporarily Paused
+              </p>
+              <p className="text-xs text-amber-800 mt-0.5">
+                {cafeSettings.pauseMessage || "The café is temporarily pausing new orders. You can still browse the menu!"}
+              </p>
+            </div>
+          </div>
+        )}
         {/* Table Token Alert if invalid or missing */}
         {tableError && (
           <div className="bg-[#FFFCF6] border border-[#DFC9AC] rounded-2xl p-4 shadow-warm text-xs md:text-sm text-[#301C10] space-y-2">
@@ -395,7 +560,28 @@ export const CustomerMenuPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+          <div className="flex items-center gap-2.5 w-full sm:w-auto flex-wrap">
+            <a
+              href="https://wa.me/94764847081?text=Hi%20Tea%20Time,%20I'm%20contacting%20you%20from%20the%20digital%20menu."
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#0A0A0A] hover:bg-[#23140B] text-[#FFFCF6] border border-[#E8B64F]/40 text-xs font-extrabold shadow-warm transition active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="w-4 h-4 text-[#E8B64F] shrink-0"
+                aria-hidden="true"
+              >
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+              </svg>
+              <span>WhatsApp</span>
+            </a>
+
             <a
               href="https://www.instagram.com/teatime_vavuniya/"
               target="_blank"
@@ -469,6 +655,8 @@ export const CustomerMenuPage: React.FC = () => {
       <CartDrawer
         isOpen={isCartOpen}
         onClose={() => setIsCartOpen(false)}
+        businessSlug={businessSlug}
+        isDemo={isDemoMode}
         onOrderPlaced={(orderInfo) => {
           setActiveTrackerOrderId(orderInfo.orderId);
         }}

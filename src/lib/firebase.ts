@@ -20,7 +20,7 @@ import {
   httpsCallable 
 } from "firebase/functions";
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "demo-teatime-key",
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "teatime-cafe-app.firebaseapp.com",
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "teatime-cafe-app",
