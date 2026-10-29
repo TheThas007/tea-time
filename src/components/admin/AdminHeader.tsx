@@ -85,7 +85,7 @@ export const AdminHeader: React.FC = () => {
               <User className="w-3.5 h-3.5" />
             </div>
             <span className="hidden sm:inline">
-              {user?.email?.split("@")[0] || "Staff"}
+              {user?.email?.split("@")[0] || (typeof window !== "undefined" && localStorage.getItem("menyo_auth_email")?.split("@")[0]) || "teatime"}
             </span>
             <ChevronDown className="w-3.5 h-3.5 text-[#DFC9AC]" />
           </button>
@@ -94,13 +94,18 @@ export const AdminHeader: React.FC = () => {
             <div className="absolute right-0 mt-2 w-48 bg-[#FFFCF6] border border-[#DFC9AC] rounded-xl shadow-warm-xl py-1 text-xs text-[#301C10] z-50">
               <div className="px-3 py-2 border-b border-[#DFC9AC]">
                 <p className="text-[11px] text-[#8A6A53]">Signed in as</p>
-                <p className="font-bold truncate text-[#301C10]">{user?.email || "Admin"}</p>
+                <p className="font-bold truncate text-[#301C10]">
+                  {user?.email || (typeof window !== "undefined" && localStorage.getItem("menyo_auth_email")) || "admin@teatime.lk"}
+                </p>
               </div>
 
               <button
-                onClick={() => {
+                onClick={async () => {
                   setShowDropdown(false);
-                  signOutAdmin();
+                  localStorage.removeItem("menyo_auth_role");
+                  localStorage.removeItem("menyo_auth_email");
+                  await signOutAdmin();
+                  window.location.href = "/admin/login";
                 }}
                 className="w-full px-3 py-2 text-left hover:bg-[#FAF7F0] text-red-700 font-semibold flex items-center gap-2 transition"
               >

@@ -30,7 +30,7 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
   logoUrl,
   qrHeaderTitle,
   qrSubtitle = "SCAN TO ORDER",
-  qrFooterNote = "☕ Good tea brings people together.",
+  qrFooterNote = "It's time for you!",
   onClose,
 }) => {
   const origin = window.location.origin;
@@ -166,12 +166,16 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
 
             {/* Footer Slogan / Tagline with Divider Line */}
             <div
-              className="pt-2.5 border-t border-white/20 w-full text-[11px] italic leading-tight"
+              className="pt-3 border-t border-[#E8B64F]/50 w-full text-xs italic tracking-wide"
               style={{
-                color: `${cardTextColor}CC`,
+                color: `${cardTextColor}EE`,
               }}
             >
-              <span>{qrFooterNote || "☕ Good tea brings people together."}</span>
+              <span>
+                {!qrFooterNote || qrFooterNote.includes("Good tea brings people together")
+                  ? (isTeaTime ? "It's time for you!" : (qrFooterNote || "Enjoy your visit!"))
+                  : qrFooterNote}
+              </span>
             </div>
           </div>
         </div>
@@ -229,7 +233,7 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
   logoUrl,
   qrHeaderTitle,
   qrSubtitle = "SCAN TO ORDER",
-  qrFooterNote = "☕ Good tea brings people together.",
+  qrFooterNote = "It's time for you!",
   onClose,
 }) => {
   const origin = window.location.origin;
@@ -342,9 +346,13 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
                 </div>
 
                 <div
-                  className="pt-2 border-t border-white/20 w-full text-[10px] italic leading-tight text-white/80"
+                  className="pt-2.5 border-t border-[#E8B64F]/50 w-full text-[11px] italic leading-tight text-white/90"
                 >
-                  <span>{qrFooterNote || "☕ Good tea brings people together."}</span>
+                  <span>
+                    {!qrFooterNote || qrFooterNote.includes("Good tea brings people together")
+                      ? (isTeaTime ? "It's time for you!" : (qrFooterNote || "Enjoy your visit!"))
+                      : qrFooterNote}
+                  </span>
                 </div>
               </div>
             );

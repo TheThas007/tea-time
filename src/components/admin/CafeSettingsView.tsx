@@ -918,11 +918,11 @@ export const CafeSettingsView: React.FC = () => {
                     type="text"
                     value={settings.qrFooterNote || ""}
                     onChange={(e) => setSettings({ ...settings, qrFooterNote: e.target.value })}
-                    placeholder="e.g. ☕ Good tea brings people together. Or Assistance: 076 484 7081"
+                    placeholder="e.g. It's time for you! Or Assistance: 076 484 7081"
                     className="w-full text-xs px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none"
                   />
                   <div className="flex gap-1.5 mt-1.5">
-                    {["☕ Good tea brings people together", "Need help? Call: 076 484 7081", "Enjoy your dining experience!"].map((preset, idx) => (
+                    {["It's time for you!", "Need help? Call: 076 484 7081", "Enjoy your dining experience!"].map((preset, idx) => (
                       <button
                         key={idx}
                         type="button"
@@ -1387,9 +1387,13 @@ export const CafeSettingsView: React.FC = () => {
 
                   {/* Slogan / Footer note */}
                   <div
-                    className="pt-2.5 border-t border-white/20 w-full text-[10px] italic leading-tight text-white/80"
+                    className="pt-3 border-t border-[#E8B64F]/50 w-full text-[11px] italic leading-tight text-white/90"
                   >
-                    <span>{settings.qrFooterNote || "☕ Good tea brings people together."}</span>
+                    <span>
+                      {!settings.qrFooterNote || settings.qrFooterNote.includes("Good tea brings people together")
+                        ? "It's time for you!"
+                        : settings.qrFooterNote}
+                    </span>
                   </div>
                 </div>
               )}

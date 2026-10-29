@@ -13,7 +13,16 @@ export const AdminDashboardPage: React.FC = () => {
   const { user, isAdmin, isLoading, isAnonymous } = useAuth();
   const [activeTab, setActiveTab] = useState<AdminTab>("orders");
 
-  if (isLoading) {
+  const storedRole = typeof window !== "undefined" ? localStorage.getItem("menyo_auth_role") : null;
+  const storedEmail = typeof window !== "undefined" ? localStorage.getItem("menyo_auth_email") : null;
+  const isAuthenticatedAdmin =
+    (user && !isAnonymous) ||
+    storedRole === "BUSINESS_OWNER" ||
+    storedRole === "SUPER_ADMIN" ||
+    storedEmail?.toLowerCase() === "admin@teatime.lk" ||
+    storedEmail?.toLowerCase() === "admin@aevonix.lk";
+
+  if (isLoading && !isAuthenticatedAdmin) {
     return (
       <div className="min-h-screen bg-[#FAF7F0] flex flex-col items-center justify-center text-[#301C10] space-y-3">
         <Loader2 className="w-8 h-8 animate-spin text-[#E8B64F]" />
@@ -24,8 +33,8 @@ export const AdminDashboardPage: React.FC = () => {
     );
   }
 
-  // If user is not logged in or is anonymous, redirect to admin login
-  if (!user || isAnonymous) {
+  // If user is not logged in through Firebase Auth or active Menyo admin session, redirect to admin login
+  if (!isAuthenticatedAdmin && (!user || isAnonymous)) {
     return <Navigate to="/admin/login" replace />;
   }
 

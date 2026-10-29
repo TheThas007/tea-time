@@ -2205,5 +2205,5 @@ export const INITIAL_SETTINGS: CafeSettings = {
   headerTextColor: "#FAF7F0",
   qrHeaderTitle: "Scan to Order • TEA TIME",
   qrSubtitle: "Point camera to view menu & order",
-  qrFooterNote: "☕ Good tea brings people together",
+  qrFooterNote: "It's time for you!",
 };

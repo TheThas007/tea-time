@@ -42,7 +42,11 @@ export const TableManager: React.FC = () => {
       doc(db, "settings", "cafe"),
       (snap) => {
         if (snap.exists()) {
-          setSettings({ ...INITIAL_SETTINGS, ...snap.data() } as CafeSettings);
+          const data = snap.data();
+          if (!data.qrFooterNote || data.qrFooterNote.includes("Good tea brings people together")) {
+            data.qrFooterNote = "It's time for you!";
+          }
+          setSettings({ ...INITIAL_SETTINGS, ...data } as CafeSettings);
         }
       },
       (err) => {
@@ -397,9 +401,13 @@ export const TableManager: React.FC = () => {
 
                 {/* Divider Line & Footer Slogan */}
                 <div
-                  className="pt-2.5 border-t border-white/20 w-full text-[11px] italic leading-tight text-white/80"
+                  className="pt-3 border-t border-[#E8B64F]/50 w-full text-xs italic tracking-wide text-[#FFFCF6]/90"
                 >
-                  <span>{settings.qrFooterNote || "☕ Good tea brings people together."}</span>
+                  <span>
+                    {!settings.qrFooterNote || settings.qrFooterNote.includes("Good tea brings people together")
+                      ? "It's time for you!"
+                      : settings.qrFooterNote}
+                  </span>
                 </div>
               </div>
             </div>

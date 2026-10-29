@@ -61,7 +61,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
           navigate("/super-admin");
         } else {
           localStorage.setItem("menyo_auth_role", "BUSINESS_OWNER");
-          navigate("/dashboard");
+          const isTeaTime =
+            identifier.trim().toLowerCase() === "teatime" ||
+            identifier.trim().toLowerCase() === "admin@teatime.lk" ||
+            res.businessId === "teatime";
+          if (isTeaTime) {
+            localStorage.setItem("menyo_auth_email", "admin@teatime.lk");
+            navigate("/admin");
+          } else {
+            navigate("/dashboard");
+          }
         }
       }
     } catch (err: any) {
@@ -89,7 +98,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
           navigate("/super-admin");
         } else {
           localStorage.setItem("menyo_auth_role", "BUSINESS_OWNER");
-          if (targetEmail.toLowerCase() === "admin@teatime.lk") {
+          if (targetEmail.toLowerCase() === "admin@teatime.lk" || targetEmail.toLowerCase() === "teatime") {
+            localStorage.setItem("menyo_auth_email", "admin@teatime.lk");
             navigate("/admin");
           } else {
             navigate("/dashboard");

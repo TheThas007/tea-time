@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { useSearchParams, useParams } from "react-router-dom";
+import { useSearchParams, useParams, Link } from "react-router-dom";
 import { collection, query, where, getDocs, onSnapshot, doc } from "firebase/firestore";
 import { Search, AlertTriangle } from "lucide-react";
 import { db } from "../lib/firebase";
@@ -625,6 +625,16 @@ export const CustomerMenuPage: React.FC = () => {
               </svg>
               <span>Facebook</span>
             </a>
+          </div>
+
+          {/* Kitchen & Staff Access */}
+          <div className="pt-4 border-t border-[#DFC9AC]/30 text-center">
+            <Link
+              to="/admin"
+              className="text-[11px] text-[#8A6A53] hover:text-[#301C10] font-semibold transition"
+            >
+              Kitchen & Staff Portal &bull; Live Orders
+            </Link>
           </div>
         </div>
       </footer>

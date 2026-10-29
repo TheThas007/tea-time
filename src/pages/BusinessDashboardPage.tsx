@@ -1713,7 +1713,7 @@ export const BusinessDashboardPage: React.FC = () => {
           logoUrl={business.branding?.logoUrl || null}
           qrHeaderTitle={business.branding?.qrHeaderTitle || `Scan to Order • ${business.name}`}
           qrSubtitle={business.branding?.qrSubtitle || "SCAN TO ORDER"}
-          qrFooterNote={business.branding?.qrFooterNote || (business.slug === "teatime" ? "☕ Good tea brings people together." : "Enjoy your visit!")}
+          qrFooterNote={business.branding?.qrFooterNote || (business.slug === "teatime" ? "It's time for you!" : "Enjoy your visit!")}
           onClose={() => setSinglePrintTable(null)}
         />
       )}
@@ -1730,7 +1730,7 @@ export const BusinessDashboardPage: React.FC = () => {
           logoUrl={business.branding?.logoUrl || null}
           qrHeaderTitle={business.branding?.qrHeaderTitle || `Scan to Order • ${business.name}`}
           qrSubtitle={business.branding?.qrSubtitle || "SCAN TO ORDER"}
-          qrFooterNote={business.branding?.qrFooterNote || (business.slug === "teatime" ? "☕ Good tea brings people together." : "Enjoy your visit!")}
+          qrFooterNote={business.branding?.qrFooterNote || (business.slug === "teatime" ? "It's time for you!" : "Enjoy your visit!")}
           onClose={() => setShowBatchPrint(false)}
         />
       )}
