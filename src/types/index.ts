@@ -86,10 +86,30 @@ export interface PlatformPublicConfig {
   updatedAt?: any;
 }
 
+export type SocialPlatform =
+  | "google"
+  | "instagram"
+  | "facebook"
+  | "whatsapp"
+  | "tiktok"
+  | "youtube"
+  | "x"
+  | "website"
+  | "other";
+
+export interface SocialLinkItem {
+  id: string;
+  platform: SocialPlatform;
+  label: string;
+  url: string;
+  isActive: boolean;
+}
+
 export interface BusinessSocialLinks {
   instagram?: string;
   facebook?: string;
   googleReview?: string;
+  items?: SocialLinkItem[];
 }
 
 /**
@@ -124,6 +144,10 @@ export interface BusinessPublicProfile {
   currencyCode: "LKR";
   currencySymbol: string;
   socialLinks: BusinessSocialLinks;
+  socialLinkItems?: SocialLinkItem[];
+  googleReviewUrl?: string;
+  instagramUrl?: string;
+  facebookUrl?: string;
   isOrderingPaused: boolean;
   pauseMessage: string;
   isTrial?: boolean;
@@ -428,7 +452,10 @@ export interface CafeSettings {
   phone?: string;
   whatsapp?: string;
   address?: string;
-  socialLinks?: BusinessSocialLinks;
+  googleReviewUrl?: string;
+  instagramUrl?: string;
+  facebookUrl?: string;
+  socialLinks?: SocialLinkItem[] | BusinessSocialLinks;
 }
 
 export interface CartItem {

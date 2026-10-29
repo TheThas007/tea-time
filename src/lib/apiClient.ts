@@ -41,6 +41,7 @@ import {
   PackageId,
   PaymentMethod,
   PlatformPublicConfig,
+  SocialLinkItem,
   SubscriptionPackage,
   SuperAdminBusinessRow,
   SuperAdminMetrics,
@@ -713,7 +714,46 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
     } as unknown as T;
   }
 
-  // 4. Default success response for other actions
+  // 4. Owner Update Settings Fallback
+  if (action === "ownerUpdateSettings") {
+    const user = auth.currentUser;
+    let bId = "teatime";
+    if (user && !user.isAnonymous) {
+      try {
+        const profSnap = await getDoc(doc(db, "userProfiles", user.uid));
+        if (profSnap.exists()) {
+          bId = profSnap.data().businessId || bId;
+        }
+      } catch {}
+    }
+    const updatePayload: any = {
+      updatedAt: serverTimestamp(),
+    };
+    if (data.name !== undefined) updatePayload.name = data.name;
+    if (data.phone !== undefined) updatePayload.phone = data.phone;
+    if (data.whatsapp !== undefined) updatePayload.whatsapp = data.whatsapp;
+    if (data.address !== undefined) updatePayload.address = data.address;
+    if (data.googleReviewUrl !== undefined) updatePayload.googleReviewUrl = data.googleReviewUrl;
+    if (data.instagramUrl !== undefined) updatePayload.instagramUrl = data.instagramUrl;
+    if (data.facebookUrl !== undefined) updatePayload.facebookUrl = data.facebookUrl;
+    if (data.socialLinks !== undefined) updatePayload.socialLinks = data.socialLinks;
+    if (data.branding !== undefined) updatePayload.branding = data.branding;
+
+    try {
+      await setDoc(doc(db, "businesses", bId), updatePayload, { merge: true });
+      if (bId === "teatime" || bId === "biz_teatime") {
+        await setDoc(doc(db, "settings", "cafe"), {
+          ...updatePayload,
+          cafeName: data.name ?? undefined,
+        }, { merge: true });
+      }
+    } catch (e) {
+      console.warn("Client fallback update settings:", e);
+    }
+    return { success: true } as unknown as T;
+  }
+
+  // 5. Default success response for other actions
   return { success: true } as unknown as T;
 }
 
@@ -786,6 +826,7 @@ export const platformApi = {
         googleReviewUrl?: string;
         instagramUrl?: string;
         facebookUrl?: string;
+        socialLinks?: SocialLinkItem[];
         status: BusinessOperationalStatus;
         isAvailable: boolean;
         unavailableReason?: string;
@@ -1131,6 +1172,7 @@ export const platformApi = {
         googleReviewUrl?: string;
         instagramUrl?: string;
         facebookUrl?: string;
+        socialLinks?: SocialLinkItem[];
         status: BusinessOperationalStatus;
         subscription?: {
           packageId: PackageId;
@@ -1350,6 +1392,7 @@ export const platformApi = {
     googleReviewUrl?: string;
     instagramUrl?: string;
     facebookUrl?: string;
+    socialLinks?: any[];
     branding?: {
       logoUrl?: string | null;
       primaryColor?: string | null;

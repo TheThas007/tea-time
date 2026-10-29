@@ -29,6 +29,9 @@ import {
   Monitor,
   RotateCcw,
   Upload,
+  Globe,
+  Star,
+  EyeOff,
 } from "lucide-react";
 import { platformApi } from "../lib/apiClient";
 import { auth, db } from "../lib/firebase";
@@ -46,6 +49,8 @@ import {
   OrderStatus,
   TableItem,
   UserProfileRecord,
+  SocialLinkItem,
+  SocialPlatform,
 } from "../types";
 import { ForcePasswordChangeModal } from "../components/auth/ForcePasswordChangeModal";
 import { SingleTablePrintModal, BatchTablesPrintModal } from "../components/admin/PrintableTableCard";
@@ -111,6 +116,7 @@ export const BusinessDashboardPage: React.FC = () => {
     textColor: "#050F2A",
     headerBackgroundColor: "#050F2A",
     headerTextColor: "#F2FDFF",
+    socialLinks: [] as SocialLinkItem[],
   });
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
@@ -144,6 +150,24 @@ export const BusinessDashboardPage: React.FC = () => {
       // Populate settings form with business branding & defaults
       const b = session.business;
       const isTeaTime = b.slug === "teatime";
+
+      let initialSocialLinks: SocialLinkItem[] = [];
+      if (Array.isArray(b.socialLinks) && b.socialLinks.length > 0) {
+        initialSocialLinks = b.socialLinks;
+      } else if (Array.isArray(b.branding?.socialLinks) && b.branding.socialLinks.length > 0) {
+        initialSocialLinks = b.branding.socialLinks;
+      } else {
+        if (b.googleReviewUrl) {
+          initialSocialLinks.push({ id: "sl_g", platform: "google", label: "Google Profile & Reviews", url: b.googleReviewUrl, isActive: true });
+        }
+        if (b.instagramUrl) {
+          initialSocialLinks.push({ id: "sl_ig", platform: "instagram", label: "Instagram", url: b.instagramUrl, isActive: true });
+        }
+        if (b.facebookUrl) {
+          initialSocialLinks.push({ id: "sl_fb", platform: "facebook", label: "Facebook", url: b.facebookUrl, isActive: true });
+        }
+      }
+
       setSettingsForm({
         name: b.name || "",
         phone: b.phone || "",
@@ -159,6 +183,7 @@ export const BusinessDashboardPage: React.FC = () => {
         textColor: b.branding?.textColor || (isTeaTime ? "#301C10" : "#050F2A"),
         headerBackgroundColor: b.branding?.headerBackgroundColor || (isTeaTime ? "#2C190E" : "#050F2A"),
         headerTextColor: b.branding?.headerTextColor || (isTeaTime ? "#FAF7F0" : "#F2FDFF"),
+        socialLinks: initialSocialLinks,
       });
     } catch (err: any) {
       if (err?.code === "unauthenticated") {
@@ -251,14 +276,19 @@ export const BusinessDashboardPage: React.FC = () => {
     setSettingsSuccess(false);
 
     try {
+      const gLink = settingsForm.socialLinks.find((l) => l.platform === "google" && l.isActive);
+      const igLink = settingsForm.socialLinks.find((l) => l.platform === "instagram" && l.isActive);
+      const fbLink = settingsForm.socialLinks.find((l) => l.platform === "facebook" && l.isActive);
+
       await platformApi.ownerUpdateSettings({
         name: settingsForm.name.trim(),
         phone: settingsForm.phone.trim() || undefined,
         whatsapp: settingsForm.whatsapp.trim() || undefined,
         address: settingsForm.address.trim() || undefined,
-        googleReviewUrl: settingsForm.googleReviewUrl.trim() || undefined,
-        instagramUrl: settingsForm.instagramUrl.trim() || undefined,
-        facebookUrl: settingsForm.facebookUrl.trim() || undefined,
+        googleReviewUrl: gLink?.url || settingsForm.googleReviewUrl.trim() || undefined,
+        instagramUrl: igLink?.url || settingsForm.instagramUrl.trim() || undefined,
+        facebookUrl: fbLink?.url || settingsForm.facebookUrl.trim() || undefined,
+        socialLinks: settingsForm.socialLinks,
         branding: {
           logoUrl: settingsForm.logoUrl.trim() || null,
           primaryColor: settingsForm.primaryColor,
@@ -276,6 +306,58 @@ export const BusinessDashboardPage: React.FC = () => {
     } finally {
       setSavingSettings(false);
     }
+  };
+
+  const handleOwnerAddSocialLink = (platform: SocialPlatform = "google") => {
+    const defaultLabels: Record<SocialPlatform, string> = {
+      google: "Google Profile & Reviews",
+      instagram: "Instagram",
+      facebook: "Facebook",
+      whatsapp: "WhatsApp Direct",
+      tiktok: "TikTok",
+      youtube: "YouTube Channel",
+      x: "X (Twitter)",
+      website: "Official Website",
+      other: "Social Profile",
+    };
+    const defaultUrls: Record<SocialPlatform, string> = {
+      google: "https://maps.google.com/?q=",
+      instagram: "https://www.instagram.com/",
+      facebook: "https://www.facebook.com/",
+      whatsapp: "https://wa.me/",
+      tiktok: "https://www.tiktok.com/@",
+      youtube: "https://www.youtube.com/@",
+      x: "https://x.com/",
+      website: "https://",
+      other: "https://",
+    };
+
+    const newLink: SocialLinkItem = {
+      id: `sl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      platform,
+      label: defaultLabels[platform] || "Social Link",
+      url: defaultUrls[platform] || "https://",
+      isActive: true,
+    };
+
+    setSettingsForm((prev) => ({
+      ...prev,
+      socialLinks: [...prev.socialLinks, newLink],
+    }));
+  };
+
+  const handleOwnerUpdateSocialLink = (id: string, updates: Partial<SocialLinkItem>) => {
+    setSettingsForm((prev) => ({
+      ...prev,
+      socialLinks: prev.socialLinks.map((l) => (l.id === id ? { ...l, ...updates } : l)),
+    }));
+  };
+
+  const handleOwnerDeleteSocialLink = (id: string) => {
+    setSettingsForm((prev) => ({
+      ...prev,
+      socialLinks: prev.socialLinks.filter((l) => l.id !== id),
+    }));
   };
 
   const handleResetBranding = async () => {
@@ -1585,51 +1667,173 @@ export const BusinessDashboardPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* SECTION 3: SOCIAL & REVIEW LINKS */}
+              {/* SECTION 3: DYNAMIC SOCIAL & GOOGLE REVIEW LINKS */}
               <div className="space-y-4 pt-2">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[#050F2A] border-b border-[#050F2A]/10 pb-2">
-                  3. Social Media & Google Review Prompts
-                </h3>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#050F2A]/10 pb-2">
                   <div>
-                    <label className="block text-xs font-bold text-[#050F2A]/70 mb-1">
-                      Google Review URL
-                    </label>
-                    <input
-                      type="text"
-                      value={settingsForm.googleReviewUrl}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, googleReviewUrl: e.target.value })}
-                      className="w-full bg-[#F2FDFF]/50 border border-[#050F2A]/15 rounded-2xl px-4 py-2 text-xs text-[#050F2A] focus:outline-none focus:border-[#7BBBFF]"
-                      placeholder="https://maps.google.com/..."
-                    />
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-[#050F2A] flex items-center gap-2">
+                      <span>3. Social Media & Google Review Prompts</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                        Real-time
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-[#050F2A]/60 mt-0.5">
+                      Add, change, or remove Google Reviews, Instagram, Facebook, and WhatsApp links shown on your menu footer.
+                    </p>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-[#050F2A]/70 mb-1">
-                      Instagram Profile URL
-                    </label>
-                    <input
-                      type="text"
-                      value={settingsForm.instagramUrl}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, instagramUrl: e.target.value })}
-                      className="w-full bg-[#F2FDFF]/50 border border-[#050F2A]/15 rounded-2xl px-4 py-2 text-xs text-[#050F2A] focus:outline-none focus:border-[#7BBBFF]"
-                      placeholder="https://instagram.com/..."
-                    />
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleOwnerAddSocialLink("google")}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#050F2A] text-white text-xs font-bold hover:bg-[#0b1739] transition self-start sm:self-auto"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Link</span>
+                  </button>
+                </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-[#050F2A]/70 mb-1">
-                      Facebook Page URL
-                    </label>
-                    <input
-                      type="text"
-                      value={settingsForm.facebookUrl}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, facebookUrl: e.target.value })}
-                      className="w-full bg-[#F2FDFF]/50 border border-[#050F2A]/15 rounded-2xl px-4 py-2 text-xs text-[#050F2A] focus:outline-none focus:border-[#7BBBFF]"
-                      placeholder="https://facebook.com/..."
-                    />
+                {/* Quick Add Presets Bar */}
+                <div className="bg-[#F2FDFF] rounded-2xl p-3 border border-[#050F2A]/10 space-y-2">
+                  <span className="text-[10px] font-bold text-[#050F2A]/60 uppercase tracking-wider block">
+                    Quick Add Presets:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { platform: "google" as SocialPlatform, label: "Google Review / Profile", icon: "⭐" },
+                      { platform: "instagram" as SocialPlatform, label: "Instagram", icon: "📸" },
+                      { platform: "facebook" as SocialPlatform, label: "Facebook", icon: "📘" },
+                      { platform: "whatsapp" as SocialPlatform, label: "WhatsApp Chat", icon: "💬" },
+                      { platform: "tiktok" as SocialPlatform, label: "TikTok", icon: "🎵" },
+                      { platform: "website" as SocialPlatform, label: "Website", icon: "🔗" },
+                    ].map((preset) => (
+                      <button
+                        key={preset.platform}
+                        type="button"
+                        onClick={() => handleOwnerAddSocialLink(preset.platform)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-white/80 text-[#050F2A] text-[11px] font-bold border border-[#050F2A]/10 transition shadow-2xs active:scale-95"
+                      >
+                        <span>{preset.icon}</span>
+                        <span>+ {preset.label}</span>
+                      </button>
+                    ))}
                   </div>
+                </div>
+
+                {/* Social Links List */}
+                <div className="space-y-2.5">
+                  {settingsForm.socialLinks.map((link, idx) => (
+                    <div
+                      key={link.id || idx}
+                      className={`p-3 rounded-2xl border transition-all ${
+                        link.isActive ? "bg-white border-[#050F2A]/10" : "bg-[#F2FDFF]/60 border-[#050F2A]/5 opacity-60"
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                        {/* Platform */}
+                        <div className="w-full sm:w-40 shrink-0">
+                          <label className="block text-[10px] font-bold text-[#050F2A]/60 mb-1">
+                            Platform
+                          </label>
+                          <select
+                            value={link.platform}
+                            onChange={(e) =>
+                              handleOwnerUpdateSocialLink(link.id, {
+                                platform: e.target.value as SocialPlatform,
+                              })
+                            }
+                            className="w-full text-xs px-2.5 py-1.5 rounded-xl border border-[#050F2A]/15 bg-[#F2FDFF]/30 text-[#050F2A] font-bold focus:outline-none focus:border-[#7BBBFF]"
+                          >
+                            <option value="google">🌐 Google Review / Profile</option>
+                            <option value="instagram">📸 Instagram</option>
+                            <option value="facebook">📘 Facebook</option>
+                            <option value="whatsapp">💬 WhatsApp</option>
+                            <option value="tiktok">🎵 TikTok</option>
+                            <option value="youtube">▶️ YouTube</option>
+                            <option value="website">🔗 Website</option>
+                            <option value="other">🌐 Other</option>
+                          </select>
+                        </div>
+
+                        {/* Label */}
+                        <div className="w-full sm:w-44 shrink-0">
+                          <label className="block text-[10px] font-bold text-[#050F2A]/60 mb-1">
+                            Button Label
+                          </label>
+                          <input
+                            type="text"
+                            value={link.label}
+                            onChange={(e) =>
+                              handleOwnerUpdateSocialLink(link.id, { label: e.target.value })
+                            }
+                            placeholder="e.g. Google Reviews"
+                            className="w-full text-xs px-2.5 py-1.5 rounded-xl border border-[#050F2A]/15 bg-[#F2FDFF]/30 text-[#050F2A] font-bold focus:outline-none focus:border-[#7BBBFF]"
+                          />
+                        </div>
+
+                        {/* URL */}
+                        <div className="flex-1 w-full min-w-0">
+                          <label className="block text-[10px] font-bold text-[#050F2A]/60 mb-1">
+                            Target Profile URL
+                          </label>
+                          <input
+                            type="text"
+                            value={link.url}
+                            onChange={(e) =>
+                              handleOwnerUpdateSocialLink(link.id, { url: e.target.value })
+                            }
+                            placeholder="https://..."
+                            className="w-full text-xs px-2.5 py-1.5 rounded-xl border border-[#050F2A]/15 bg-[#F2FDFF]/30 text-[#050F2A] focus:outline-none focus:border-[#7BBBFF] font-mono"
+                          />
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-1.5 self-end sm:self-center mt-2 sm:mt-4 shrink-0">
+                          {link.url && (
+                            <a
+                              href={link.url.startsWith("http") ? link.url : `https://${link.url}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Test link"
+                              className="p-1.5 rounded-lg text-[#050F2A]/60 hover:text-[#050F2A] hover:bg-[#F2FDFF] transition"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                            </a>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleOwnerUpdateSocialLink(link.id, { isActive: !link.isActive })
+                            }
+                            title={link.isActive ? "Hide on menu" : "Show on menu"}
+                            className={`p-1.5 rounded-lg transition border ${
+                              link.isActive
+                                ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                                : "text-zinc-400 bg-zinc-100 border-zinc-200"
+                            }`}
+                          >
+                            {link.isActive ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleOwnerDeleteSocialLink(link.id)}
+                            title="Delete this link"
+                            className="p-1.5 rounded-lg text-rose-600 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {settingsForm.socialLinks.length === 0 && (
+                    <div className="p-6 text-center bg-[#F2FDFF]/50 rounded-2xl border border-dashed border-[#050F2A]/15 space-y-1">
+                      <p className="text-xs font-bold text-[#050F2A]">No social or Google links added yet</p>
+                      <p className="text-[11px] text-[#050F2A]/60">Use the Quick Add buttons above to add Google Reviews, Instagram, or WhatsApp.</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1711,7 +1915,7 @@ export const BusinessDashboardPage: React.FC = () => {
           headerBackgroundColor={business.branding?.headerBackgroundColor || (business.slug === "teatime" ? "#2C190E" : "#050F2A")}
           headerTextColor={business.branding?.headerTextColor || (business.slug === "teatime" ? "#FAF7F0" : "#F2FDFF")}
           logoUrl={business.branding?.logoUrl || null}
-          qrHeaderTitle={business.branding?.qrHeaderTitle || `Scan to Order • ${business.name}`}
+          qrHeaderTitle={business.branding?.qrHeaderTitle || (business.slug === "teatime" ? "SCAN TO ORDER • TEA TIME" : `SCAN TO ORDER • ${business.name}`)}
           qrSubtitle={business.branding?.qrSubtitle || "SCAN TO ORDER"}
           qrFooterNote={business.branding?.qrFooterNote || (business.slug === "teatime" ? "It's time for you!" : "Enjoy your visit!")}
           onClose={() => setSinglePrintTable(null)}
@@ -1728,7 +1932,7 @@ export const BusinessDashboardPage: React.FC = () => {
           headerBackgroundColor={business.branding?.headerBackgroundColor || (business.slug === "teatime" ? "#2C190E" : "#050F2A")}
           headerTextColor={business.branding?.headerTextColor || (business.slug === "teatime" ? "#FAF7F0" : "#F2FDFF")}
           logoUrl={business.branding?.logoUrl || null}
-          qrHeaderTitle={business.branding?.qrHeaderTitle || `Scan to Order • ${business.name}`}
+          qrHeaderTitle={business.branding?.qrHeaderTitle || (business.slug === "teatime" ? "SCAN TO ORDER • TEA TIME" : `SCAN TO ORDER • ${business.name}`)}
           qrSubtitle={business.branding?.qrSubtitle || "SCAN TO ORDER"}
           qrFooterNote={business.branding?.qrFooterNote || (business.slug === "teatime" ? "It's time for you!" : "Enjoy your visit!")}
           onClose={() => setShowBatchPrint(false)}

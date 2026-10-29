@@ -27,14 +27,21 @@ import {
   Upload,
   RotateCcw,
   Eye,
+  EyeOff,
   Check,
   HelpCircle,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  Share2,
+  Globe,
+  Trash2,
+  Plus,
+  Phone,
+  MessageCircle
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { db } from "../../lib/firebase";
-import { CafeSettings } from "../../types";
+import { CafeSettings, SocialLinkItem, SocialPlatform } from "../../types";
 import { 
   INITIAL_SETTINGS, 
   INITIAL_CATEGORIES, 
@@ -150,7 +157,7 @@ export const SAMPLE_LOGOS = [
   { label: "Artisan Coffee", url: "/images/menu/coffee/milk-coffee.png" },
 ];
 
-type SettingsSection = "branding" | "colors" | "logo" | "qr" | "store" | "system";
+type SettingsSection = "branding" | "colors" | "logo" | "qr" | "social" | "store" | "system";
 
 export const CafeSettingsView: React.FC = () => {
   const [settings, setSettings] = useState<CafeSettings>(INITIAL_SETTINGS);
@@ -218,6 +225,67 @@ export const CafeSettingsView: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
+  // Current active social and Google links
+  const currentSocialLinks: SocialLinkItem[] = Array.isArray(settings.socialLinks)
+    ? (settings.socialLinks as SocialLinkItem[])
+    : (INITIAL_SETTINGS.socialLinks as SocialLinkItem[]) || [];
+
+  const handleAddSocialLink = (platform: SocialPlatform = "google") => {
+    const defaultLabels: Record<SocialPlatform, string> = {
+      google: "Google Profile & Reviews",
+      instagram: "Instagram",
+      facebook: "Facebook",
+      whatsapp: "WhatsApp Direct",
+      tiktok: "TikTok",
+      youtube: "YouTube Channel",
+      x: "X (Twitter)",
+      website: "Official Website",
+      other: "Social Profile",
+    };
+    const defaultUrls: Record<SocialPlatform, string> = {
+      google: "https://maps.google.com/?q=Tea+Time+Vavuniya",
+      instagram: "https://www.instagram.com/teatime_vavuniya/",
+      facebook: "https://www.facebook.com/teatime.vavuniya/",
+      whatsapp: "https://wa.me/94764847081",
+      tiktok: "https://www.tiktok.com/@",
+      youtube: "https://www.youtube.com/@",
+      x: "https://x.com/",
+      website: "https://",
+      other: "https://",
+    };
+
+    const newLink: SocialLinkItem = {
+      id: `sl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      platform,
+      label: defaultLabels[platform] || "Social Link",
+      url: defaultUrls[platform] || "https://",
+      isActive: true,
+    };
+
+    setSettings((prev) => ({
+      ...prev,
+      socialLinks: [...(Array.isArray(prev.socialLinks) ? (prev.socialLinks as SocialLinkItem[]) : currentSocialLinks), newLink],
+    }));
+  };
+
+  const handleUpdateSocialLink = (id: string, updates: Partial<SocialLinkItem>) => {
+    const nextLinks = currentSocialLinks.map((item) =>
+      item.id === id ? { ...item, ...updates } : item
+    );
+    setSettings((prev) => ({
+      ...prev,
+      socialLinks: nextLinks,
+    }));
+  };
+
+  const handleDeleteSocialLink = (id: string) => {
+    const nextLinks = currentSocialLinks.filter((item) => item.id !== id);
+    setSettings((prev) => ({
+      ...prev,
+      socialLinks: nextLinks,
+    }));
+  };
+
   const handleSaveSettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setSaving(true);
@@ -225,10 +293,18 @@ export const CafeSettingsView: React.FC = () => {
     setErrorMessage(null);
 
     try {
+      const gLink = currentSocialLinks.find((l) => l.platform === "google" && l.isActive);
+      const igLink = currentSocialLinks.find((l) => l.platform === "instagram" && l.isActive);
+      const fbLink = currentSocialLinks.find((l) => l.platform === "facebook" && l.isActive);
+
       // 1. Save to primary cafe settings document
       const docRef = doc(db, "settings", "cafe");
       await setDoc(docRef, {
         ...settings,
+        socialLinks: currentSocialLinks,
+        googleReviewUrl: gLink?.url || settings.googleReviewUrl || "",
+        instagramUrl: igLink?.url || settings.instagramUrl || "",
+        facebookUrl: fbLink?.url || settings.facebookUrl || "",
         updatedAt: serverTimestamp(),
       }, { merge: true });
 
@@ -246,6 +322,10 @@ export const CafeSettingsView: React.FC = () => {
           currencySymbol: settings.currencySymbol || "Rs.",
           isOrderingPaused: settings.isOrderingPaused,
           pauseMessage: settings.pauseMessage,
+          socialLinks: currentSocialLinks,
+          googleReviewUrl: gLink?.url || settings.googleReviewUrl || "",
+          instagramUrl: igLink?.url || settings.instagramUrl || "",
+          facebookUrl: fbLink?.url || settings.facebookUrl || "",
           branding: {
             logoUrl: settings.logoUrl || null,
             primaryColor: settings.primaryColor || "#2C190E",
@@ -409,6 +489,7 @@ export const CafeSettingsView: React.FC = () => {
           { id: "colors", label: "App & Navbar Colors", icon: Palette },
           { id: "logo", label: "Logo & Icon", icon: ImageIcon },
           { id: "qr", label: "Table QR Cards", icon: QrCode },
+          { id: "social", label: "Social & Google Profile", icon: Globe },
           { id: "store", label: "Store & Hours", icon: Store },
           { id: "system", label: "Data Utilities", icon: Database },
         ].map((tab) => {
@@ -864,7 +945,7 @@ export const CafeSettingsView: React.FC = () => {
                     className="w-full text-xs px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none"
                   />
                   <div className="flex gap-1.5 mt-1.5">
-                    {["Scan to Order • TEA TIME", "Welcome to Our Table", "Dine In & Order Online"].map((preset, idx) => (
+                    {["SCAN TO ORDER • TEA TIME", "WELCOME TO TEA TIME", "DINE IN & ORDER ONLINE"].map((preset, idx) => (
                       <button
                         key={idx}
                         type="button"
@@ -889,11 +970,11 @@ export const CafeSettingsView: React.FC = () => {
                     type="text"
                     value={settings.qrSubtitle || ""}
                     onChange={(e) => setSettings({ ...settings, qrSubtitle: e.target.value })}
-                    placeholder="e.g. Point phone camera to view menu & order"
+                    placeholder="e.g. SCAN TO ORDER"
                     className="w-full text-xs px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none"
                   />
                   <div className="flex gap-1.5 mt-1.5">
-                    {["Point camera to view menu & order", "Scan QR to place table order", "Browse 100+ items & order"].map((preset, idx) => (
+                    {["SCAN TO ORDER", "Point camera to view menu & order", "Scan QR to place table order"].map((preset, idx) => (
                       <button
                         key={idx}
                         type="button"
@@ -918,11 +999,11 @@ export const CafeSettingsView: React.FC = () => {
                     type="text"
                     value={settings.qrFooterNote || ""}
                     onChange={(e) => setSettings({ ...settings, qrFooterNote: e.target.value })}
-                    placeholder="e.g. It's time for you! Or Assistance: 076 484 7081"
+                    placeholder="e.g. It's time for you!"
                     className="w-full text-xs px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none"
                   />
                   <div className="flex gap-1.5 mt-1.5">
-                    {["It's time for you!", "Need help? Call: 076 484 7081", "Enjoy your dining experience!"].map((preset, idx) => (
+                    {["It's time for you!", "Need help? Call: 076 484 1111", "Enjoy your visit!"].map((preset, idx) => (
                       <button
                         key={idx}
                         type="button"
@@ -1082,6 +1163,198 @@ export const CafeSettingsView: React.FC = () => {
                     className="w-full px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none"
                   />
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* SECTION 5.5: SOCIAL MEDIA & GOOGLE PROFILE MANAGER */}
+          {(activeSection === "social" || activeSection === "branding" || activeSection === "store") && (
+            <div className="bg-[#FFFCF6] rounded-2xl border border-[#DFC9AC] p-5 sm:p-6 shadow-warm space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#DFC9AC]/60 pb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-[#E8B64F]/20 border border-[#E8B64F]/40 flex items-center justify-center text-[#301C10]">
+                    <Globe className="w-5 h-5 text-[#C99532]" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-[#301C10] flex items-center gap-2">
+                      <span>Social Media & Google Profile Links</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        Real-time
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-[#8A6A53]">
+                      Add, edit, or delete customer links. Real-time updates appear immediately on the customer menu.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Add Link Button */}
+                <button
+                  type="button"
+                  onClick={() => handleAddSocialLink("google")}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#2C190E] hover:bg-[#4A290F] text-[#FFFCF6] text-xs font-bold transition shadow-warm active:scale-95"
+                >
+                  <Plus className="w-4 h-4 text-[#E8B64F]" />
+                  <span>Add Link</span>
+                </button>
+              </div>
+
+              {/* Quick Add Presets Bar */}
+              <div className="bg-[#FAF7F0] rounded-xl p-3 border border-[#DFC9AC]/60 space-y-2">
+                <span className="text-[10px] font-bold text-[#8A6A53] uppercase tracking-wider block">
+                  Quick Add Profile Presets:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { platform: "google" as SocialPlatform, label: "Google Review / Profile", icon: "⭐" },
+                    { platform: "instagram" as SocialPlatform, label: "Instagram", icon: "📸" },
+                    { platform: "facebook" as SocialPlatform, label: "Facebook", icon: "📘" },
+                    { platform: "whatsapp" as SocialPlatform, label: "WhatsApp Chat", icon: "💬" },
+                    { platform: "tiktok" as SocialPlatform, label: "TikTok", icon: "🎵" },
+                    { platform: "youtube" as SocialPlatform, label: "YouTube", icon: "▶️" },
+                    { platform: "website" as SocialPlatform, label: "Custom Website", icon: "🔗" },
+                  ].map((preset) => (
+                    <button
+                      key={preset.platform}
+                      type="button"
+                      onClick={() => handleAddSocialLink(preset.platform)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-[#FFFCF6] text-[#301C10] text-[11px] font-bold border border-[#DFC9AC] transition shadow-xs active:scale-95"
+                    >
+                      <span>{preset.icon}</span>
+                      <span>+ {preset.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Current Links List */}
+              <div className="space-y-3">
+                {currentSocialLinks.map((link, idx) => (
+                  <div
+                    key={link.id || idx}
+                    className={`p-3.5 rounded-xl border transition-all ${
+                      link.isActive
+                        ? "bg-white border-[#DFC9AC] shadow-xs"
+                        : "bg-zinc-50 border-zinc-200 opacity-60"
+                    }`}
+                  >
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                      {/* Platform selector */}
+                      <div className="w-full sm:w-44 shrink-0">
+                        <label className="block text-[10px] font-bold text-[#8A6A53] mb-1">
+                          Platform
+                        </label>
+                        <select
+                          value={link.platform}
+                          onChange={(e) =>
+                            handleUpdateSocialLink(link.id, {
+                              platform: e.target.value as SocialPlatform,
+                            })
+                          }
+                          className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] font-bold focus:border-[#C99532] outline-none"
+                        >
+                          <option value="google">🌐 Google Profile / Review</option>
+                          <option value="instagram">📸 Instagram</option>
+                          <option value="facebook">📘 Facebook</option>
+                          <option value="whatsapp">💬 WhatsApp</option>
+                          <option value="tiktok">🎵 TikTok</option>
+                          <option value="youtube">▶️ YouTube</option>
+                          <option value="x">✖️ X (Twitter)</option>
+                          <option value="website">🔗 Website</option>
+                          <option value="other">🌐 Other</option>
+                        </select>
+                      </div>
+
+                      {/* Display Label */}
+                      <div className="w-full sm:w-48 shrink-0">
+                        <label className="block text-[10px] font-bold text-[#8A6A53] mb-1">
+                          Button Text
+                        </label>
+                        <input
+                          type="text"
+                          value={link.label}
+                          onChange={(e) =>
+                            handleUpdateSocialLink(link.id, { label: e.target.value })
+                          }
+                          placeholder="Label e.g. Google Reviews"
+                          className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] font-bold focus:border-[#C99532] outline-none"
+                        />
+                      </div>
+
+                      {/* URL input */}
+                      <div className="flex-1 w-full min-w-0">
+                        <label className="block text-[10px] font-bold text-[#8A6A53] mb-1">
+                          Target URL / Profile Link
+                        </label>
+                        <input
+                          type="text"
+                          value={link.url}
+                          onChange={(e) =>
+                            handleUpdateSocialLink(link.id, { url: e.target.value })
+                          }
+                          placeholder="https://..."
+                          className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none font-mono"
+                        />
+                      </div>
+
+                      {/* Actions: Test, Toggle visibility, Delete */}
+                      <div className="flex items-center gap-1.5 self-end sm:self-center mt-2 sm:mt-4 shrink-0">
+                        {/* Test URL in new tab */}
+                        {link.url && (
+                          <a
+                            href={link.url.startsWith("http") ? link.url : `https://${link.url}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Test open profile in new tab"
+                            className="p-1.5 rounded-lg text-[#8A6A53] hover:text-[#301C10] hover:bg-[#FAF7F0] border border-transparent hover:border-[#DFC9AC] transition"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                        )}
+
+                        {/* Toggle active / hidden */}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateSocialLink(link.id, { isActive: !link.isActive })
+                          }
+                          title={link.isActive ? "Hide on customer menu" : "Show on customer menu"}
+                          className={`p-1.5 rounded-lg transition border ${
+                            link.isActive
+                              ? "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100"
+                              : "text-zinc-400 bg-zinc-100 border-zinc-300 hover:bg-zinc-200"
+                          }`}
+                        >
+                          {link.isActive ? (
+                            <Eye className="w-4 h-4" />
+                          ) : (
+                            <EyeOff className="w-4 h-4" />
+                          )}
+                        </button>
+
+                        {/* Delete Link button */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSocialLink(link.id)}
+                          title="Delete this link"
+                          className="p-1.5 rounded-lg text-rose-600 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {currentSocialLinks.length === 0 && (
+                  <div className="p-8 text-center bg-[#FAF7F0] rounded-xl border border-dashed border-[#DFC9AC] space-y-2">
+                    <Globe className="w-8 h-8 text-[#C99532]/60 mx-auto" />
+                    <p className="text-xs font-bold text-[#301C10]">No Social or Google Profiles Added</p>
+                    <p className="text-[11px] text-[#8A6A53]">
+                      Click any of the Quick Add buttons above to add Google Reviews, Instagram, Facebook, or WhatsApp.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1320,6 +1593,36 @@ export const CafeSettingsView: React.FC = () => {
                         </div>
                       </div>
 
+                      {/* Live Social & Google Reviews Preview in Smartphone */}
+                      <div className="pt-2 pb-1 border-t border-black/10 text-center">
+                        <span className="text-[9px] font-bold text-zinc-400 block mb-1">
+                          Social & Reviews (Live Menu Footer)
+                        </span>
+                        <div className="flex flex-wrap items-center justify-center gap-1">
+                          {currentSocialLinks.filter((l) => l.isActive).map((link) => (
+                            <span
+                              key={link.id}
+                              className="px-2 py-0.5 rounded-md text-[9px] font-bold text-[#FFFCF6] bg-[#0A0A0A] border border-[#E8B64F]/50 flex items-center gap-1 shadow-xs"
+                            >
+                              <span>
+                                {link.platform === "google"
+                                  ? "⭐"
+                                  : link.platform === "instagram"
+                                  ? "📸"
+                                  : link.platform === "facebook"
+                                  ? "📘"
+                                  : link.platform === "whatsapp"
+                                  ? "💬"
+                                  : link.platform === "tiktok"
+                                  ? "🎵"
+                                  : "🔗"}
+                              </span>
+                              <span className="truncate max-w-[80px]">{link.label}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
                       {/* Mockup Sticky Cart Bar */}
                       <div
                         className="p-2.5 rounded-xl shadow-lg flex items-center justify-between text-xs font-bold text-white mt-auto"
@@ -1339,26 +1642,31 @@ export const CafeSettingsView: React.FC = () => {
               ) : (
                 /* TABLE QR TENT CARD MOCKUP */
                 <div
-                  className="w-64 rounded-[28px] p-6 pt-7 pb-6 shadow-2xl flex flex-col items-center text-center space-y-4 border transition-all"
+                  className="w-64 rounded-[28px] p-6 pt-6 pb-6 shadow-2xl flex flex-col items-center text-center space-y-3.5 border transition-all"
                   style={{
-                    backgroundColor: "#2C190E",
+                    backgroundColor: "#000000",
                     color: "#FFFCF6",
                     borderColor: previewColors.accent || "#E8B64F",
                   }}
                 >
-                  {/* Large Stacked Brand Logo */}
-                  <div className="pt-1 pb-1 flex flex-col items-center justify-center">
+                  {/* Top Header Text (matching reference card) */}
+                  <div className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] text-[#FFFCF6]/90 select-none pt-0.5">
+                    {settings.qrHeaderTitle || "SCAN TO ORDER • TEA TIME"}
+                  </div>
+
+                  {/* Brand Logo - clean & balanced */}
+                  <div className="pt-0.5 pb-0.5 flex flex-col items-center justify-center">
                     {settings.logoUrl && !settings.logoUrl.includes("logo-horizontal") ? (
                       <img
                         src={settings.logoUrl}
                         alt={settings.cafeName || "Logo"}
-                        className="h-24 sm:h-28 max-h-32 max-w-[190px] w-auto object-contain select-none drop-shadow-md"
+                        className="h-16 max-h-20 max-w-[170px] w-auto object-contain select-none drop-shadow-md"
                       />
                     ) : (
                       <img
                         src="/assets/logo.png"
                         alt="TEA TIME"
-                        className="w-44 sm:w-48 h-auto object-contain select-none drop-shadow-md"
+                        className="h-16 max-h-20 w-auto object-contain select-none drop-shadow-md"
                       />
                     )}
                   </div>
@@ -1390,9 +1698,9 @@ export const CafeSettingsView: React.FC = () => {
                     className="pt-3 border-t border-[#E8B64F]/50 w-full text-[11px] italic leading-tight text-white/90"
                   >
                     <span>
-                      {!settings.qrFooterNote || settings.qrFooterNote.includes("Good tea brings people together")
+                      {(!settings.qrFooterNote || settings.qrFooterNote.toLowerCase().includes("good tea brings people together"))
                         ? "It's time for you!"
-                        : settings.qrFooterNote}
+                        : settings.qrFooterNote.replace(/^[☕\s\u2615\uFE0F]+/, "").trim() || "It's time for you!"}
                     </span>
                   </div>
                 </div>

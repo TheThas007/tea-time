@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useSearchParams, useParams, Link } from "react-router-dom";
 import { collection, query, where, getDocs, onSnapshot, doc } from "firebase/firestore";
-import { Search, AlertTriangle } from "lucide-react";
+import { Search, AlertTriangle, Globe, Star } from "lucide-react";
 import { db } from "../lib/firebase";
-import { MenuItem, Category, TableItem, CafeSettings } from "../types";
+import { MenuItem, Category, TableItem, CafeSettings, SocialLinkItem } from "../types";
 import { useCart } from "../context/CartContext";
 import { CustomerHeader } from "../components/customer/CustomerHeader";
 import { CategoryTabs } from "../components/customer/CategoryTabs";
@@ -381,6 +381,89 @@ export const CustomerMenuPage: React.FC = () => {
         : (cafeSettings?.logoUrl || tenantBusiness?.branding?.logoUrl || null),
     };
 
+    // Active social & Google review links in real-time
+    const socialLinksList = useMemo(() => {
+      // 1. From real-time cafeSettings (Tea Time or custom settings)
+      if (Array.isArray(cafeSettings?.socialLinks) && cafeSettings.socialLinks.length > 0) {
+        return (cafeSettings.socialLinks as SocialLinkItem[]).filter(
+          (l) => l.isActive !== false && l.url && l.url.trim().length > 0
+        );
+      }
+      // 2. From tenantBusiness if multi-tenant
+      const tenantItems = (tenantBusiness as any)?.socialLinkItems || (tenantBusiness?.socialLinks as any)?.items;
+      if (Array.isArray(tenantItems) && tenantItems.length > 0) {
+        return tenantItems.filter((l: SocialLinkItem) => l.isActive !== false && l.url && l.url.trim().length > 0);
+      }
+      // 3. Fallback: synthesize from googleReviewUrl / instagramUrl / facebookUrl / whatsapp
+      const synth: SocialLinkItem[] = [];
+      const gUrl = cafeSettings?.googleReviewUrl || tenantBusiness?.googleReviewUrl || (isTeaTime ? "https://maps.google.com/?q=Tea+Time+Vavuniya" : null);
+      if (gUrl) {
+        synth.push({ id: "g_rev", platform: "google", label: "Google Profile & Reviews", url: gUrl, isActive: true });
+      }
+      const igUrl = cafeSettings?.instagramUrl || tenantBusiness?.instagramUrl || (isTeaTime ? "https://www.instagram.com/teatime_vavuniya/" : null);
+      if (igUrl) {
+        synth.push({ id: "ig_prof", platform: "instagram", label: "Instagram", url: igUrl, isActive: true });
+      }
+      const fbUrl = cafeSettings?.facebookUrl || tenantBusiness?.facebookUrl || (isTeaTime ? "https://www.facebook.com/teatime.vavuniya/" : null);
+      if (fbUrl) {
+        synth.push({ id: "fb_prof", platform: "facebook", label: "Facebook", url: fbUrl, isActive: true });
+      }
+      const waPhone = cafeSettings?.whatsapp || tenantBusiness?.whatsapp || (isTeaTime ? "0764847081" : null);
+      if (waPhone) {
+        const cleanPhone = waPhone.replace(/[^0-9]/g, "");
+        const fullPhone = cleanPhone.startsWith("94") ? cleanPhone : (cleanPhone.startsWith("0") ? "94" + cleanPhone.slice(1) : "94" + cleanPhone);
+        synth.push({ id: "wa_chat", platform: "whatsapp", label: "WhatsApp", url: `https://wa.me/${fullPhone}`, isActive: true });
+      }
+      return synth;
+    }, [cafeSettings, tenantBusiness, isTeaTime]);
+
+    const formatSocialUrl = (url: string, platform: string) => {
+      const trimmed = (url || "").trim();
+      if (!trimmed) return "#";
+      if (platform === "whatsapp" && !trimmed.startsWith("http")) {
+        const digits = trimmed.replace(/[^0-9]/g, "");
+        const intl = digits.startsWith("94") ? digits : (digits.startsWith("0") ? "94" + digits.slice(1) : "94" + digits);
+        return `https://wa.me/${intl}`;
+      }
+      if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+        return `https://${trimmed}`;
+      }
+      return trimmed;
+    };
+
+    const renderSocialIcon = (platform: string) => {
+      switch (platform) {
+        case "google":
+          return <Star className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0" />;
+        case "instagram":
+          return (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-[#E8B64F] shrink-0">
+              <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+              <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+              <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+            </svg>
+          );
+        case "facebook":
+          return (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-[#E8B64F] shrink-0">
+              <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+            </svg>
+          );
+        case "whatsapp":
+          return (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-[#E8B64F] shrink-0">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+            </svg>
+          );
+        case "tiktok":
+          return <span className="text-xs">🎵</span>;
+        case "youtube":
+          return <span className="text-xs text-red-500 font-bold">▶</span>;
+        default:
+          return <Globe className="w-4 h-4 text-[#E8B64F] shrink-0" />;
+      }
+    };
+
     return (
       <div
         className="relative min-h-screen pb-24 overflow-x-hidden"
@@ -560,71 +643,23 @@ export const CustomerMenuPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5 w-full sm:w-auto flex-wrap">
-            <a
-              href="https://wa.me/94764847081?text=Hi%20Tea%20Time,%20I'm%20contacting%20you%20from%20the%20digital%20menu."
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#0A0A0A] hover:bg-[#23140B] text-[#FFFCF6] border border-[#E8B64F]/40 text-xs font-extrabold shadow-warm transition active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="w-4 h-4 text-[#E8B64F] shrink-0"
-                aria-hidden="true"
+          {/* Dynamic Real-time Social Media & Google Profile links */}
+          <div className="flex items-center justify-center gap-2.5 w-full flex-wrap">
+            {socialLinksList.map((link) => (
+              <a
+                key={link.id}
+                href={formatSocialUrl(link.url, link.platform)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#0A0A0A] hover:bg-[#23140B] text-[#FFFCF6] border text-xs font-extrabold shadow-warm transition active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
+                style={{
+                  borderColor: isTeaTime ? "#E8B64F66" : `${tenantTheme.accent}66`,
+                }}
               >
-                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-              </svg>
-              <span>WhatsApp</span>
-            </a>
-
-            <a
-              href="https://www.instagram.com/teatime_vavuniya/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#0A0A0A] hover:bg-[#23140B] text-[#FFFCF6] border border-[#E8B64F]/40 text-xs font-extrabold shadow-warm transition active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="w-4 h-4 text-[#E8B64F] shrink-0"
-                aria-hidden="true"
-              >
-                <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
-                <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-                <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
-              </svg>
-              <span>Instagram</span>
-            </a>
-
-            <a
-              href="https://www.facebook.com/teatime.vavuniya/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#0A0A0A] hover:bg-[#23140B] text-[#FFFCF6] border border-[#E8B64F]/40 text-xs font-extrabold shadow-warm transition active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="w-4 h-4 text-[#E8B64F] shrink-0"
-                aria-hidden="true"
-              >
-                <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
-              </svg>
-              <span>Facebook</span>
-            </a>
+                {renderSocialIcon(link.platform)}
+                <span>{link.label}</span>
+              </a>
+            ))}
           </div>
 
           {/* Kitchen & Staff Access */}

@@ -19,6 +19,11 @@ interface SingleProps {
   onClose: () => void;
 }
 
+const cleanQrFooterNote = (note?: string, fallback = "It's time for you!"): string => {
+  if (!note || note.toLowerCase().includes("good tea brings people together")) return fallback;
+  return note.replace(/^[☕\s\u2615\uFE0F]+/, "").trim() || fallback;
+};
+
 export const SingleTablePrintModal: React.FC<SingleProps> = ({
   businessName,
   businessSlug,
@@ -105,30 +110,38 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
           {/* Cardstock Tent Card */}
           <div
             id="printable-tent-card"
-            className="w-64 sm:w-72 rounded-[28px] p-6 pt-7 pb-6 shadow-2xl flex flex-col items-center text-center space-y-4 border transition-transform print-card-exact"
+            className="w-64 sm:w-72 rounded-[28px] p-6 pt-6 pb-6 shadow-2xl flex flex-col items-center text-center space-y-3.5 border transition-transform print-card-exact"
             style={{
-              backgroundColor: cardBg,
+              backgroundColor: isTeaTime ? "#000000" : cardBg,
               color: cardTextColor,
               borderColor: cardAccent,
             }}
           >
-            {/* Large Stacked Brand Logo */}
-            <div className="pt-1 pb-1 flex flex-col items-center justify-center">
+            {/* Top Header Text (matching exact reference card) */}
+            <div
+              className="text-[11px] sm:text-xs font-black uppercase tracking-[0.2em] select-none pt-0.5"
+              style={{ color: `${cardTextColor}EE` }}
+            >
+              {qrHeaderTitle || (isTeaTime ? "SCAN TO ORDER • TEA TIME" : `SCAN TO ORDER • ${businessName}`)}
+            </div>
+
+            {/* Brand Logo - clean & balanced */}
+            <div className="pt-0.5 pb-0.5 flex flex-col items-center justify-center">
               {logoUrl && !logoUrl.includes("logo-horizontal") ? (
                 <img
                   src={logoUrl}
                   alt={businessName}
-                  className="h-28 sm:h-32 max-h-36 max-w-[210px] w-auto object-contain select-none drop-shadow-md"
+                  className="h-16 sm:h-20 max-h-24 max-w-[190px] w-auto object-contain select-none drop-shadow-md"
                 />
               ) : isTeaTime ? (
                 <img
                   src="/assets/logo.png"
                   alt="TEA TIME"
-                  className="w-48 sm:w-52 h-auto object-contain select-none drop-shadow-md"
+                  className="h-16 sm:h-20 max-h-24 w-auto object-contain select-none drop-shadow-md"
                 />
               ) : (
                 <div
-                  className="text-2xl font-black tracking-wider uppercase"
+                  className="text-xl font-black tracking-wider uppercase"
                   style={{ color: cardAccent }}
                 >
                   {businessName}
@@ -140,7 +153,7 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
             <div className="bg-[#FFFCF6] p-3.5 rounded-2xl shadow-xl border border-[#DFC9AC]/60">
               <QRCodeSVG
                 value={qrUrl}
-                size={148}
+                size={144}
                 level="H"
                 includeMargin={false}
                 fgColor={isTeaTime ? "#2C190E" : (primaryColor || "#2C190E")}
@@ -172,9 +185,7 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
               }}
             >
               <span>
-                {!qrFooterNote || qrFooterNote.includes("Good tea brings people together")
-                  ? (isTeaTime ? "It's time for you!" : (qrFooterNote || "Enjoy your visit!"))
-                  : qrFooterNote}
+                {cleanQrFooterNote(qrFooterNote, isTeaTime ? "It's time for you!" : (qrFooterNote || "Enjoy your visit!"))}
               </span>
             </div>
           </div>
@@ -289,25 +300,32 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
             return (
               <div
                 key={table.id}
-                className="w-full rounded-[24px] p-5 shadow-lg flex flex-col items-center text-center space-y-3.5 border print:break-inside-avoid"
+                className="w-full rounded-[24px] p-5 shadow-lg flex flex-col items-center text-center space-y-3 border print:break-inside-avoid"
                 style={{
-                  backgroundColor: isTeaTime ? "#2C190E" : cardBg,
+                  backgroundColor: isTeaTime ? "#000000" : cardBg,
                   color: isTeaTime ? "#FFFCF6" : cardTextColor,
                   borderColor: isTeaTime ? "#E8B64F" : cardAccent,
                 }}
               >
-                <div className="pt-1 flex flex-col items-center justify-center">
+                {/* Top Header Text */}
+                <div
+                  className="text-[10px] font-black uppercase tracking-[0.18em] select-none text-white/90"
+                >
+                  {qrHeaderTitle || (isTeaTime ? "SCAN TO ORDER • TEA TIME" : `SCAN TO ORDER • ${businessName}`)}
+                </div>
+
+                <div className="pt-0.5 flex flex-col items-center justify-center">
                   {logoUrl && !logoUrl.includes("logo-horizontal") ? (
                     <img
                       src={logoUrl}
                       alt={businessName}
-                      className="h-20 w-auto max-w-[170px] object-contain select-none drop-shadow"
+                      className="h-14 sm:h-16 w-auto max-w-[150px] object-contain select-none drop-shadow"
                     />
                   ) : isTeaTime ? (
                     <img
                       src="/assets/logo.png"
                       alt="TEA TIME"
-                      className="w-36 sm:w-40 h-auto object-contain select-none drop-shadow"
+                      className="h-14 sm:h-16 w-auto object-contain select-none drop-shadow"
                     />
                   ) : (
                     <div
@@ -349,9 +367,7 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
                   className="pt-2.5 border-t border-[#E8B64F]/50 w-full text-[11px] italic leading-tight text-white/90"
                 >
                   <span>
-                    {!qrFooterNote || qrFooterNote.includes("Good tea brings people together")
-                      ? (isTeaTime ? "It's time for you!" : (qrFooterNote || "Enjoy your visit!"))
-                      : qrFooterNote}
+                    {cleanQrFooterNote(qrFooterNote, isTeaTime ? "It's time for you!" : (qrFooterNote || "Enjoy your visit!"))}
                   </span>
                 </div>
               </div>

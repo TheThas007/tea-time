@@ -2678,15 +2678,21 @@ export class PlatformEngine {
         .slice(0, 240),
       socialLinks: {
         instagram: cleanUrl(
-          input.socialLinks?.instagram ?? business.socialLinks?.instagram
+          input.socialLinks?.instagram ?? (input as any).instagramUrl ?? business.socialLinks?.instagram
         ),
         facebook: cleanUrl(
-          input.socialLinks?.facebook ?? business.socialLinks?.facebook
+          input.socialLinks?.facebook ?? (input as any).facebookUrl ?? business.socialLinks?.facebook
         ),
         googleReview: cleanUrl(
-          input.socialLinks?.googleReview ?? business.socialLinks?.googleReview
+          input.socialLinks?.googleReview ?? (input as any).googleReviewUrl ?? business.socialLinks?.googleReview
         ),
       },
+      socialLinkItems: Array.isArray((input as any).socialLinks)
+        ? (input as any).socialLinks
+        : ((input as any).socialLinkItems ?? (business as any).socialLinkItems ?? []),
+      googleReviewUrl: cleanUrl((input as any).googleReviewUrl ?? (business as any).googleReviewUrl ?? input.socialLinks?.googleReview),
+      instagramUrl: cleanUrl((input as any).instagramUrl ?? (business as any).instagramUrl ?? input.socialLinks?.instagram),
+      facebookUrl: cleanUrl((input as any).facebookUrl ?? (business as any).facebookUrl ?? input.socialLinks?.facebook),
     };
 
     await this.store.updateDoc(`businesses/${businessId}`, {

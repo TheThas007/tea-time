@@ -43,8 +43,13 @@ export const TableManager: React.FC = () => {
       (snap) => {
         if (snap.exists()) {
           const data = snap.data();
-          if (!data.qrFooterNote || data.qrFooterNote.includes("Good tea brings people together")) {
+          if (!data.qrFooterNote || data.qrFooterNote.toLowerCase().includes("good tea brings people together")) {
             data.qrFooterNote = "It's time for you!";
+          } else {
+            data.qrFooterNote = data.qrFooterNote.replace(/^[☕\s\u2615\uFE0F]+/, "").trim() || "It's time for you!";
+          }
+          if (!data.qrHeaderTitle) {
+            data.qrHeaderTitle = "SCAN TO ORDER • TEA TIME";
           }
           setSettings({ ...INITIAL_SETTINGS, ...data } as CafeSettings);
         }
@@ -351,26 +356,31 @@ export const TableManager: React.FC = () => {
               {/* Dynamic Tent Card Recreation matching exact uploaded 4x6" card style */}
               <div
                 id="printable-tent-card"
-                className="w-64 sm:w-72 rounded-[28px] p-6 pt-7 pb-6 shadow-2xl flex flex-col items-center text-center space-y-4 border print-card-exact"
+                className="w-64 sm:w-72 rounded-[28px] p-6 pt-6 pb-6 shadow-2xl flex flex-col items-center text-center space-y-3.5 border print-card-exact"
                 style={{
-                  backgroundColor: "#2C190E",
+                  backgroundColor: "#000000",
                   color: "#FFFCF6",
                   borderColor: settings.accentColor || "#E8B64F",
                 }}
               >
-                {/* Large Stacked Brand Logo */}
-                <div className="pt-1 pb-1 flex flex-col items-center justify-center">
+                {/* Top Header Text (matching exact reference card) */}
+                <div className="text-[11px] sm:text-xs font-black uppercase tracking-[0.2em] text-[#FFFCF6]/90 select-none pt-0.5">
+                  {settings.qrHeaderTitle || "SCAN TO ORDER • TEA TIME"}
+                </div>
+
+                {/* Brand Logo - clean & balanced */}
+                <div className="pt-0.5 pb-0.5 flex flex-col items-center justify-center">
                   {settings.logoUrl && !settings.logoUrl.includes("logo-horizontal") ? (
                     <img
                       src={settings.logoUrl}
                       alt={settings.cafeName || "Logo"}
-                      className="h-28 sm:h-32 max-h-36 max-w-[210px] w-auto object-contain select-none drop-shadow-md"
+                      className="h-16 sm:h-20 max-h-24 max-w-[190px] w-auto object-contain select-none drop-shadow-md"
                     />
                   ) : (
                     <img
                       src="/assets/logo.png"
                       alt="TEA TIME"
-                      className="w-48 sm:w-52 h-auto object-contain select-none drop-shadow-md"
+                      className="h-16 sm:h-20 max-h-24 w-auto object-contain select-none drop-shadow-md"
                     />
                   )}
                 </div>
@@ -379,7 +389,7 @@ export const TableManager: React.FC = () => {
                 <div className="bg-[#FFFCF6] p-3.5 rounded-2xl shadow-xl border border-[#DFC9AC]/60">
                   <QRCodeSVG
                     value={getTableMenuUrl(previewTable.token)}
-                    size={148}
+                    size={144}
                     level="H"
                     includeMargin={false}
                     fgColor="#2C190E"
@@ -404,9 +414,9 @@ export const TableManager: React.FC = () => {
                   className="pt-3 border-t border-[#E8B64F]/50 w-full text-xs italic tracking-wide text-[#FFFCF6]/90"
                 >
                   <span>
-                    {!settings.qrFooterNote || settings.qrFooterNote.includes("Good tea brings people together")
+                    {(!settings.qrFooterNote || settings.qrFooterNote.toLowerCase().includes("good tea brings people together"))
                       ? "It's time for you!"
-                      : settings.qrFooterNote}
+                      : settings.qrFooterNote.replace(/^[☕\s\u2615\uFE0F]+/, "").trim() || "It's time for you!"}
                   </span>
                 </div>
               </div>
