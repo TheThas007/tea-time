@@ -854,13 +854,49 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
       try {
         const catSnap = await getDocs(collection(db, `businesses/${bId}/categories`));
         if (!catSnap.empty) {
-          categories = catSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Category));
+          categories = catSnap.docs
+            .map((d) => {
+              const data = d.data();
+              return {
+                id: d.id,
+                name: data.name || "Category",
+                sortOrder: data.sortOrder ?? data.displayOrder ?? 0,
+                icon: data.icon || "🍽️",
+              } as Category;
+            })
+            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
         }
         const prodSnap = await getDocs(collection(db, `businesses/${bId}/products`));
         if (!prodSnap.empty) {
-          products = prodSnap.docs.map((d) => ({ id: d.id, ...d.data() } as MenuItem));
+          products = prodSnap.docs
+            .map((d) => {
+              const data = d.data();
+              const pRupees =
+                data.priceRupees || (data.priceMinor ? Math.round(data.priceMinor / 100) : 0);
+              return {
+                id: d.id,
+                name: data.name || "Product",
+                category: data.category || data.categoryId || "General",
+                categoryId: data.categoryId || data.category || "cat_general",
+                priceMinor: data.priceMinor || pRupees * 100,
+                priceRupees: pRupees,
+                price: pRupees,
+                priceDisplay: `Rs. ${pRupees}`,
+                description: data.description || "",
+                imageUrl: data.imageUrl || data.image || null,
+                image: data.imageUrl || data.image || null,
+                isAvailable: data.isAvailable !== false,
+                available: data.isAvailable !== false,
+                displayOrder: data.displayOrder ?? data.sortOrder ?? 0,
+                isArchived: !!data.archived || !!data.isArchived,
+                sugarSelection: data.sugarSelection,
+              } as unknown as MenuItem;
+            })
+            .filter((i: any) => !i.isArchived && !i.archived);
         }
-      } catch {}
+      } catch (err) {
+        console.warn("Tenant catalog fetch fallback:", err);
+      }
     }
 
     return {

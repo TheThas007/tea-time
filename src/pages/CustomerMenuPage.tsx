@@ -25,6 +25,7 @@ import { platformApi } from "../lib/apiClient";
 export const CustomerMenuPage: React.FC = () => {
   const { businessSlug: rawSlug } = useParams<{ businessSlug?: string }>();
   const businessSlug = rawSlug ? rawSlug.toLowerCase().trim() : "teatime";
+  const isTeaTime = !rawSlug || businessSlug === "teatime" || businessSlug === "biz_teatime";
 
   const [searchParams, setSearchParams] = useSearchParams();
   const isDemoMode = searchParams.get("demo") === "true";
@@ -47,15 +48,24 @@ export const CustomerMenuPage: React.FC = () => {
     customerOrderIds,
   } = useCart();
 
-  const [categories, setCategories] = useState<Category[]>(INITIAL_CATEGORIES);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(INITIAL_MENU_ITEMS);
+  const [categories, setCategories] = useState<Category[]>(() => (isTeaTime ? INITIAL_CATEGORIES : []));
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(() => (isTeaTime ? INITIAL_MENU_ITEMS : []));
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [tableLoading, setTableLoading] = useState<boolean>(true);
   const [tableError, setTableError] = useState<string | null>(null);
   const [cafeSettings, setCafeSettings] = useState<CafeSettings | null>(null);
 
-  const isTeaTime = !businessSlug || businessSlug === "teatime" || tenantBusiness?.slug === "teatime";
+  // Reset or initialize menu and categories whenever the business slug changes
+  useEffect(() => {
+    if (!isTeaTime) {
+      setCategories([]);
+      setMenuItems([]);
+    } else {
+      setCategories(INITIAL_CATEGORIES);
+      setMenuItems(INITIAL_MENU_ITEMS);
+    }
+  }, [businessSlug, isTeaTime]);
 
   // Real-time listener for cafe settings or multi-tenant business settings
   useEffect(() => {
@@ -150,11 +160,16 @@ export const CustomerMenuPage: React.FC = () => {
           }
         }
 
-        if (res.categories && res.categories.length > 0) {
-          setCategories(res.categories);
-        }
-        if (res.products && res.products.length > 0) {
-          setMenuItems(res.products);
+        if (!isTeaTime) {
+          setCategories(res.categories || []);
+          setMenuItems(res.products || []);
+        } else {
+          if (res.categories && res.categories.length > 0) {
+            setCategories(res.categories);
+          }
+          if (res.products && res.products.length > 0) {
+            setMenuItems(res.products);
+          }
         }
         if (res.table) {
           setCurrentTable({
@@ -304,21 +319,27 @@ export const CustomerMenuPage: React.FC = () => {
 
   // Real-time listener for Menu Items
   useEffect(() => {
-    if (!isTeaTime && tenantBusiness?.id) {
-      const prodColl = collection(db, "businesses", tenantBusiness.id, "products");
+    if (!isTeaTime) {
+      const bId = tenantBusiness?.id || businessSlug;
+      if (!bId) {
+        setMenuItems([]);
+        return;
+      }
+      const prodColl = collection(db, "businesses", bId, "products");
       const unsub = onSnapshot(
         prodColl,
         (snap) => {
-          if (!snap.empty) {
-            const items = snap.docs.map((d) => {
+          const items = snap.docs
+            .map((d) => {
               const data = d.data();
-              const pRupees = data.priceRupees || (data.priceMinor ? Math.round(data.priceMinor / 100) : 0);
+              const pRupees =
+                data.priceRupees || (data.priceMinor ? Math.round(data.priceMinor / 100) : 0);
               return {
                 id: d.id,
                 name: data.name || "Product",
                 category: data.category || data.categoryId || "General",
                 categoryId: data.categoryId || data.category || "cat_general",
-                priceMinor: data.priceMinor || (pRupees * 100),
+                priceMinor: data.priceMinor || pRupees * 100,
                 priceRupees: pRupees,
                 price: pRupees,
                 priceDisplay: `Rs. ${pRupees}`,
@@ -327,16 +348,17 @@ export const CustomerMenuPage: React.FC = () => {
                 image: data.imageUrl || data.image || null,
                 isAvailable: data.isAvailable !== false,
                 available: data.isAvailable !== false,
-                displayOrder: data.displayOrder ?? 0,
-                isArchived: !!data.archived,
+                displayOrder: data.displayOrder ?? data.sortOrder ?? 0,
+                isArchived: !!data.archived || !!data.isArchived,
                 sugarSelection: data.sugarSelection,
               } as unknown as MenuItem;
-            }).filter((i: any) => !i.isArchived && !i.archived);
-            setMenuItems(items);
-          }
+            })
+            .filter((i: any) => !i.isArchived && !i.archived);
+          setMenuItems(items);
         },
         (err) => {
           console.warn("Tenant products listener notice:", err);
+          setMenuItems([]);
         }
       );
       return () => unsub();
@@ -356,30 +378,36 @@ export const CustomerMenuPage: React.FC = () => {
       );
       return () => unsub();
     }
-  }, [isTeaTime, tenantBusiness?.id]);
+  }, [isTeaTime, tenantBusiness?.id, businessSlug]);
 
   // Real-time listener for Categories
   useEffect(() => {
-    if (!isTeaTime && tenantBusiness?.id) {
-      const catColl = collection(db, "businesses", tenantBusiness.id, "categories");
+    if (!isTeaTime) {
+      const bId = tenantBusiness?.id || businessSlug;
+      if (!bId) {
+        setCategories([]);
+        return;
+      }
+      const catColl = collection(db, "businesses", bId, "categories");
       const unsub = onSnapshot(
         catColl,
         (snap) => {
-          if (!snap.empty) {
-            const cats = snap.docs.map((d) => {
+          const cats = snap.docs
+            .map((d) => {
               const data = d.data();
               return {
                 id: d.id,
                 name: data.name || "Category",
-                sortOrder: data.sortOrder ?? 0,
+                sortOrder: data.sortOrder ?? data.displayOrder ?? 0,
                 icon: data.icon || "🍽️",
               } as Category;
-            }).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-            setCategories(cats);
-          }
+            })
+            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+          setCategories(cats);
         },
         (err) => {
           console.warn("Tenant categories listener notice:", err);
+          setCategories([]);
         }
       );
       return () => unsub();
@@ -399,7 +427,7 @@ export const CustomerMenuPage: React.FC = () => {
       );
       return () => unsub();
     }
-  }, [isTeaTime, tenantBusiness?.id]);
+  }, [isTeaTime, tenantBusiness?.id, businessSlug]);
 
   // Filtered & deduplicated menu items based on category and case-insensitive search
   const filteredProducts = useMemo(() => {
@@ -438,7 +466,11 @@ export const CustomerMenuPage: React.FC = () => {
 
   const categoryTabItems = useMemo(() => {
     const iconMap = new Map<string, string>();
-    iconMap.set("all", "/assets/favicon.png");
+    if (isTeaTime) {
+      iconMap.set("all", "/assets/favicon.png");
+    } else if (tenantBusiness?.branding?.logoUrl) {
+      iconMap.set("all", tenantBusiness.branding.logoUrl);
+    }
 
     menuItems.forEach((m) => {
       const primaryImg = getProductImages(m)[0];
@@ -637,8 +669,8 @@ export const CustomerMenuPage: React.FC = () => {
         </div>
       )}
 
-      {/* Welcome Screen (shown once per browser tab session until "Explore Our Menu" is clicked) */}
-      {showWelcome && (
+      {/* Welcome Screen (shown once per browser tab session only for Tea Time until "Explore Our Menu" is clicked) */}
+      {showWelcome && isTeaTime && (
         <WelcomeScreen
           onExplore={handleDismissWelcome}
           tableNumber={welcomeTableLabel}
@@ -725,19 +757,25 @@ export const CustomerMenuPage: React.FC = () => {
         {/* Product Cards Grid: 2 columns on mobile (untouched), 3 on iPad, 4 on Laptop */}
         {filteredProducts.length === 0 ? (
           <div className="text-center py-12 md:py-16 bg-[#FFFCF6] rounded-2xl border border-dashed border-[#DFC9AC] p-6 space-y-2 shadow-warm">
-            <p className="text-sm md:text-base font-bold text-[#301C10]">No items found</p>
-            <p className="text-xs md:text-sm text-[#8A6A53]">
-              Try searching for something else or browse another category.
+            <p className="text-sm md:text-base font-bold text-[#301C10]">
+              {menuItems.length === 0 ? "No menu items available yet" : "No items found"}
             </p>
-            <button
-              onClick={() => {
-                setSearchQuery("");
-                setActiveCategory("All");
-              }}
-              className="mt-2 px-4 py-1.5 md:px-5 md:py-2 rounded-lg bg-[#E8B64F] text-[#1A0F08] hover:bg-[#d9a53d] text-xs md:text-sm font-extrabold transition shadow-warm"
-            >
-              Reset filters
-            </button>
+            <p className="text-xs md:text-sm text-[#8A6A53]">
+              {menuItems.length === 0
+                ? "This store has not added any products to its menu yet. Please check back later!"
+                : "Try searching for something else or browse another category."}
+            </p>
+            {menuItems.length > 0 && (
+              <button
+                onClick={() => {
+                  setSearchQuery("");
+                  setActiveCategory("All");
+                }}
+                className="mt-2 px-4 py-1.5 md:px-5 md:py-2 rounded-lg bg-[#E8B64F] text-[#1A0F08] hover:bg-[#d9a53d] text-xs md:text-sm font-extrabold transition shadow-warm"
+              >
+                Reset filters
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-5 lg:gap-6 pt-1">
@@ -762,7 +800,9 @@ export const CustomerMenuPage: React.FC = () => {
               Connect with us
             </span>
             <p className="text-xs font-semibold text-[#301C10] mt-0.5">
-              Follow TEA TIME for daily specials & updates
+              {isTeaTime
+                ? "Follow TEA TIME for daily specials & updates"
+                : `Follow ${tenantBusiness?.name || "us"} for daily specials & updates`}
             </p>
           </div>
 
