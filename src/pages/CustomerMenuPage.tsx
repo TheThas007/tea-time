@@ -210,7 +210,10 @@ export const CustomerMenuPage: React.FC = () => {
 
           if (!tableData.active) {
             if (isMounted) {
-              setTableError(`Table ${tableData.number} is currently marked inactive by staff.`);
+              const tableLabel = tableData.number.toLowerCase().startsWith("table ")
+                ? tableData.number
+                : `Table ${tableData.number}`;
+              setTableError(`${tableLabel} is currently marked inactive by staff.`);
               setCurrentTable(null);
             }
           } else {
@@ -574,23 +577,12 @@ export const CustomerMenuPage: React.FC = () => {
         )}
         {/* Table Token Alert if invalid or missing */}
         {tableError && (
-          <div className="bg-[#FFFCF6] border border-[#DFC9AC] rounded-2xl p-4 shadow-warm text-xs md:text-sm text-[#301C10] space-y-2">
+          <div className="bg-[#FFFCF6] border border-[#DFC9AC] rounded-2xl p-4 shadow-warm text-xs md:text-sm text-[#301C10] space-y-1.5">
             <div className="flex items-center gap-2 font-bold text-[#301C10]">
               <AlertTriangle className="w-4 h-4 text-[#E8B64F]" />
               <span>Table Verification Notice</span>
             </div>
             <p className="text-[#8A6A53]">{tableError}</p>
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                onClick={() => {
-                  setSearchParams({ table: "tbl_07_k8j3m" });
-                  setTableToken("tbl_07_k8j3m");
-                }}
-                className="px-3 py-1.5 rounded-lg bg-[#E8B64F] text-[#1A0F08] font-extrabold hover:bg-[#d9a53d] transition shadow-warm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
-              >
-                Use Table 07 (Demo)
-              </button>
-            </div>
           </div>
         )}
 
