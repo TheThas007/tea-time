@@ -16,12 +16,25 @@ interface SingleProps {
   qrHeaderTitle?: string;
   qrSubtitle?: string;
   qrFooterNote?: string;
+  qrLogoSize?: number | "small" | "medium" | "large" | "xlarge" | "huge" | string;
   onClose: () => void;
 }
 
-const cleanQrFooterNote = (note?: string, fallback = "It's time for you!"): string => {
-  if (!note || note.toLowerCase().includes("good tea brings people together")) return fallback;
-  return note.replace(/^[☕\s\u2615\uFE0F]+/, "").trim() || fallback;
+export function getQrLogoHeight(size?: number | string): number {
+  if (typeof size === "number") return Math.min(Math.max(size, 40), 180);
+  if (!size) return 112; // Default to prominent size matching original 4x6" card
+  if (size === "small" || size === "compact") return 64;
+  if (size === "medium" || size === "default") return 92;
+  if (size === "large" || size === "big") return 116;
+  if (size === "xlarge" || size === "extrabig") return 138;
+  if (size === "huge" || size === "max") return 160;
+  const parsed = parseInt(String(size), 10);
+  return isNaN(parsed) ? 112 : Math.min(Math.max(parsed, 40), 180);
+}
+
+const cleanQrFooterNote = (note?: string, fallback = "☕ Good tea brings people together."): string => {
+  if (!note || !note.trim()) return fallback;
+  return note;
 };
 
 export const SingleTablePrintModal: React.FC<SingleProps> = ({
@@ -35,7 +48,8 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
   logoUrl,
   qrHeaderTitle,
   qrSubtitle = "SCAN TO ORDER",
-  qrFooterNote = "It's time for you!",
+  qrFooterNote = "☕ Good tea brings people together.",
+  qrLogoSize = 112,
   onClose,
 }) => {
   const origin = window.location.origin;
@@ -45,7 +59,7 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
     window.print();
   };
 
-  const isTeaTime = businessSlug === "teatime";
+  const isTeaTime = !businessSlug || businessSlug === "teatime";
   const cardBg = isTeaTime ? "#2C190E" : (headerBackgroundColor || primaryColor || "#050F2A");
   const cardTextColor = isTeaTime ? "#FFFCF6" : (headerTextColor || "#FFFCF6");
   const cardAccent = isTeaTime ? "#E8B64F" : (accentColor || "#7BBBFF");
@@ -112,32 +126,36 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
             id="printable-tent-card"
             className="w-64 sm:w-72 rounded-[28px] p-6 pt-6 pb-6 shadow-2xl flex flex-col items-center text-center space-y-3.5 border transition-transform print-card-exact"
             style={{
-              backgroundColor: isTeaTime ? "#000000" : cardBg,
+              backgroundColor: isTeaTime ? "#2C190E" : cardBg,
               color: cardTextColor,
-              borderColor: cardAccent,
+              borderColor: isTeaTime ? "#4A290F" : cardAccent,
             }}
           >
-            {/* Top Header Text (matching exact reference card) */}
-            <div
-              className="text-[11px] sm:text-xs font-black uppercase tracking-[0.2em] select-none pt-0.5"
-              style={{ color: `${cardTextColor}EE` }}
-            >
-              {qrHeaderTitle || (isTeaTime ? "SCAN TO ORDER • TEA TIME" : `SCAN TO ORDER • ${businessName}`)}
-            </div>
+            {/* Optional Top Header Text (only if explicitly specified) */}
+            {qrHeaderTitle && qrHeaderTitle.trim().length > 0 && (
+              <div
+                className="text-[11px] sm:text-xs font-black uppercase tracking-[0.2em] select-none pt-0.5"
+                style={{ color: `${cardTextColor}EE` }}
+              >
+                {qrHeaderTitle}
+              </div>
+            )}
 
-            {/* Brand Logo - clean & balanced */}
-            <div className="pt-0.5 pb-0.5 flex flex-col items-center justify-center">
+            {/* Brand Logo - customizable size from admin panel */}
+            <div className="pt-1 pb-1 flex flex-col items-center justify-center">
               {logoUrl && !logoUrl.includes("logo-horizontal") ? (
                 <img
                   src={logoUrl}
                   alt={businessName}
-                  className="h-16 sm:h-20 max-h-24 max-w-[190px] w-auto object-contain select-none drop-shadow-md"
+                  style={{ height: `${getQrLogoHeight(qrLogoSize)}px`, maxHeight: `${getQrLogoHeight(qrLogoSize) + 20}px` }}
+                  className="max-w-[210px] w-auto object-contain select-none drop-shadow-md transition-all"
                 />
               ) : isTeaTime ? (
                 <img
                   src="/assets/logo.png"
                   alt="TEA TIME"
-                  className="h-16 sm:h-20 max-h-24 w-auto object-contain select-none drop-shadow-md"
+                  style={{ height: `${getQrLogoHeight(qrLogoSize)}px`, maxHeight: `${getQrLogoHeight(qrLogoSize) + 20}px` }}
+                  className="max-w-[210px] w-auto object-contain select-none drop-shadow-md transition-all"
                 />
               ) : (
                 <div
@@ -179,13 +197,13 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
 
             {/* Footer Slogan / Tagline with Divider Line */}
             <div
-              className="pt-3 border-t border-[#E8B64F]/50 w-full text-xs italic tracking-wide"
+              className="pt-3 border-t border-[#E8B64F]/40 w-full text-xs italic tracking-wide"
               style={{
                 color: `${cardTextColor}EE`,
               }}
             >
               <span>
-                {cleanQrFooterNote(qrFooterNote, isTeaTime ? "It's time for you!" : (qrFooterNote || "Enjoy your visit!"))}
+                {cleanQrFooterNote(qrFooterNote, isTeaTime ? "☕ Good tea brings people together." : (qrFooterNote || "Enjoy your visit!"))}
               </span>
             </div>
           </div>
@@ -230,6 +248,7 @@ interface BatchProps {
   qrHeaderTitle?: string;
   qrSubtitle?: string;
   qrFooterNote?: string;
+  qrLogoSize?: number | "small" | "medium" | "large" | "xlarge" | "huge" | string;
   onClose: () => void;
 }
 
@@ -244,7 +263,8 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
   logoUrl,
   qrHeaderTitle,
   qrSubtitle = "SCAN TO ORDER",
-  qrFooterNote = "It's time for you!",
+  qrFooterNote = "☕ Good tea brings people together.",
+  qrLogoSize = 112,
   onClose,
 }) => {
   const origin = window.location.origin;
@@ -253,10 +273,10 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
     window.print();
   };
 
-  const isTeaTime = businessSlug === "teatime";
-  const cardBg = headerBackgroundColor || primaryColor || (isTeaTime ? "#2C190E" : "#050F2A");
-  const cardTextColor = headerTextColor || "#FFFCF6";
-  const cardAccent = accentColor || (isTeaTime ? "#E8B64F" : "#7BBBFF");
+  const isTeaTime = !businessSlug || businessSlug === "teatime";
+  const cardBg = isTeaTime ? "#2C190E" : (headerBackgroundColor || primaryColor || "#050F2A");
+  const cardTextColor = isTeaTime ? "#FFFCF6" : (headerTextColor || "#FFFCF6");
+  const cardAccent = isTeaTime ? "#E8B64F" : (accentColor || "#7BBBFF");
 
   return (
     <div className="fixed inset-0 z-50 bg-[#2C190E]/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn print:p-0 print:bg-white print:fixed print:inset-0">
@@ -302,30 +322,34 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
                 key={table.id}
                 className="w-full rounded-[24px] p-5 shadow-lg flex flex-col items-center text-center space-y-3 border print:break-inside-avoid"
                 style={{
-                  backgroundColor: isTeaTime ? "#000000" : cardBg,
-                  color: isTeaTime ? "#FFFCF6" : cardTextColor,
-                  borderColor: isTeaTime ? "#E8B64F" : cardAccent,
+                  backgroundColor: cardBg,
+                  color: cardTextColor,
+                  borderColor: isTeaTime ? "#4A290F" : cardAccent,
                 }}
               >
-                {/* Top Header Text */}
-                <div
-                  className="text-[10px] font-black uppercase tracking-[0.18em] select-none text-white/90"
-                >
-                  {qrHeaderTitle || (isTeaTime ? "SCAN TO ORDER • TEA TIME" : `SCAN TO ORDER • ${businessName}`)}
-                </div>
+                {/* Optional Top Header Text */}
+                {qrHeaderTitle && qrHeaderTitle.trim().length > 0 && (
+                  <div
+                    className="text-[10px] font-black uppercase tracking-[0.18em] select-none text-white/90"
+                  >
+                    {qrHeaderTitle}
+                  </div>
+                )}
 
-                <div className="pt-0.5 flex flex-col items-center justify-center">
+                <div className="pt-1 flex flex-col items-center justify-center">
                   {logoUrl && !logoUrl.includes("logo-horizontal") ? (
                     <img
                       src={logoUrl}
                       alt={businessName}
-                      className="h-14 sm:h-16 w-auto max-w-[150px] object-contain select-none drop-shadow"
+                      style={{ height: `${Math.round(getQrLogoHeight(qrLogoSize) * 0.85)}px`, maxHeight: `${Math.round(getQrLogoHeight(qrLogoSize) * 0.85) + 15}px` }}
+                      className="w-auto max-w-[170px] object-contain select-none drop-shadow transition-all"
                     />
                   ) : isTeaTime ? (
                     <img
                       src="/assets/logo.png"
                       alt="TEA TIME"
-                      className="h-14 sm:h-16 w-auto object-contain select-none drop-shadow"
+                      style={{ height: `${Math.round(getQrLogoHeight(qrLogoSize) * 0.85)}px`, maxHeight: `${Math.round(getQrLogoHeight(qrLogoSize) * 0.85) + 15}px` }}
+                      className="w-auto max-w-[170px] object-contain select-none drop-shadow transition-all"
                     />
                   ) : (
                     <div
@@ -351,23 +375,23 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
                 <div className="space-y-0.5">
                   <h4
                     className="text-xl font-black tracking-wide"
-                    style={{ color: isTeaTime ? "#FFFCF6" : cardTextColor }}
+                    style={{ color: cardTextColor }}
                   >
                     {table.tableNumber}
                   </h4>
                   <p
                     className="text-[10px] font-black uppercase tracking-widest"
-                    style={{ color: isTeaTime ? "#E8B64F" : cardAccent }}
+                    style={{ color: cardAccent }}
                   >
                     {qrSubtitle || "SCAN TO ORDER"}
                   </p>
                 </div>
 
                 <div
-                  className="pt-2.5 border-t border-[#E8B64F]/50 w-full text-[11px] italic leading-tight text-white/90"
+                  className="pt-2.5 border-t border-[#E8B64F]/40 w-full text-[11px] italic leading-tight text-white/90"
                 >
                   <span>
-                    {cleanQrFooterNote(qrFooterNote, isTeaTime ? "It's time for you!" : (qrFooterNote || "Enjoy your visit!"))}
+                    {cleanQrFooterNote(qrFooterNote, isTeaTime ? "☕ Good tea brings people together." : (qrFooterNote || "Enjoy your visit!"))}
                   </span>
                 </div>
               </div>

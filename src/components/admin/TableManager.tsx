@@ -1,21 +1,21 @@
 import React, { useState, useEffect } from "react";
-import { 
-  collection, 
-  onSnapshot, 
-  addDoc, 
-  updateDoc, 
-  doc, 
-  serverTimestamp 
+import {
+  collection,
+  onSnapshot,
+  addDoc,
+  updateDoc,
+  doc,
+  serverTimestamp
 } from "firebase/firestore";
 import { QRCodeSVG } from "qrcode.react";
-import { 
-  Plus, 
-  RefreshCw, 
-  Printer, 
-  Eye, 
-  Check, 
-  X, 
-  Power, 
+import {
+  Plus,
+  RefreshCw,
+  Printer,
+  Eye,
+  Check,
+  X,
+  Power,
   ExternalLink,
   Download
 } from "lucide-react";
@@ -23,6 +23,7 @@ import { db } from "../../lib/firebase";
 import { TableItem, CafeSettings } from "../../types";
 import { Logo } from "../common/Logo";
 import { INITIAL_TABLES, INITIAL_SETTINGS } from "../../data/seedData";
+import { getQrLogoHeight } from "./PrintableTableCard";
 
 export const TableManager: React.FC = () => {
   const [tables, setTables] = useState<TableItem[]>([]);
@@ -43,14 +44,6 @@ export const TableManager: React.FC = () => {
       (snap) => {
         if (snap.exists()) {
           const data = snap.data();
-          if (!data.qrFooterNote || data.qrFooterNote.toLowerCase().includes("good tea brings people together")) {
-            data.qrFooterNote = "It's time for you!";
-          } else {
-            data.qrFooterNote = data.qrFooterNote.replace(/^[☕\s\u2615\uFE0F]+/, "").trim() || "It's time for you!";
-          }
-          if (!data.qrHeaderTitle) {
-            data.qrHeaderTitle = "SCAN TO ORDER • TEA TIME";
-          }
           setSettings({ ...INITIAL_SETTINGS, ...data } as CafeSettings);
         }
       },
@@ -175,9 +168,8 @@ export const TableManager: React.FC = () => {
           return (
             <div
               key={table.id}
-              className={`bg-[#FFFCF6] rounded-2xl border p-4 shadow-warm transition hover:shadow-warm-md space-y-4 ${
-                table.active ? "border-[#DFC9AC]" : "border-red-200 bg-red-50/20"
-              }`}
+              className={`bg-[#FFFCF6] rounded-2xl border p-4 shadow-warm transition hover:shadow-warm-md space-y-4 ${table.active ? "border-[#DFC9AC]" : "border-red-200 bg-red-50/20"
+                }`}
             >
               <div className="flex items-center justify-between">
                 <div>
@@ -191,11 +183,10 @@ export const TableManager: React.FC = () => {
 
                 <button
                   onClick={() => handleToggleTableActive(table)}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 transition ${
-                    table.active
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 transition ${table.active
                       ? "bg-emerald-100 text-emerald-800"
                       : "bg-red-100 text-red-800"
-                  }`}
+                    }`}
                   title={table.active ? "Click to deactivate table" : "Click to activate table"}
                 >
                   <Power className="w-3 h-3" />
@@ -358,29 +349,39 @@ export const TableManager: React.FC = () => {
                 id="printable-tent-card"
                 className="w-64 sm:w-72 rounded-[28px] p-6 pt-6 pb-6 shadow-2xl flex flex-col items-center text-center space-y-3.5 border print-card-exact"
                 style={{
-                  backgroundColor: "#000000",
+                  backgroundColor: settings.headerBackgroundColor || "#2C190E",
                   color: "#FFFCF6",
-                  borderColor: settings.accentColor || "#E8B64F",
+                  borderColor: settings.accentColor || "#4A290F",
                 }}
               >
-                {/* Top Header Text (matching exact reference card) */}
-                <div className="text-[11px] sm:text-xs font-black uppercase tracking-[0.2em] text-[#FFFCF6]/90 select-none pt-0.5">
-                  {settings.qrHeaderTitle || "SCAN TO ORDER • TEA TIME"}
-                </div>
+                {/* Optional Top Header Text */}
+                {settings.qrHeaderTitle && settings.qrHeaderTitle.trim().length > 0 && (
+                  <div className="text-[11px] sm:text-xs font-black uppercase tracking-[0.2em] text-[#FFFCF6]/90 select-none pt-0.5">
+                    {settings.qrHeaderTitle}
+                  </div>
+                )}
 
-                {/* Brand Logo - clean & balanced */}
-                <div className="pt-0.5 pb-0.5 flex flex-col items-center justify-center">
+                {/* Brand Logo - clean & balanced with custom size */}
+                <div className="pt-1 pb-1 flex flex-col items-center justify-center">
                   {settings.logoUrl && !settings.logoUrl.includes("logo-horizontal") ? (
                     <img
                       src={settings.logoUrl}
                       alt={settings.cafeName || "Logo"}
-                      className="h-16 sm:h-20 max-h-24 max-w-[190px] w-auto object-contain select-none drop-shadow-md"
+                      style={{
+                        height: `${getQrLogoHeight(settings.qrLogoSize)}px`,
+                        maxHeight: `${getQrLogoHeight(settings.qrLogoSize) + 20}px`,
+                      }}
+                      className="max-w-[210px] w-auto object-contain select-none drop-shadow-md transition-all"
                     />
                   ) : (
                     <img
                       src="/assets/logo.png"
                       alt="TEA TIME"
-                      className="h-16 sm:h-20 max-h-24 w-auto object-contain select-none drop-shadow-md"
+                      style={{
+                        height: `${getQrLogoHeight(settings.qrLogoSize)}px`,
+                        maxHeight: `${getQrLogoHeight(settings.qrLogoSize) + 20}px`,
+                      }}
+                      className="max-w-[210px] w-auto object-contain select-none drop-shadow-md transition-all"
                     />
                   )}
                 </div>
@@ -411,12 +412,10 @@ export const TableManager: React.FC = () => {
 
                 {/* Divider Line & Footer Slogan */}
                 <div
-                  className="pt-3 border-t border-[#E8B64F]/50 w-full text-xs italic tracking-wide text-[#FFFCF6]/90"
+                  className="pt-3 border-t border-[#E8B64F]/40 w-full text-xs italic tracking-wide text-[#FFFCF6]/90"
                 >
                   <span>
-                    {(!settings.qrFooterNote || settings.qrFooterNote.toLowerCase().includes("good tea brings people together"))
-                      ? "It's time for you!"
-                      : settings.qrFooterNote.replace(/^[☕\s\u2615\uFE0F]+/, "").trim() || "It's time for you!"}
+                    {settings.qrFooterNote || "☕ Good tea brings people together."}
                   </span>
                 </div>
               </div>

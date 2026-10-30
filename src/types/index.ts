@@ -136,6 +136,10 @@ export interface BusinessPublicProfile {
     textColor?: string;
     headerBackgroundColor?: string;
     headerTextColor?: string;
+    qrHeaderTitle?: string;
+    qrSubtitle?: string;
+    qrFooterNote?: string;
+    qrLogoSize?: number | "small" | "medium" | "large" | "xlarge" | "huge" | string;
   };
   phone: string;
   whatsapp: string;
@@ -268,11 +272,11 @@ export interface EffectiveAccessEvaluation {
   expiringWithin7Days: boolean;
   daysRemaining: number | null;
   reason?:
-    | "OK"
-    | "ARCHIVED"
-    | "SUSPENDED"
-    | "EXPIRED"
-    | "NOT_STARTED_YET";
+  | "OK"
+  | "ARCHIVED"
+  | "SUSPENDED"
+  | "EXPIRED"
+  | "NOT_STARTED_YET";
 }
 
 export interface SuperAdminBusinessRow {
@@ -341,10 +345,10 @@ export interface MenuItem extends MenuProduct {
   badge?: string; // e.g. "Wednesday Special"
   availabilityNote?: string; // e.g. "Wednesday only • Pre-order before 10:00 AM"
   imageMatchStatus?:
-    | "VERIFIED"
-    | "IMAGE_MISSING"
-    | "IMAGE_REVIEW_REQUIRED"
-    | "PRICE_REVIEW_REQUIRED";
+  | "VERIFIED"
+  | "IMAGE_MISSING"
+  | "IMAGE_REVIEW_REQUIRED"
+  | "PRICE_REVIEW_REQUIRED";
   createdAt?: any;
   updatedAt?: any;
 }
@@ -449,6 +453,7 @@ export interface CafeSettings {
   qrHeaderTitle?: string;
   qrSubtitle?: string;
   qrFooterNote?: string;
+  qrLogoSize?: number | "small" | "medium" | "large" | "xlarge" | "huge" | string;
   phone?: string;
   whatsapp?: string;
   address?: string;

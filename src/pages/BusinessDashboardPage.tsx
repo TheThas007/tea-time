@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useParams, Link } from "react-router-dom";
 import {
   UtensilsCrossed,
   Layers,
@@ -53,7 +53,7 @@ import {
   SocialPlatform,
 } from "../types";
 import { ForcePasswordChangeModal } from "../components/auth/ForcePasswordChangeModal";
-import { SingleTablePrintModal, BatchTablesPrintModal } from "../components/admin/PrintableTableCard";
+import { SingleTablePrintModal, BatchTablesPrintModal, getQrLogoHeight } from "../components/admin/PrintableTableCard";
 import { CategoryUpsertModal, ArchiveCategoryModal } from "../components/admin/CategoryModal";
 import { ProductModal } from "../components/admin/ProductModal";
 import { TableModal } from "../components/admin/TableModal";
@@ -64,6 +64,12 @@ type DashboardTab = "overview" | "orders" | "menu" | "categories" | "tables" | "
 
 export const BusinessDashboardPage: React.FC = () => {
   const navigate = useNavigate();
+  const { businessSlug } = useParams<{ businessSlug?: string }>();
+
+  // If URL explicitly asks for teatime admin, render Tea Time's admin dashboard directly
+  if (businessSlug === "teatime") {
+    return <AdminDashboardPage />;
+  }
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,7 +106,7 @@ export const BusinessDashboardPage: React.FC = () => {
   const [singlePrintTable, setSinglePrintTable] = useState<TableItem | null>(null);
   const [showBatchPrint, setShowBatchPrint] = useState(false);
 
-  // Settings form state (6 branding colors + logo + details)
+  // Settings form state (6 branding colors + logo + details + QR card settings)
   const [settingsForm, setSettingsForm] = useState({
     name: "",
     phone: "",
@@ -116,6 +122,10 @@ export const BusinessDashboardPage: React.FC = () => {
     textColor: "#050F2A",
     headerBackgroundColor: "#050F2A",
     headerTextColor: "#F2FDFF",
+    qrHeaderTitle: "",
+    qrSubtitle: "SCAN TO ORDER",
+    qrFooterNote: "☕ Good tea brings people together.",
+    qrLogoSize: 112 as number | string,
     socialLinks: [] as SocialLinkItem[],
   });
   const [savingSettings, setSavingSettings] = useState(false);
@@ -130,16 +140,49 @@ export const BusinessDashboardPage: React.FC = () => {
     setError(null);
     try {
       const session = await platformApi.getSessionContext();
-      if (session.claims.role === "SUPER_ADMIN") {
+      if (session.claims.role === "SUPER_ADMIN" && !businessSlug) {
         navigate("/super-admin");
         return;
       }
-      if (!session.business) {
+      if (!session.business && !businessSlug) {
         throw new Error("No business profile assigned to your account.");
       }
 
+      let b = session.business;
+
+      // If URL slug param is present (e.g. /ffgfgffg/admin), resolve that specific business
+      if (businessSlug && businessSlug !== "teatime") {
+        try {
+          const { getDoc, doc: fsDoc, collection: fsCol, query: fsQ, where: fsWhere, getDocs: fsGetDocs } = await import("firebase/firestore");
+          let targetBId = businessSlug;
+          const slugSnap = await getDoc(fsDoc(db, "businessSlugs", businessSlug)).catch(() => null);
+          if (slugSnap && slugSnap.exists()) {
+            targetBId = slugSnap.data().businessId || businessSlug;
+          }
+          const bSnap = await getDoc(fsDoc(db, "businesses", targetBId)).catch(() => null);
+          if (bSnap && bSnap.exists()) {
+            b = { id: bSnap.id, ...(bSnap.data() as any) } as any;
+          } else {
+            const qSlug = fsQ(fsCol(db, "businesses"), fsWhere("slug", "==", businessSlug));
+            const sSlug = await fsGetDocs(qSlug).catch(() => null);
+            if (sSlug && !sSlug.empty) {
+              b = { id: sSlug.docs[0].id, ...(sSlug.docs[0].data() as any) } as any;
+            }
+          }
+          if (b?.id && typeof window !== "undefined") {
+            localStorage.setItem("menyo_auth_businessId", b.id);
+          }
+        } catch (e) {
+          console.warn("Failed resolving business by slug param:", e);
+        }
+      }
+
+      if (!b) {
+        throw new Error(`Business "${businessSlug}" could not be found.`);
+      }
+
       setCurrentUser(session.user);
-      setBusiness(session.business);
+      setBusiness(b);
 
       if (session.claims.mustChangePassword) {
         setMustChangePassword(true);
@@ -148,7 +191,6 @@ export const BusinessDashboardPage: React.FC = () => {
       }
 
       // Populate settings form with business branding & defaults
-      const b = session.business;
       const isTeaTime = b.slug === "teatime";
 
       let initialSocialLinks: SocialLinkItem[] = [];
@@ -183,6 +225,10 @@ export const BusinessDashboardPage: React.FC = () => {
         textColor: b.branding?.textColor || (isTeaTime ? "#301C10" : "#050F2A"),
         headerBackgroundColor: b.branding?.headerBackgroundColor || (isTeaTime ? "#2C190E" : "#050F2A"),
         headerTextColor: b.branding?.headerTextColor || (isTeaTime ? "#FAF7F0" : "#F2FDFF"),
+        qrHeaderTitle: b.branding?.qrHeaderTitle ?? "",
+        qrSubtitle: b.branding?.qrSubtitle ?? "SCAN TO ORDER",
+        qrFooterNote: b.branding?.qrFooterNote ?? (isTeaTime ? "☕ Good tea brings people together." : "Enjoy your visit!"),
+        qrLogoSize: b.branding?.qrLogoSize ?? 112,
         socialLinks: initialSocialLinks,
       });
     } catch (err: any) {
@@ -281,6 +327,7 @@ export const BusinessDashboardPage: React.FC = () => {
       const fbLink = settingsForm.socialLinks.find((l) => l.platform === "facebook" && l.isActive);
 
       await platformApi.ownerUpdateSettings({
+        businessId: business?.id,
         name: settingsForm.name.trim(),
         phone: settingsForm.phone.trim() || undefined,
         whatsapp: settingsForm.whatsapp.trim() || undefined,
@@ -289,6 +336,10 @@ export const BusinessDashboardPage: React.FC = () => {
         instagramUrl: igLink?.url || settingsForm.instagramUrl.trim() || undefined,
         facebookUrl: fbLink?.url || settingsForm.facebookUrl.trim() || undefined,
         socialLinks: settingsForm.socialLinks,
+        qrHeaderTitle: settingsForm.qrHeaderTitle,
+        qrSubtitle: settingsForm.qrSubtitle,
+        qrFooterNote: settingsForm.qrFooterNote,
+        qrLogoSize: settingsForm.qrLogoSize,
         branding: {
           logoUrl: settingsForm.logoUrl.trim() || null,
           primaryColor: settingsForm.primaryColor,
@@ -297,8 +348,39 @@ export const BusinessDashboardPage: React.FC = () => {
           textColor: settingsForm.textColor,
           headerBackgroundColor: settingsForm.headerBackgroundColor,
           headerTextColor: settingsForm.headerTextColor,
+          qrHeaderTitle: settingsForm.qrHeaderTitle,
+          qrSubtitle: settingsForm.qrSubtitle,
+          qrFooterNote: settingsForm.qrFooterNote,
+          qrLogoSize: settingsForm.qrLogoSize,
         },
       });
+
+      // Update local state immediately for instant real-time feedback
+      setBusiness((prev: any) => ({
+        ...prev,
+        name: settingsForm.name.trim(),
+        phone: settingsForm.phone.trim(),
+        whatsapp: settingsForm.whatsapp.trim(),
+        address: settingsForm.address.trim(),
+        googleReviewUrl: gLink?.url || settingsForm.googleReviewUrl.trim(),
+        instagramUrl: igLink?.url || settingsForm.instagramUrl.trim(),
+        facebookUrl: fbLink?.url || settingsForm.facebookUrl.trim(),
+        socialLinks: settingsForm.socialLinks,
+        branding: {
+          ...prev?.branding,
+          logoUrl: settingsForm.logoUrl.trim() || null,
+          primaryColor: settingsForm.primaryColor,
+          accentColor: settingsForm.accentColor,
+          backgroundColor: settingsForm.backgroundColor,
+          textColor: settingsForm.textColor,
+          headerBackgroundColor: settingsForm.headerBackgroundColor,
+          headerTextColor: settingsForm.headerTextColor,
+          qrHeaderTitle: settingsForm.qrHeaderTitle,
+          qrSubtitle: settingsForm.qrSubtitle,
+          qrFooterNote: settingsForm.qrFooterNote,
+          qrLogoSize: settingsForm.qrLogoSize,
+        },
+      }));
       setSettingsSuccess(true);
       setTimeout(() => setSettingsSuccess(false), 3000);
     } catch (err: any) {
@@ -1837,6 +1919,128 @@ export const BusinessDashboardPage: React.FC = () => {
                 </div>
               </div>
 
+              {/* SECTION 4: TABLE QR CARD CUSTOMIZATION & LOGO SIZE */}
+              <div className="space-y-4 pt-2">
+                <div className="border-b border-[#050F2A]/10 pb-2">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[#050F2A] flex items-center gap-2">
+                    <QrCode className="w-4 h-4 text-[#7BBBFF]" />
+                    <span>4. Printable Table QR Card Customization</span>
+                  </h3>
+                  <p className="text-[11px] text-[#050F2A]/60 mt-0.5">
+                    Customize the text, slogan, and logo sizing printed on your 4×6" dining table tent cards.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* QR Header Title (Optional) */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-[#050F2A]/80">
+                      Top Header Banner (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={settingsForm.qrHeaderTitle}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, qrHeaderTitle: e.target.value })}
+                      placeholder="Leave blank for clean logo at top"
+                      className="w-full text-xs px-3 py-2 rounded-xl border border-[#050F2A]/15 bg-white text-[#050F2A] focus:outline-none focus:border-[#7BBBFF]"
+                    />
+                    <span className="text-[10px] text-[#050F2A]/50">Leave empty to display your brand logo prominently at the top.</span>
+                  </div>
+
+                  {/* QR Subtitle */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-[#050F2A]/80">
+                      Table Subtitle (Under Table Number)
+                    </label>
+                    <input
+                      type="text"
+                      value={settingsForm.qrSubtitle}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, qrSubtitle: e.target.value })}
+                      placeholder="SCAN TO ORDER"
+                      className="w-full text-xs px-3 py-2 rounded-xl border border-[#050F2A]/15 bg-white text-[#050F2A] focus:outline-none focus:border-[#7BBBFF]"
+                    />
+                  </div>
+                </div>
+
+                {/* Footer Slogan / Tagline */}
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#050F2A]/80">
+                    Footer Note / Slogan / Phone
+                  </label>
+                  <input
+                    type="text"
+                    value={settingsForm.qrFooterNote}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, qrFooterNote: e.target.value })}
+                    placeholder="e.g. ☕ Good tea brings people together. or Enjoy your visit!"
+                    className="w-full text-xs px-3 py-2 rounded-xl border border-[#050F2A]/15 bg-white text-[#050F2A] focus:outline-none focus:border-[#7BBBFF]"
+                  />
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {["☕ Good tea brings people together.", "Enjoy your visit!", "Need help? Ask our friendly staff"].map((preset, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setSettingsForm({ ...settingsForm, qrFooterNote: preset })}
+                        className="text-[10px] text-[#050F2A]/70 hover:text-[#050F2A] px-2 py-0.5 rounded bg-white border border-[#050F2A]/15"
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Table QR Logo Size Slider & Presets */}
+                <div className="p-4 bg-[#F2FDFF]/80 rounded-2xl border border-[#050F2A]/10 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-[#050F2A] block">
+                        Table QR Logo Size (Customizable & Big Logo Option)
+                      </span>
+                      <span className="text-[11px] text-[#050F2A]/60">
+                        Adjust how large and prominent your logo prints on table QR tent cards
+                      </span>
+                    </div>
+                    <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-lg bg-white border border-[#050F2A]/15 text-[#050F2A]">
+                      {getQrLogoHeight(settingsForm.qrLogoSize)}px
+                    </span>
+                  </div>
+
+                  <input
+                    type="range"
+                    min={48}
+                    max={160}
+                    step={4}
+                    value={getQrLogoHeight(settingsForm.qrLogoSize)}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, qrLogoSize: parseInt(e.target.value, 10) })}
+                    className="w-full h-2 bg-[#050F2A]/10 rounded-lg appearance-none cursor-pointer accent-[#7BBBFF]"
+                  />
+
+                  {/* Preset quick buttons */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span className="text-[10px] font-bold text-[#050F2A]/60 mr-1 uppercase">Presets:</span>
+                    {[
+                      { label: "Compact (56px)", val: 56 },
+                      { label: "Medium (76px)", val: 76 },
+                      { label: "Big (108px)", val: 108 },
+                      { label: "Extra Big (132px)", val: 132 },
+                      { label: "Huge (156px)", val: 156 },
+                    ].map((btn) => (
+                      <button
+                        key={btn.val}
+                        type="button"
+                        onClick={() => setSettingsForm({ ...settingsForm, qrLogoSize: btn.val })}
+                        className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all ${
+                          getQrLogoHeight(settingsForm.qrLogoSize) === btn.val
+                            ? "bg-[#050F2A] text-white border-[#050F2A] shadow-xs"
+                            : "bg-white text-[#050F2A]/80 border-[#050F2A]/15 hover:bg-[#F2FDFF]"
+                        }`}
+                      >
+                        {btn.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
               <div className="pt-4 flex items-center justify-end gap-3 border-t border-[#050F2A]/10">
                 <button
                   type="submit"
@@ -1915,9 +2119,10 @@ export const BusinessDashboardPage: React.FC = () => {
           headerBackgroundColor={business.branding?.headerBackgroundColor || (business.slug === "teatime" ? "#2C190E" : "#050F2A")}
           headerTextColor={business.branding?.headerTextColor || (business.slug === "teatime" ? "#FAF7F0" : "#F2FDFF")}
           logoUrl={business.branding?.logoUrl || null}
-          qrHeaderTitle={business.branding?.qrHeaderTitle || (business.slug === "teatime" ? "SCAN TO ORDER • TEA TIME" : `SCAN TO ORDER • ${business.name}`)}
+          qrHeaderTitle={business.branding?.qrHeaderTitle ?? ""}
           qrSubtitle={business.branding?.qrSubtitle || "SCAN TO ORDER"}
-          qrFooterNote={business.branding?.qrFooterNote || (business.slug === "teatime" ? "It's time for you!" : "Enjoy your visit!")}
+          qrFooterNote={business.branding?.qrFooterNote || (business.slug === "teatime" ? "☕ Good tea brings people together." : "Enjoy your visit!")}
+          qrLogoSize={business.branding?.qrLogoSize || settingsForm.qrLogoSize || 112}
           onClose={() => setSinglePrintTable(null)}
         />
       )}
@@ -1932,9 +2137,10 @@ export const BusinessDashboardPage: React.FC = () => {
           headerBackgroundColor={business.branding?.headerBackgroundColor || (business.slug === "teatime" ? "#2C190E" : "#050F2A")}
           headerTextColor={business.branding?.headerTextColor || (business.slug === "teatime" ? "#FAF7F0" : "#F2FDFF")}
           logoUrl={business.branding?.logoUrl || null}
-          qrHeaderTitle={business.branding?.qrHeaderTitle || (business.slug === "teatime" ? "SCAN TO ORDER • TEA TIME" : `SCAN TO ORDER • ${business.name}`)}
+          qrHeaderTitle={business.branding?.qrHeaderTitle ?? ""}
           qrSubtitle={business.branding?.qrSubtitle || "SCAN TO ORDER"}
-          qrFooterNote={business.branding?.qrFooterNote || (business.slug === "teatime" ? "It's time for you!" : "Enjoy your visit!")}
+          qrFooterNote={business.branding?.qrFooterNote || (business.slug === "teatime" ? "☕ Good tea brings people together." : "Enjoy your visit!")}
+          qrLogoSize={business.branding?.qrLogoSize || settingsForm.qrLogoSize || 112}
           onClose={() => setShowBatchPrint(false)}
         />
       )}

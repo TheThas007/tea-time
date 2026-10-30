@@ -18,12 +18,14 @@ import {
   getDoc,
   getDocs,
   setDoc,
+  query,
+  where,
   serverTimestamp,
 } from "firebase/firestore";
-import { 
-  DEFAULT_PACKAGES, 
+import {
+  DEFAULT_PACKAGES,
   DEFAULT_PLATFORM_PUBLIC_CONFIG,
-  normalizeBusinessSlug 
+  normalizeBusinessSlug
 } from "../shared/constants";
 import {
   getColomboDateString,
@@ -134,13 +136,59 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
       } as unknown as T;
     }
 
-    // Check if authenticated user has a custom Firestore profile (e.g. from 2-Day Trial Sign-up or OAuth)
+    // Check if authenticated user has a custom Firestore profile (e.g. from 2-Day Trial Sign-up, created business, or OAuth)
     if (user && !user.isAnonymous && user.email?.toLowerCase() !== "admin@teatime.lk") {
       try {
+        let profile: any = null;
+        let bId: string | null = null;
+
+        // 1. Check doc by user.uid
         const profileSnap = await getDoc(doc(db, "userProfiles", user.uid));
         if (profileSnap.exists()) {
-          const profile = profileSnap.data();
-          const bId = profile.businessId || `biz_${user.uid.slice(0, 8)}`;
+          profile = profileSnap.data();
+          bId = profile.businessId || null;
+        }
+
+        // 2. Query userProfiles by user.email
+        if (!bId && user.email) {
+          const qP = query(collection(db, "userProfiles"), where("email", "==", user.email.toLowerCase()));
+          const sP = await getDocs(qP);
+          if (!sP.empty) {
+            profile = sP.docs[0].data();
+            bId = profile.businessId || null;
+            // Link to user.uid
+            await setDoc(doc(db, "userProfiles", user.uid), profile, { merge: true }).catch(() => {});
+          }
+        }
+
+        // 3. Query businesses by ownerEmail
+        if (!bId && user.email) {
+          const qBiz = query(collection(db, "businesses"), where("ownerEmail", "==", user.email.toLowerCase()));
+          const sBiz = await getDocs(qBiz);
+          if (!sBiz.empty) {
+            bId = sBiz.docs[0].id;
+          }
+        }
+
+        // 4. Query businesses by ownerUid
+        if (!bId) {
+          const qUid = query(collection(db, "businesses"), where("ownerUid", "==", user.uid));
+          const sUid = await getDocs(qUid);
+          if (!sUid.empty) {
+            bId = sUid.docs[0].id;
+          }
+        }
+
+        // 5. Check localStorage fallback
+        if (!bId && typeof window !== "undefined") {
+          const stored = localStorage.getItem("menyo_auth_businessId");
+          if (stored && stored !== "teatime") bId = stored;
+        }
+
+        if (bId) {
+          if (typeof window !== "undefined") {
+            localStorage.setItem("menyo_auth_businessId", bId);
+          }
           const bizSnap = await getDoc(doc(db, "businesses", bId));
           const accessSnap = await getDoc(doc(db, "businessAccess", bId));
 
@@ -155,16 +203,18 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
           const effectiveStatus = isSuspended ? "SUSPENDED" : (isExpired ? "EXPIRED" : "ACTIVE");
           const daysRemaining = expiresAtMs ? Math.max(0, Math.ceil((expiresAtMs - nowMs) / ONE_DAY_MS)) : null;
 
+          const branding = bizData?.branding || {};
+
           return {
             user: {
               uid: user.uid,
-              username: profile.username || user.email?.split("@")[0] || "owner",
+              username: profile?.username || user.email?.split("@")[0] || "owner",
               email: user.email || "",
-              fullName: profile.displayName || user.displayName || "Restaurant Owner",
+              fullName: profile?.displayName || user.displayName || "Restaurant Owner",
               role: "BUSINESS_OWNER",
               businessId: bId,
               mustChangePassword: false,
-              createdAtMs: profile.createdAt?.toMillis?.() || Date.now(),
+              createdAtMs: profile?.createdAt?.toMillis?.() || Date.now(),
               updatedAtMs: Date.now(),
             },
             claims: {
@@ -175,7 +225,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
             business: {
               id: bId,
               name: bizData?.name || "My Restaurant",
-              slug: bizData?.slug || "my-restaurant",
+              slug: bizData?.slug || bId,
               ownerEmail: user.email || "",
               phone: bizData?.phone || "",
               whatsapp: bizData?.whatsapp || "",
@@ -183,15 +233,21 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
               googleReviewUrl: bizData?.googleReviewUrl || "",
               instagramUrl: bizData?.instagramUrl || "",
               facebookUrl: bizData?.facebookUrl || "",
+              socialLinks: bizData?.socialLinks || bizData?.socialLinkItems || [],
               status: effectiveStatus as BusinessOperationalStatus,
               isTrial: bizData?.isTrial ?? (accessData?.packageId === "2_days_trial"),
-              branding: bizData?.branding || {
-                primaryColor: "#050F2A",
-                accentColor: "#7BBBFF",
-                backgroundColor: "#F2FDFF",
-                textColor: "#050F2A",
-                headerBackgroundColor: "#050F2A",
-                headerTextColor: "#F2FDFF",
+              branding: {
+                primaryColor: branding.primaryColor || bizData?.primaryColor || "#050F2A",
+                accentColor: branding.accentColor || bizData?.accentColor || "#7BBBFF",
+                backgroundColor: branding.backgroundColor || bizData?.backgroundColor || "#F2FDFF",
+                textColor: branding.textColor || bizData?.textColor || "#050F2A",
+                headerBackgroundColor: branding.headerBackgroundColor || bizData?.headerBackgroundColor || "#050F2A",
+                headerTextColor: branding.headerTextColor || bizData?.headerTextColor || "#F2FDFF",
+                logoUrl: branding.logoUrl || bizData?.logoUrl || null,
+                qrHeaderTitle: branding.qrHeaderTitle ?? bizData?.qrHeaderTitle ?? "",
+                qrSubtitle: branding.qrSubtitle || bizData?.qrSubtitle || "SCAN TO ORDER",
+                qrFooterNote: branding.qrFooterNote || bizData?.qrFooterNote || (bizData?.slug === "teatime" ? "☕ Good tea brings people together." : "Enjoy your visit!"),
+                qrLogoSize: branding.qrLogoSize || bizData?.qrLogoSize || 112,
               },
               subscription: {
                 packageId: (accessData?.packageId || bizData?.packageId || "2_days_trial") as PackageId,
@@ -282,7 +338,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
           try {
             const aSnap = await getDoc(doc(db, "businessAccess", bId));
             if (aSnap.exists()) accessData = aSnap.data();
-          } catch {}
+          } catch { }
 
           const expiresAtMs = accessData?.expiresAtMs ?? data.trialExpiresAtMs ?? data.expiresAtMs ?? null;
           const isLifetime = accessData?.isLifetime || data.isLifetime || false;
@@ -442,13 +498,13 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
           try {
             const cred = await signInWithEmailAndPassword(secondaryAuth, email, tempPassword);
             ownerUid = cred.user.uid;
-          } catch {}
+          } catch { }
         } else {
           console.warn("Secondary auth user creation notice:", authErr);
         }
       }
-      await signOut(secondaryAuth).catch(() => {});
-      await deleteApp(secondaryApp).catch(() => {});
+      await signOut(secondaryAuth).catch(() => { });
+      await deleteApp(secondaryApp).catch(() => { });
     } catch (e) {
       console.warn("Secondary app setup notice:", e);
     }
@@ -559,7 +615,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
       { id: "tbl_03", tableNumber: "Table 03", token: `tbl_03_${Math.random().toString(36).substring(2, 6)}`, active: true },
     ];
     for (const t of sampleTables) {
-      await setDoc(doc(db, `businesses/${businessId}/tables`, t.id), t, { merge: true }).catch(() => {});
+      await setDoc(doc(db, `businesses/${businessId}/tables`, t.id), t, { merge: true }).catch(() => { });
     }
 
     // 8. Seed sample categories
@@ -569,7 +625,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
       { id: "cat_snacks", name: "Food & Snacks", slug: "snacks", sortOrder: 3, active: true },
     ];
     for (const c of sampleCats) {
-      await setDoc(doc(db, `businesses/${businessId}/categories`, c.id), c, { merge: true }).catch(() => {});
+      await setDoc(doc(db, `businesses/${businessId}/categories`, c.id), c, { merge: true }).catch(() => { });
     }
 
     // 9. Seed sample products
@@ -596,7 +652,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
       },
     ];
     for (const p of sampleProds) {
-      await setDoc(doc(db, `businesses/${businessId}/products`, p.id), p, { merge: true }).catch(() => {});
+      await setDoc(doc(db, `businesses/${businessId}/products`, p.id), p, { merge: true }).catch(() => { });
     }
 
     return {
@@ -661,7 +717,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
       if (bSnap.exists()) bData = bSnap.data();
       const aSnap = await getDoc(doc(db, "businessAccess", bId));
       if (aSnap.exists()) accessData = aSnap.data();
-    } catch {}
+    } catch { }
 
     return {
       business: bData || { id: bId, name: bId, slug: bId },
@@ -682,30 +738,129 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
 
   // 8. Resolve Public Menu Tenant
   if (action === "resolvePublicMenuTenant") {
-    return {
-      business: {
+    const rawSlug = (data?.businessSlug || data?.slug || "teatime").trim().toLowerCase();
+    const isTeaTimeSlug = !rawSlug || rawSlug === "teatime" || rawSlug === "biz_teatime";
+
+    let business: any = null;
+    let bId = rawSlug;
+
+    if (isTeaTimeSlug) {
+      const [cafeSnap, bizSnap] = await Promise.all([
+        getDoc(doc(db, "settings", "cafe")),
+        getDoc(doc(db, "businesses", "teatime")),
+      ]);
+      const c = cafeSnap.exists() ? cafeSnap.data() : {};
+      const b = bizSnap.exists() ? bizSnap.data() : {};
+      business = {
         id: "teatime",
-        name: "TEA TIME",
+        name: c.cafeName || b.name || "TEA TIME",
         slug: "teatime",
         status: "ACTIVE" as BusinessOperationalStatus,
-        isAvailable: true,
-        phone: "0764847081",
-        whatsapp: "0764847081",
-        address: "123 Main Street, Colombo",
-        googleReviewUrl: "https://g.page/r/teatime-review",
-        instagramUrl: "https://instagram.com/teatime",
-        facebookUrl: "https://facebook.com/teatime",
+        isAvailable: !(c.isOrderingPaused ?? b.isOrderingPaused),
+        pauseMessage: c.pauseMessage || b.pauseMessage || "",
+        phone: c.phone || b.phone || "076 484 1111",
+        whatsapp: c.whatsapp || b.whatsapp || "076 484 1111",
+        address: c.address || b.address || "",
+        googleReviewUrl: c.googleReviewUrl || b.googleReviewUrl,
+        instagramUrl: c.instagramUrl || b.instagramUrl,
+        facebookUrl: c.facebookUrl || b.facebookUrl,
+        socialLinks: c.socialLinks || b.socialLinks,
         branding: {
-          primaryColor: "#2C190E",
-          accentColor: "#E8B64F",
-          backgroundColor: "#FAF7F0",
-          textColor: "#301C10",
-          headerBackgroundColor: "#2C190E",
-          headerTextColor: "#FAF7F0",
+          primaryColor: c.primaryColor || b.branding?.primaryColor || "#2C190E",
+          accentColor: c.accentColor || b.branding?.accentColor || "#E8B64F",
+          backgroundColor: c.backgroundColor || b.branding?.backgroundColor || "#FAF7F0",
+          textColor: c.textColor || b.branding?.textColor || "#301C10",
+          headerBackgroundColor: c.headerBackgroundColor || b.branding?.headerBackgroundColor || "#000000",
+          headerTextColor: c.headerTextColor || b.branding?.headerTextColor || "#FAF7F0",
+          logoUrl: c.logoUrl || b.branding?.logoUrl || null,
+          qrHeaderTitle: c.qrHeaderTitle || b.branding?.qrHeaderTitle,
+          qrSubtitle: c.qrSubtitle || b.branding?.qrSubtitle,
+          qrFooterNote: c.qrFooterNote || b.branding?.qrFooterNote,
+          qrLogoSize: c.qrLogoSize || b.branding?.qrLogoSize || 88,
         },
-      },
-      categories: [],
-      products: [],
+      };
+    } else {
+      // 1. Try businessSlugs
+      try {
+        const slugSnap = await getDoc(doc(db, "businessSlugs", rawSlug));
+        if (slugSnap.exists()) {
+          bId = slugSnap.data().businessId || bId;
+        }
+      } catch {}
+
+      // 2. Fetch business doc
+      let bizSnap = await getDoc(doc(db, "businesses", bId));
+      if (!bizSnap.exists()) {
+        const q = query(collection(db, "businesses"), where("slug", "==", rawSlug));
+        const s = await getDocs(q);
+        if (!s.empty) {
+          bizSnap = s.docs[0];
+          bId = bizSnap.id;
+        }
+      }
+
+      if (bizSnap.exists()) {
+        const b = bizSnap.data();
+        const accessSnap = await getDoc(doc(db, "businessAccess", bId));
+        const a = accessSnap.exists() ? accessSnap.data() : null;
+
+        const isSuspended = a?.operationalStatus === "suspended" || b.status === "SUSPENDED";
+        const isPaused = !!b.isOrderingPaused;
+        const branding = b.branding || {};
+
+        business = {
+          id: bId,
+          name: b.name || rawSlug,
+          slug: b.slug || rawSlug,
+          status: (isSuspended ? "SUSPENDED" : "ACTIVE") as BusinessOperationalStatus,
+          isAvailable: !isSuspended && !isPaused,
+          isOrderingPaused: isPaused,
+          pauseMessage: b.pauseMessage || "",
+          phone: b.phone || "",
+          whatsapp: b.whatsapp || "",
+          address: b.address || "",
+          googleReviewUrl: b.googleReviewUrl || "",
+          instagramUrl: b.instagramUrl || "",
+          facebookUrl: b.facebookUrl || "",
+          socialLinks: b.socialLinks || b.socialLinkItems || [],
+          socialLinkItems: b.socialLinkItems || b.socialLinks || [],
+          branding: {
+            primaryColor: branding.primaryColor || b.primaryColor || "#7BBBFF",
+            accentColor: branding.accentColor || b.accentColor || "#B8A9FF",
+            backgroundColor: branding.backgroundColor || b.backgroundColor || "#F2FDFF",
+            textColor: branding.textColor || b.textColor || "#050F2A",
+            headerBackgroundColor: branding.headerBackgroundColor || b.headerBackgroundColor || "#050F2A",
+            headerTextColor: branding.headerTextColor || b.headerTextColor || "#F2FDFF",
+            logoUrl: branding.logoUrl || b.logoUrl || null,
+            qrHeaderTitle: branding.qrHeaderTitle || b.qrHeaderTitle,
+            qrSubtitle: branding.qrSubtitle || b.qrSubtitle,
+            qrFooterNote: branding.qrFooterNote || b.qrFooterNote,
+            qrLogoSize: branding.qrLogoSize || b.qrLogoSize || 88,
+          },
+        };
+      }
+    }
+
+    // Load categories & products
+    let categories: Category[] = [];
+    let products: MenuItem[] = [];
+    if (!isTeaTimeSlug && business) {
+      try {
+        const catSnap = await getDocs(collection(db, `businesses/${bId}/categories`));
+        if (!catSnap.empty) {
+          categories = catSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Category));
+        }
+        const prodSnap = await getDocs(collection(db, `businesses/${bId}/products`));
+        if (!prodSnap.empty) {
+          products = prodSnap.docs.map((d) => ({ id: d.id, ...d.data() } as MenuItem));
+        }
+      } catch {}
+    }
+
+    return {
+      business,
+      categories,
+      products,
       table: data?.tableToken ? {
         id: "tbl_07",
         tableNumber: "07",
@@ -717,27 +872,78 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
   // 4. Owner Update Settings Fallback
   if (action === "ownerUpdateSettings") {
     const user = auth.currentUser;
-    let bId = "teatime";
-    if (user && !user.isAnonymous) {
+    let bId = data?.businessId;
+    if (!bId && user && !user.isAnonymous) {
       try {
         const profSnap = await getDoc(doc(db, "userProfiles", user.uid));
         if (profSnap.exists()) {
-          bId = profSnap.data().businessId || bId;
+          bId = profSnap.data().businessId;
+        } else if (user.email) {
+          const q = query(collection(db, "userProfiles"), where("email", "==", user.email.toLowerCase()));
+          const s = await getDocs(q);
+          if (!s.empty) bId = s.docs[0].data().businessId;
+          if (!bId) {
+            const qB = query(collection(db, "businesses"), where("ownerEmail", "==", user.email.toLowerCase()));
+            const sB = await getDocs(qB);
+            if (!sB.empty) bId = sB.docs[0].id;
+          }
         }
       } catch {}
     }
+    if (!bId && typeof window !== "undefined") {
+      bId = localStorage.getItem("menyo_auth_businessId") || "teatime";
+    }
+    if (!bId) bId = "teatime";
+
     const updatePayload: any = {
       updatedAt: serverTimestamp(),
     };
     if (data.name !== undefined) updatePayload.name = data.name;
+    if (data.tagline !== undefined) updatePayload.tagline = data.tagline;
     if (data.phone !== undefined) updatePayload.phone = data.phone;
     if (data.whatsapp !== undefined) updatePayload.whatsapp = data.whatsapp;
     if (data.address !== undefined) updatePayload.address = data.address;
+    if (data.openingHours !== undefined) updatePayload.openingHours = data.openingHours;
     if (data.googleReviewUrl !== undefined) updatePayload.googleReviewUrl = data.googleReviewUrl;
     if (data.instagramUrl !== undefined) updatePayload.instagramUrl = data.instagramUrl;
     if (data.facebookUrl !== undefined) updatePayload.facebookUrl = data.facebookUrl;
-    if (data.socialLinks !== undefined) updatePayload.socialLinks = data.socialLinks;
-    if (data.branding !== undefined) updatePayload.branding = data.branding;
+    if (data.socialLinks !== undefined) {
+      updatePayload.socialLinks = data.socialLinks;
+      updatePayload.socialLinkItems = data.socialLinks;
+    }
+    if (data.isOrderingPaused !== undefined) updatePayload.isOrderingPaused = data.isOrderingPaused;
+    if (data.pauseMessage !== undefined) updatePayload.pauseMessage = data.pauseMessage;
+
+    // Handle branding
+    const bInput = data.branding || {};
+    const mergedBranding = {
+      ...(data.branding || {}),
+      logoUrl: data.logoUrl !== undefined ? data.logoUrl : bInput.logoUrl,
+      primaryColor: data.primaryColor || bInput.primaryColor,
+      accentColor: data.accentColor || bInput.accentColor,
+      backgroundColor: data.backgroundColor || bInput.backgroundColor,
+      textColor: data.textColor || bInput.textColor,
+      headerBackgroundColor: data.headerBackgroundColor || bInput.headerBackgroundColor,
+      headerTextColor: data.headerTextColor || bInput.headerTextColor,
+      qrHeaderTitle: data.qrHeaderTitle || bInput.qrHeaderTitle,
+      qrSubtitle: data.qrSubtitle || bInput.qrSubtitle,
+      qrFooterNote: data.qrFooterNote || bInput.qrFooterNote,
+      qrLogoSize: data.qrLogoSize || bInput.qrLogoSize,
+    };
+    updatePayload.branding = mergedBranding;
+
+    // Copy to root fields
+    if (mergedBranding.primaryColor) updatePayload.primaryColor = mergedBranding.primaryColor;
+    if (mergedBranding.accentColor) updatePayload.accentColor = mergedBranding.accentColor;
+    if (mergedBranding.backgroundColor) updatePayload.backgroundColor = mergedBranding.backgroundColor;
+    if (mergedBranding.textColor) updatePayload.textColor = mergedBranding.textColor;
+    if (mergedBranding.headerBackgroundColor) updatePayload.headerBackgroundColor = mergedBranding.headerBackgroundColor;
+    if (mergedBranding.headerTextColor) updatePayload.headerTextColor = mergedBranding.headerTextColor;
+    if (mergedBranding.logoUrl !== undefined) updatePayload.logoUrl = mergedBranding.logoUrl;
+    if (mergedBranding.qrHeaderTitle !== undefined) updatePayload.qrHeaderTitle = mergedBranding.qrHeaderTitle;
+    if (mergedBranding.qrSubtitle !== undefined) updatePayload.qrSubtitle = mergedBranding.qrSubtitle;
+    if (mergedBranding.qrFooterNote !== undefined) updatePayload.qrFooterNote = mergedBranding.qrFooterNote;
+    if (mergedBranding.qrLogoSize !== undefined) updatePayload.qrLogoSize = mergedBranding.qrLogoSize;
 
     try {
       await setDoc(doc(db, "businesses", bId), updatePayload, { merge: true });
@@ -1103,7 +1309,7 @@ export const platformApi = {
         localStorage.setItem("menyo_auth_email", email);
         return { user, role: "BUSINESS_OWNER" as const, businessId: data.businessId };
       }
-    } catch {}
+    } catch { }
 
     // First time login: auto-provision 2-Day Free Trial
     const bizName = user.displayName ? `${user.displayName}'s Restaurant` : "My Restaurant";
@@ -1140,7 +1346,7 @@ export const platformApi = {
         localStorage.setItem("menyo_auth_email", email);
         return { user, role: "BUSINESS_OWNER" as const, businessId: data.businessId };
       }
-    } catch {}
+    } catch { }
 
     const bizName = user.displayName ? `${user.displayName}'s Restaurant` : "My Restaurant";
     const reg = await this.registerOwnerWithTrial({
@@ -1374,6 +1580,7 @@ export const platformApi = {
   },
 
   async ownerUpdateSettings(data: {
+    businessId?: string;
     name?: string;
     tagline?: string;
     phone?: string;
@@ -1393,6 +1600,10 @@ export const platformApi = {
     instagramUrl?: string;
     facebookUrl?: string;
     socialLinks?: any[];
+    qrHeaderTitle?: string;
+    qrSubtitle?: string;
+    qrFooterNote?: string;
+    qrLogoSize?: number | string;
     branding?: {
       logoUrl?: string | null;
       primaryColor?: string | null;
@@ -1401,6 +1612,11 @@ export const platformApi = {
       textColor?: string | null;
       headerBackgroundColor?: string | null;
       headerTextColor?: string | null;
+      qrHeaderTitle?: string;
+      qrSubtitle?: string;
+      qrFooterNote?: string;
+      qrLogoSize?: number | string;
+      [key: string]: any;
     };
   }) {
     // Flatten branding fields if passed nested
@@ -1413,6 +1629,10 @@ export const platformApi = {
       textColor: data.textColor ?? data.branding?.textColor,
       headerBackgroundColor: data.headerBackgroundColor ?? data.branding?.headerBackgroundColor,
       headerTextColor: data.headerTextColor ?? data.branding?.headerTextColor,
+      qrHeaderTitle: data.qrHeaderTitle ?? data.branding?.qrHeaderTitle,
+      qrSubtitle: data.qrSubtitle ?? data.branding?.qrSubtitle,
+      qrFooterNote: data.qrFooterNote ?? data.branding?.qrFooterNote,
+      qrLogoSize: data.qrLogoSize ?? data.branding?.qrLogoSize,
     };
     return callRpc("ownerUpdateSettings", payload);
   },

@@ -55,21 +55,44 @@ export const CustomerMenuPage: React.FC = () => {
   const [tableError, setTableError] = useState<string | null>(null);
   const [cafeSettings, setCafeSettings] = useState<CafeSettings | null>(null);
 
-  // Real-time listener for cafe settings (theme, colors, logo, pause state)
+  const isTeaTime = !businessSlug || businessSlug === "teatime" || tenantBusiness?.slug === "teatime";
+
+  // Real-time listener for cafe settings or multi-tenant business settings
   useEffect(() => {
-    const unsub = onSnapshot(
-      doc(db, "settings", "cafe"),
-      (snap) => {
-        if (snap.exists()) {
-          setCafeSettings(snap.data() as CafeSettings);
+    if (isTeaTime) {
+      const unsub = onSnapshot(
+        doc(db, "settings", "cafe"),
+        (snap) => {
+          if (snap.exists()) {
+            setCafeSettings(snap.data() as CafeSettings);
+          }
+        },
+        (err) => {
+          console.warn("Cafe settings listener fallback:", err);
         }
-      },
-      (err) => {
-        console.warn("Cafe settings listener fallback:", err);
-      }
-    );
-    return () => unsub();
-  }, []);
+      );
+      return () => unsub();
+    } else {
+      const targetBId = tenantBusiness?.id || businessSlug;
+      const unsub = onSnapshot(
+        doc(db, "businesses", targetBId),
+        (snap) => {
+          if (snap.exists()) {
+            const data = { id: snap.id, ...snap.data() } as any;
+            setTenantBusiness((prev: any) => ({
+              ...prev,
+              ...data,
+              isAvailable: data.status === "ACTIVE" && !data.isOrderingPaused,
+            }));
+          }
+        },
+        (err) => {
+          console.warn("Tenant business listener fallback:", err);
+        }
+      );
+      return () => unsub();
+    }
+  }, [isTeaTime, businessSlug, tenantBusiness?.id]);
 
   // Tracking & Selected Product state
   const [activeTrackerOrderId, setActiveTrackerOrderId] = useState<string | null>(null);
@@ -356,183 +379,182 @@ export const CustomerMenuPage: React.FC = () => {
     );
   }
 
-    const isTeaTime = !tenantBusiness || tenantBusiness.slug === "teatime" || businessSlug === "teatime";
-    const tenantTheme = {
-      primary: isTeaTime
-        ? "#2C190E"
-        : (cafeSettings?.primaryColor || tenantBusiness?.branding?.primaryColor || "#7BBBFF"),
-      accent: isTeaTime
-        ? "#E8B64F"
-        : (cafeSettings?.accentColor || tenantBusiness?.branding?.accentColor || "#B8A9FF"),
-      bg: isTeaTime
-        ? "#FAF7F0"
-        : (cafeSettings?.backgroundColor || tenantBusiness?.branding?.backgroundColor || "#F2FDFF"),
-      text: isTeaTime
-        ? "#301C10"
-        : (cafeSettings?.textColor || tenantBusiness?.branding?.textColor || "#050F2A"),
-      headerBg: isTeaTime
-        ? "#0A0A0A"
-        : (cafeSettings?.headerBackgroundColor || cafeSettings?.primaryColor || tenantBusiness?.branding?.headerBackgroundColor || "#050F2A"),
-      headerText: isTeaTime
-        ? "#FFFCF6"
-        : (cafeSettings?.headerTextColor || tenantBusiness?.branding?.headerTextColor || "#F2FDFF"),
-      logoUrl: isTeaTime
-        ? null
-        : (cafeSettings?.logoUrl || tenantBusiness?.branding?.logoUrl || null),
-    };
+  const tenantTheme = {
+    primary: isTeaTime
+      ? "#2C190E"
+      : (tenantBusiness?.branding?.primaryColor || "#7BBBFF"),
+    accent: isTeaTime
+      ? "#E8B64F"
+      : (tenantBusiness?.branding?.accentColor || "#B8A9FF"),
+    bg: isTeaTime
+      ? "#FAF7F0"
+      : (tenantBusiness?.branding?.backgroundColor || "#F2FDFF"),
+    text: isTeaTime
+      ? "#301C10"
+      : (tenantBusiness?.branding?.textColor || "#050F2A"),
+    headerBg: isTeaTime
+      ? "#0A0A0A"
+      : (tenantBusiness?.branding?.headerBackgroundColor || tenantBusiness?.branding?.primaryColor || "#050F2A"),
+    headerText: isTeaTime
+      ? "#FFFCF6"
+      : (tenantBusiness?.branding?.headerTextColor || "#F2FDFF"),
+    logoUrl: isTeaTime
+      ? null
+      : (tenantBusiness?.branding?.logoUrl || null),
+  };
 
-    // Active social & Google review links in real-time
-    const socialLinksList = useMemo(() => {
-      // 1. From real-time cafeSettings (Tea Time or custom settings)
-      if (Array.isArray(cafeSettings?.socialLinks) && cafeSettings.socialLinks.length > 0) {
-        return (cafeSettings.socialLinks as SocialLinkItem[]).filter(
-          (l) => l.isActive !== false && l.url && l.url.trim().length > 0
+  // Active social & Google review links in real-time
+  const socialLinksList = useMemo(() => {
+    // 1. From real-time cafeSettings (Tea Time or custom settings)
+    if (Array.isArray(cafeSettings?.socialLinks) && cafeSettings.socialLinks.length > 0) {
+      return (cafeSettings.socialLinks as SocialLinkItem[]).filter(
+        (l) => l.isActive !== false && l.url && l.url.trim().length > 0
+      );
+    }
+    // 2. From tenantBusiness if multi-tenant
+    const tenantItems = (tenantBusiness as any)?.socialLinkItems || (tenantBusiness?.socialLinks as any)?.items;
+    if (Array.isArray(tenantItems) && tenantItems.length > 0) {
+      return tenantItems.filter((l: SocialLinkItem) => l.isActive !== false && l.url && l.url.trim().length > 0);
+    }
+    // 3. Fallback: synthesize from googleReviewUrl / instagramUrl / facebookUrl / whatsapp
+    const synth: SocialLinkItem[] = [];
+    const gUrl = cafeSettings?.googleReviewUrl || tenantBusiness?.googleReviewUrl || (isTeaTime ? "https://maps.google.com/?q=Tea+Time+Vavuniya" : null);
+    if (gUrl) {
+      synth.push({ id: "g_rev", platform: "google", label: "Google Profile & Reviews", url: gUrl, isActive: true });
+    }
+    const igUrl = cafeSettings?.instagramUrl || tenantBusiness?.instagramUrl || (isTeaTime ? "https://www.instagram.com/teatime_vavuniya/" : null);
+    if (igUrl) {
+      synth.push({ id: "ig_prof", platform: "instagram", label: "Instagram", url: igUrl, isActive: true });
+    }
+    const fbUrl = cafeSettings?.facebookUrl || tenantBusiness?.facebookUrl || (isTeaTime ? "https://www.facebook.com/teatime.vavuniya/" : null);
+    if (fbUrl) {
+      synth.push({ id: "fb_prof", platform: "facebook", label: "Facebook", url: fbUrl, isActive: true });
+    }
+    const waPhone = cafeSettings?.whatsapp || tenantBusiness?.whatsapp || (isTeaTime ? "0764847081" : null);
+    if (waPhone) {
+      const cleanPhone = waPhone.replace(/[^0-9]/g, "");
+      const fullPhone = cleanPhone.startsWith("94") ? cleanPhone : (cleanPhone.startsWith("0") ? "94" + cleanPhone.slice(1) : "94" + cleanPhone);
+      synth.push({ id: "wa_chat", platform: "whatsapp", label: "WhatsApp", url: `https://wa.me/${fullPhone}`, isActive: true });
+    }
+    return synth;
+  }, [cafeSettings, tenantBusiness, isTeaTime]);
+
+  const formatSocialUrl = (url: string, platform: string) => {
+    const trimmed = (url || "").trim();
+    if (!trimmed) return "#";
+    if (platform === "whatsapp" && !trimmed.startsWith("http")) {
+      const digits = trimmed.replace(/[^0-9]/g, "");
+      const intl = digits.startsWith("94") ? digits : (digits.startsWith("0") ? "94" + digits.slice(1) : "94" + digits);
+      return `https://wa.me/${intl}`;
+    }
+    if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+      return `https://${trimmed}`;
+    }
+    return trimmed;
+  };
+
+  const renderSocialIcon = (platform: string) => {
+    switch (platform) {
+      case "google":
+        return <Star className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0" />;
+      case "instagram":
+        return (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-[#E8B64F] shrink-0">
+            <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+            <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+            <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+          </svg>
         );
-      }
-      // 2. From tenantBusiness if multi-tenant
-      const tenantItems = (tenantBusiness as any)?.socialLinkItems || (tenantBusiness?.socialLinks as any)?.items;
-      if (Array.isArray(tenantItems) && tenantItems.length > 0) {
-        return tenantItems.filter((l: SocialLinkItem) => l.isActive !== false && l.url && l.url.trim().length > 0);
-      }
-      // 3. Fallback: synthesize from googleReviewUrl / instagramUrl / facebookUrl / whatsapp
-      const synth: SocialLinkItem[] = [];
-      const gUrl = cafeSettings?.googleReviewUrl || tenantBusiness?.googleReviewUrl || (isTeaTime ? "https://maps.google.com/?q=Tea+Time+Vavuniya" : null);
-      if (gUrl) {
-        synth.push({ id: "g_rev", platform: "google", label: "Google Profile & Reviews", url: gUrl, isActive: true });
-      }
-      const igUrl = cafeSettings?.instagramUrl || tenantBusiness?.instagramUrl || (isTeaTime ? "https://www.instagram.com/teatime_vavuniya/" : null);
-      if (igUrl) {
-        synth.push({ id: "ig_prof", platform: "instagram", label: "Instagram", url: igUrl, isActive: true });
-      }
-      const fbUrl = cafeSettings?.facebookUrl || tenantBusiness?.facebookUrl || (isTeaTime ? "https://www.facebook.com/teatime.vavuniya/" : null);
-      if (fbUrl) {
-        synth.push({ id: "fb_prof", platform: "facebook", label: "Facebook", url: fbUrl, isActive: true });
-      }
-      const waPhone = cafeSettings?.whatsapp || tenantBusiness?.whatsapp || (isTeaTime ? "0764847081" : null);
-      if (waPhone) {
-        const cleanPhone = waPhone.replace(/[^0-9]/g, "");
-        const fullPhone = cleanPhone.startsWith("94") ? cleanPhone : (cleanPhone.startsWith("0") ? "94" + cleanPhone.slice(1) : "94" + cleanPhone);
-        synth.push({ id: "wa_chat", platform: "whatsapp", label: "WhatsApp", url: `https://wa.me/${fullPhone}`, isActive: true });
-      }
-      return synth;
-    }, [cafeSettings, tenantBusiness, isTeaTime]);
+      case "facebook":
+        return (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-[#E8B64F] shrink-0">
+            <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+          </svg>
+        );
+      case "whatsapp":
+        return (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-[#E8B64F] shrink-0">
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+          </svg>
+        );
+      case "tiktok":
+        return <span className="text-xs">🎵</span>;
+      case "youtube":
+        return <span className="text-xs text-red-500 font-bold">▶</span>;
+      default:
+        return <Globe className="w-4 h-4 text-[#E8B64F] shrink-0" />;
+    }
+  };
 
-    const formatSocialUrl = (url: string, platform: string) => {
-      const trimmed = (url || "").trim();
-      if (!trimmed) return "#";
-      if (platform === "whatsapp" && !trimmed.startsWith("http")) {
-        const digits = trimmed.replace(/[^0-9]/g, "");
-        const intl = digits.startsWith("94") ? digits : (digits.startsWith("0") ? "94" + digits.slice(1) : "94" + digits);
-        return `https://wa.me/${intl}`;
-      }
-      if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
-        return `https://${trimmed}`;
-      }
-      return trimmed;
-    };
-
-    const renderSocialIcon = (platform: string) => {
-      switch (platform) {
-        case "google":
-          return <Star className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0" />;
-        case "instagram":
-          return (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-[#E8B64F] shrink-0">
-              <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
-              <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-              <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
-            </svg>
-          );
-        case "facebook":
-          return (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-[#E8B64F] shrink-0">
-              <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
-            </svg>
-          );
-        case "whatsapp":
-          return (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-[#E8B64F] shrink-0">
-              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-            </svg>
-          );
-        case "tiktok":
-          return <span className="text-xs">🎵</span>;
-        case "youtube":
-          return <span className="text-xs text-red-500 font-bold">▶</span>;
-        default:
-          return <Globe className="w-4 h-4 text-[#E8B64F] shrink-0" />;
-      }
-    };
-
-    return (
-      <div
-        className="relative min-h-screen pb-24 overflow-x-hidden"
-        style={{
-          backgroundColor: tenantTheme.bg,
-          color: tenantTheme.text,
-          "--tenant-primary": tenantTheme.primary,
-          "--tenant-accent": tenantTheme.accent,
-          "--tenant-bg": tenantTheme.bg,
-          "--tenant-text": tenantTheme.text,
-          "--tenant-header-bg": tenantTheme.headerBg,
-          "--tenant-header-text": tenantTheme.headerText,
-        } as React.CSSProperties}
-      >
-        {/* Interactive Demo Mode Top Banner */}
-        {isDemoMode && (
-          <div className="bg-[#050F2A] text-white px-4 py-2.5 text-xs font-semibold flex items-center justify-between sticky top-0 z-50 shadow-md">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span className="font-bold text-[#7BBBFF]">Menyo Live Demo</span>
-              <span className="text-white/70 hidden sm:inline">
-                • Interactive preview. Orders here are simulated and will not be prepared by the kitchen.
-              </span>
-            </div>
-            <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-white/10 text-white/90">
-              Demo Safe
+  return (
+    <div
+      className="relative min-h-screen pb-24 overflow-x-hidden"
+      style={{
+        backgroundColor: tenantTheme.bg,
+        color: tenantTheme.text,
+        "--tenant-primary": tenantTheme.primary,
+        "--tenant-accent": tenantTheme.accent,
+        "--tenant-bg": tenantTheme.bg,
+        "--tenant-text": tenantTheme.text,
+        "--tenant-header-bg": tenantTheme.headerBg,
+        "--tenant-header-text": tenantTheme.headerText,
+      } as React.CSSProperties}
+    >
+      {/* Interactive Demo Mode Top Banner */}
+      {isDemoMode && (
+        <div className="bg-[#050F2A] text-white px-4 py-2.5 text-xs font-semibold flex items-center justify-between sticky top-0 z-50 shadow-md">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="font-bold text-[#7BBBFF]">Menyo Live Demo</span>
+            <span className="text-white/70 hidden sm:inline">
+              • Interactive preview. Orders here are simulated and will not be prepared by the kitchen.
             </span>
           </div>
-        )}
-
-        {/* Welcome Screen (shown once per browser tab session until "Explore Our Menu" is clicked) */}
-        {showWelcome && (
-          <WelcomeScreen
-            onExplore={handleDismissWelcome}
-            tableNumber={welcomeTableLabel}
-          />
-        )}
-
-        {/* Dedicated Viewport-Fixed Background Layer */}
-        <div
-          aria-hidden="true"
-          className="fixed inset-0 z-0 pointer-events-none select-none overflow-hidden"
-          style={{ backgroundColor: tenantTheme.bg }}
-        >
-          {isTeaTime ? (
-            <div
-              className="w-full h-full bg-cover bg-center bg-no-repeat"
-              style={{
-                backgroundImage:
-                  "url('/assets/menu-bg.webp'), url('/assets/menu-bg.jpg'), url('/assets/menu-bg.png')",
-              }}
-            />
-          ) : null}
+          <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-white/10 text-white/90">
+            Demo Safe
+          </span>
         </div>
+      )}
 
-        {/* Customer Header */}
-        <CustomerHeader
-          brandName={cafeSettings?.cafeName || tenantBusiness?.name}
-          logoUrl={tenantTheme.logoUrl}
-          primaryColor={tenantTheme.headerBg}
-          accentColor={tenantTheme.accent}
-          tableNumber={currentTable?.number || (tableLoading ? "Loading..." : "Table ---")}
-          activeOrderCount={customerOrderIds.length}
-          onOpenOrderTracker={() => {
-            if (customerOrderIds.length > 0) {
-              setActiveTrackerOrderId(customerOrderIds[0]);
-            }
-          }}
+      {/* Welcome Screen (shown once per browser tab session until "Explore Our Menu" is clicked) */}
+      {showWelcome && (
+        <WelcomeScreen
+          onExplore={handleDismissWelcome}
+          tableNumber={welcomeTableLabel}
         />
+      )}
+
+      {/* Dedicated Viewport-Fixed Background Layer */}
+      <div
+        aria-hidden="true"
+        className="fixed inset-0 z-0 pointer-events-none select-none overflow-hidden"
+        style={{ backgroundColor: tenantTheme.bg }}
+      >
+        {isTeaTime ? (
+          <div
+            className="w-full h-full bg-cover bg-center bg-no-repeat"
+            style={{
+              backgroundImage:
+                "url('/assets/menu-bg.webp'), url('/assets/menu-bg.jpg'), url('/assets/menu-bg.png')",
+            }}
+          />
+        ) : null}
+      </div>
+
+      {/* Customer Header */}
+      <CustomerHeader
+        brandName={isTeaTime ? (cafeSettings?.cafeName || "TEA TIME") : (tenantBusiness?.name || "Menu")}
+        logoUrl={tenantTheme.logoUrl}
+        primaryColor={tenantTheme.headerBg}
+        accentColor={tenantTheme.accent}
+        tableNumber={currentTable?.number || (tableLoading ? "Loading..." : "Table ---")}
+        activeOrderCount={customerOrderIds.length}
+        onOpenOrderTracker={() => {
+          if (customerOrderIds.length > 0) {
+            setActiveTrackerOrderId(customerOrderIds[0]);
+          }
+        }}
+      />
 
       {/* Main Container */}
       <main className="relative z-10 max-w-md md:max-w-3xl lg:max-w-6xl xl:max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-4 md:pt-6 lg:pt-8 space-y-4 md:space-y-6">
@@ -665,7 +687,7 @@ export const CustomerMenuPage: React.FC = () => {
           {/* Kitchen & Staff Access */}
           <div className="pt-4 border-t border-[#DFC9AC]/30 text-center">
             <Link
-              to="/admin"
+              to={isTeaTime ? "/admin" : `/${tenantBusiness?.slug || businessSlug}/admin`}
               className="text-[11px] text-[#8A6A53] hover:text-[#301C10] font-semibold transition"
             >
               Kitchen & Staff Portal &bull; Live Orders

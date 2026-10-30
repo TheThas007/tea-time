@@ -30,6 +30,8 @@ export const App: React.FC = () => {
 
             {/* Business Owner Tenant Dashboard */}
             <Route path="/dashboard" element={<BusinessDashboardPage />} />
+            <Route path="/:businessSlug/admin" element={<BusinessDashboardPage />} />
+            <Route path="/:businessSlug/dashboard" element={<BusinessDashboardPage />} />
 
             {/* Platform Owner Super Admin Console */}
             <Route path="/super-admin" element={<SuperAdminPage />} />

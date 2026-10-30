@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from "react";
-import { 
-  doc, 
-  getDoc, 
-  setDoc, 
-  serverTimestamp, 
+import {
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
   writeBatch,
-  onSnapshot 
+  onSnapshot
 } from "firebase/firestore";
-import { 
-  Save, 
-  PauseCircle, 
-  PlayCircle, 
-  Database, 
-  CheckCircle2, 
+import {
+  Save,
+  PauseCircle,
+  PlayCircle,
+  Database,
+  CheckCircle2,
   AlertCircle,
   Clock,
   Store,
@@ -42,13 +42,14 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import { db } from "../../lib/firebase";
 import { CafeSettings, SocialLinkItem, SocialPlatform } from "../../types";
-import { 
-  INITIAL_SETTINGS, 
-  INITIAL_CATEGORIES, 
-  INITIAL_MENU_ITEMS, 
-  INITIAL_TABLES 
+import {
+  INITIAL_SETTINGS,
+  INITIAL_CATEGORIES,
+  INITIAL_MENU_ITEMS,
+  INITIAL_TABLES
 } from "../../data/seedData";
 import { Logo } from "../common/Logo";
+import { getQrLogoHeight } from "./PrintableTableCard";
 
 export interface ThemePreset {
   id: string;
@@ -499,11 +500,10 @@ export const CafeSettingsView: React.FC = () => {
             <button
               key={tab.id}
               onClick={() => setActiveSection(tab.id as SettingsSection)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition whitespace-nowrap ${
-                isActive
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition whitespace-nowrap ${isActive
                   ? "bg-[#2C190E] text-[#FFFCF6] shadow-warm"
                   : "bg-[#FFFCF6] text-[#8A6A53] hover:text-[#301C10] hover:bg-[#DFC9AC]/30 border border-[#DFC9AC]"
-              }`}
+                }`}
             >
               <Icon className={`w-3.5 h-3.5 ${isActive ? "text-[#E8B64F]" : "text-[#8A6A53]"}`} />
               <span>{tab.label}</span>
@@ -533,7 +533,7 @@ export const CafeSettingsView: React.FC = () => {
               </div>
 
               <p className="text-xs text-[#8A6A53] leading-relaxed">
-                Choose a pre-designed harmonious color palette tailored for dining, beverage, and café brands. 
+                Choose a pre-designed harmonious color palette tailored for dining, beverage, and café brands.
                 You can fine-tune any individual color below.
               </p>
 
@@ -549,11 +549,10 @@ export const CafeSettingsView: React.FC = () => {
                       key={preset.id}
                       type="button"
                       onClick={() => handleApplyPreset(preset)}
-                      className={`text-left p-3.5 rounded-xl border transition-all flex flex-col justify-between gap-3 relative ${
-                        isCurrent
+                      className={`text-left p-3.5 rounded-xl border transition-all flex flex-col justify-between gap-3 relative ${isCurrent
                           ? "border-[#E8B64F] bg-[#FAF7F0] ring-2 ring-[#E8B64F]/40 shadow-warm"
                           : "border-[#DFC9AC] bg-white hover:border-[#8A6A53] hover:shadow-sm"
-                      }`}
+                        }`}
                     >
                       <div className="flex items-start justify-between w-full">
                         <div className="flex items-center gap-2">
@@ -577,25 +576,25 @@ export const CafeSettingsView: React.FC = () => {
 
                       {/* 4-Color Swatch Preview Strip */}
                       <div className="flex items-center gap-1.5 pt-1">
-                        <div 
-                          className="w-5 h-5 rounded-md border border-black/10 shadow-xs" 
+                        <div
+                          className="w-5 h-5 rounded-md border border-black/10 shadow-xs"
                           style={{ backgroundColor: preset.headerBackgroundColor }}
-                          title={`Navbar: ${preset.headerBackgroundColor}`} 
+                          title={`Navbar: ${preset.headerBackgroundColor}`}
                         />
-                        <div 
-                          className="w-5 h-5 rounded-md border border-black/10 shadow-xs" 
+                        <div
+                          className="w-5 h-5 rounded-md border border-black/10 shadow-xs"
                           style={{ backgroundColor: preset.accentColor }}
-                          title={`Accent: ${preset.accentColor}`} 
+                          title={`Accent: ${preset.accentColor}`}
                         />
-                        <div 
-                          className="w-5 h-5 rounded-md border border-black/10 shadow-xs" 
+                        <div
+                          className="w-5 h-5 rounded-md border border-black/10 shadow-xs"
                           style={{ backgroundColor: preset.backgroundColor }}
-                          title={`Page Bg: ${preset.backgroundColor}`} 
+                          title={`Page Bg: ${preset.backgroundColor}`}
                         />
-                        <div 
-                          className="w-5 h-5 rounded-md border border-black/10 shadow-xs" 
+                        <div
+                          className="w-5 h-5 rounded-md border border-black/10 shadow-xs"
                           style={{ backgroundColor: preset.textColor }}
-                          title={`Text: ${preset.textColor}`} 
+                          title={`Text: ${preset.textColor}`}
                         />
                         <span className="text-[10px] font-mono text-[#8A6A53] ml-auto">
                           {preset.accentColor}
@@ -874,7 +873,7 @@ export const CafeSettingsView: React.FC = () => {
                     Logo Preview:
                   </span>
                   <div className="p-4 rounded-xl border border-dashed border-[#DFC9AC] flex items-center justify-center gap-6 bg-white">
-                    <div 
+                    <div
                       className="p-3 rounded-lg border flex items-center justify-center min-w-[140px] h-16 shadow-xs"
                       style={{ backgroundColor: previewColors.headerBg }}
                     >
@@ -924,7 +923,7 @@ export const CafeSettingsView: React.FC = () => {
               </div>
 
               <p className="text-xs text-[#8A6A53] leading-relaxed">
-                Customize the texts printed on tent cards placed on dining tables. 
+                Customize the texts printed on tent cards placed on dining tables.
                 Guests scan this code with their smartphone camera to open the menu.
               </p>
 
@@ -999,11 +998,11 @@ export const CafeSettingsView: React.FC = () => {
                     type="text"
                     value={settings.qrFooterNote || ""}
                     onChange={(e) => setSettings({ ...settings, qrFooterNote: e.target.value })}
-                    placeholder="e.g. It's time for you!"
+                    placeholder="e.g. ☕ Good tea brings people together."
                     className="w-full text-xs px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none"
                   />
-                  <div className="flex gap-1.5 mt-1.5">
-                    {["It's time for you!", "Need help? Call: 076 484 1111", "Enjoy your visit!"].map((preset, idx) => (
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {["☕ Good tea brings people together.", "Need help? Call: 076 484 1111", "Enjoy your visit!"].map((preset, idx) => (
                       <button
                         key={idx}
                         type="button"
@@ -1014,6 +1013,61 @@ export const CafeSettingsView: React.FC = () => {
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Table QR Logo Size Slider & Presets (Admin requested option) */}
+                <div className="pt-2 border-t border-[#DFC9AC]/60">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-[#301C10] flex items-center gap-1.5">
+                      <ImageIcon className="w-3.5 h-3.5 text-[#E8B64F]" />
+                      <span>Table QR Logo Size</span>
+                    </label>
+                    <span className="text-[11px] font-mono font-bold text-[#C99532] bg-[#FAF7F0] px-2 py-0.5 rounded-md border border-[#DFC9AC]">
+                      {getQrLogoHeight(settings.qrLogoSize)}px
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-[#8A6A53] font-bold">48px</span>
+                    <input
+                      type="range"
+                      min="48"
+                      max="160"
+                      step="4"
+                      value={getQrLogoHeight(settings.qrLogoSize)}
+                      onChange={(e) => setSettings({ ...settings, qrLogoSize: Number(e.target.value) })}
+                      className="flex-1 h-2 bg-[#DFC9AC]/40 rounded-lg appearance-none cursor-pointer accent-[#C99532]"
+                    />
+                    <span className="text-[10px] text-[#8A6A53] font-bold">160px</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 mt-2">
+                    {[
+                      { label: "Compact", val: 56 },
+                      { label: "Medium", val: 76 },
+                      { label: "Big (104px)", val: 104 },
+                      { label: "Extra Big", val: 128 },
+                      { label: "Maximum", val: 156 },
+                    ].map((preset) => {
+                      const current = getQrLogoHeight(settings.qrLogoSize);
+                      const isSelected = Math.abs(current - preset.val) <= 4;
+                      return (
+                        <button
+                          key={preset.val}
+                          type="button"
+                          onClick={() => setSettings({ ...settings, qrLogoSize: preset.val })}
+                          className={`text-[10px] px-2 py-1 rounded-lg border font-bold transition-all text-center ${
+                            isSelected
+                              ? "bg-[#2C190E] text-[#FFFCF6] border-[#2C190E] shadow-sm"
+                              : "bg-white text-[#8A6A53] hover:text-[#301C10] border-[#DFC9AC]"
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-[#8A6A53] mt-1.5">
+                    Make your café logo bigger or smaller on the printed table QR stand cards. Preview updates live on the right.
+                  </p>
                 </div>
               </div>
             </div>
@@ -1056,16 +1110,14 @@ export const CafeSettingsView: React.FC = () => {
                         isOrderingPaused: !settings.isOrderingPaused,
                       })
                     }
-                    className={`px-3 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 ${
-                      settings.isOrderingPaused
+                    className={`px-3 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 ${settings.isOrderingPaused
                         ? "bg-amber-100 text-amber-900 border border-amber-300"
                         : "bg-emerald-100 text-emerald-900 border border-emerald-300"
-                    }`}
+                      }`}
                   >
                     <span
-                      className={`w-2 h-2 rounded-full ${
-                        settings.isOrderingPaused ? "bg-amber-600" : "bg-emerald-600"
-                      }`}
+                      className={`w-2 h-2 rounded-full ${settings.isOrderingPaused ? "bg-amber-600" : "bg-emerald-600"
+                        }`}
                     />
                     <span>{settings.isOrderingPaused ? "Ordering Paused" : "Active & Accepting"}</span>
                   </button>
@@ -1232,11 +1284,10 @@ export const CafeSettingsView: React.FC = () => {
                 {currentSocialLinks.map((link, idx) => (
                   <div
                     key={link.id || idx}
-                    className={`p-3.5 rounded-xl border transition-all ${
-                      link.isActive
+                    className={`p-3.5 rounded-xl border transition-all ${link.isActive
                         ? "bg-white border-[#DFC9AC] shadow-xs"
                         : "bg-zinc-50 border-zinc-200 opacity-60"
-                    }`}
+                      }`}
                   >
                     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
                       {/* Platform selector */}
@@ -1319,11 +1370,10 @@ export const CafeSettingsView: React.FC = () => {
                             handleUpdateSocialLink(link.id, { isActive: !link.isActive })
                           }
                           title={link.isActive ? "Hide on customer menu" : "Show on customer menu"}
-                          className={`p-1.5 rounded-lg transition border ${
-                            link.isActive
+                          className={`p-1.5 rounded-lg transition border ${link.isActive
                               ? "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100"
                               : "text-zinc-400 bg-zinc-100 border-zinc-300 hover:bg-zinc-200"
-                          }`}
+                            }`}
                         >
                           {link.isActive ? (
                             <Eye className="w-4 h-4" />
@@ -1433,11 +1483,10 @@ export const CafeSettingsView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setPreviewMode("mobile")}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition ${
-                    previewMode === "mobile"
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition ${previewMode === "mobile"
                       ? "bg-[#2C190E] text-[#FFFCF6] shadow-xs"
                       : "text-[#8A6A53] hover:text-[#301C10]"
-                  }`}
+                    }`}
                 >
                   <Smartphone className="w-3.5 h-3.5" />
                   <span>Menu</span>
@@ -1445,11 +1494,10 @@ export const CafeSettingsView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setPreviewMode("qr")}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition ${
-                    previewMode === "qr"
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition ${previewMode === "qr"
                       ? "bg-[#2C190E] text-[#FFFCF6] shadow-xs"
                       : "text-[#8A6A53] hover:text-[#301C10]"
-                  }`}
+                    }`}
                 >
                   <Printer className="w-3.5 h-3.5" />
                   <span>QR Card</span>
@@ -1608,14 +1656,14 @@ export const CafeSettingsView: React.FC = () => {
                                 {link.platform === "google"
                                   ? "⭐"
                                   : link.platform === "instagram"
-                                  ? "📸"
-                                  : link.platform === "facebook"
-                                  ? "📘"
-                                  : link.platform === "whatsapp"
-                                  ? "💬"
-                                  : link.platform === "tiktok"
-                                  ? "🎵"
-                                  : "🔗"}
+                                    ? "📸"
+                                    : link.platform === "facebook"
+                                      ? "📘"
+                                      : link.platform === "whatsapp"
+                                        ? "💬"
+                                        : link.platform === "tiktok"
+                                          ? "🎵"
+                                          : "🔗"}
                               </span>
                               <span className="truncate max-w-[80px]">{link.label}</span>
                             </span>
@@ -1644,29 +1692,39 @@ export const CafeSettingsView: React.FC = () => {
                 <div
                   className="w-64 rounded-[28px] p-6 pt-6 pb-6 shadow-2xl flex flex-col items-center text-center space-y-3.5 border transition-all"
                   style={{
-                    backgroundColor: "#000000",
+                    backgroundColor: previewColors.headerBg || "#2C190E",
                     color: "#FFFCF6",
-                    borderColor: previewColors.accent || "#E8B64F",
+                    borderColor: previewColors.accent || "#4A290F",
                   }}
                 >
-                  {/* Top Header Text (matching reference card) */}
-                  <div className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] text-[#FFFCF6]/90 select-none pt-0.5">
-                    {settings.qrHeaderTitle || "SCAN TO ORDER • TEA TIME"}
-                  </div>
+                  {/* Optional Top Header Text */}
+                  {settings.qrHeaderTitle && settings.qrHeaderTitle.trim().length > 0 && (
+                    <div className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] text-[#FFFCF6]/90 select-none pt-0.5">
+                      {settings.qrHeaderTitle}
+                    </div>
+                  )}
 
-                  {/* Brand Logo - clean & balanced */}
-                  <div className="pt-0.5 pb-0.5 flex flex-col items-center justify-center">
+                  {/* Brand Logo - customizable size from admin panel */}
+                  <div className="pt-1 pb-1 flex flex-col items-center justify-center">
                     {settings.logoUrl && !settings.logoUrl.includes("logo-horizontal") ? (
                       <img
                         src={settings.logoUrl}
                         alt={settings.cafeName || "Logo"}
-                        className="h-16 max-h-20 max-w-[170px] w-auto object-contain select-none drop-shadow-md"
+                        style={{
+                          height: `${getQrLogoHeight(settings.qrLogoSize)}px`,
+                          maxHeight: `${getQrLogoHeight(settings.qrLogoSize) + 20}px`,
+                        }}
+                        className="max-w-[190px] w-auto object-contain select-none drop-shadow-md transition-all"
                       />
                     ) : (
                       <img
                         src="/assets/logo.png"
                         alt="TEA TIME"
-                        className="h-16 max-h-20 w-auto object-contain select-none drop-shadow-md"
+                        style={{
+                          height: `${getQrLogoHeight(settings.qrLogoSize)}px`,
+                          maxHeight: `${getQrLogoHeight(settings.qrLogoSize) + 20}px`,
+                        }}
+                        className="max-w-[190px] w-auto object-contain select-none drop-shadow-md transition-all"
                       />
                     )}
                   </div>
@@ -1695,12 +1753,10 @@ export const CafeSettingsView: React.FC = () => {
 
                   {/* Slogan / Footer note */}
                   <div
-                    className="pt-3 border-t border-[#E8B64F]/50 w-full text-[11px] italic leading-tight text-white/90"
+                    className="pt-3 border-t border-[#E8B64F]/40 w-full text-[11px] italic leading-tight text-white/90"
                   >
                     <span>
-                      {(!settings.qrFooterNote || settings.qrFooterNote.toLowerCase().includes("good tea brings people together"))
-                        ? "It's time for you!"
-                        : settings.qrFooterNote.replace(/^[☕\s\u2615\uFE0F]+/, "").trim() || "It's time for you!"}
+                      {settings.qrFooterNote || "☕ Good tea brings people together."}
                     </span>
                   </div>
                 </div>
