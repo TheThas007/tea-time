@@ -262,28 +262,27 @@ export const CustomerMenuPage: React.FC = () => {
           const doc = snap.docs[0];
           const tableData = { id: doc.id, ...doc.data() } as TableItem;
 
-          if (!tableData.active) {
-            if (isMounted) {
-              const tableLabel = tableData.number.toLowerCase().startsWith("table ")
-                ? tableData.number
-                : `Table ${tableData.number}`;
-              setTableError(`${tableLabel} is currently marked inactive by staff.`);
-              setCurrentTable(null);
-            }
-          } else {
-            if (isMounted) {
-              setCurrentTable(tableData);
-            }
+          if (isMounted) {
+            setCurrentTable({
+              ...tableData,
+              active: true,
+            });
           }
         } else {
           // Check fallback seed tables if running without populated Firestore
           const fallback = INITIAL_TABLES.find((t) => t.token === rawTableToken);
-          if (fallback && fallback.active) {
-            if (isMounted) setCurrentTable(fallback);
+          if (fallback) {
+            if (isMounted) setCurrentTable({ ...fallback, active: true });
           } else {
+            const numMatch = rawTableToken.match(/(\d+)/);
+            const guessedNumber = numMatch ? `Table ${numMatch[1].padStart(2, "0")}` : "Table";
             if (isMounted) {
-              setTableError("Invalid table QR code. Please ask café staff or scan your table code again.");
-              setCurrentTable(null);
+              setCurrentTable({
+                id: `tbl_${rawTableToken}`,
+                number: guessedNumber,
+                token: rawTableToken,
+                active: true,
+              });
             }
           }
         }
@@ -694,16 +693,7 @@ export const CustomerMenuPage: React.FC = () => {
             </div>
           </div>
         )}
-        {/* Table Token Alert if invalid or missing */}
-        {tableError && (
-          <div className="bg-[#FFFCF6] border border-[#DFC9AC] rounded-2xl p-4 shadow-warm text-xs md:text-sm text-[#301C10] space-y-1.5">
-            <div className="flex items-center gap-2 font-bold text-[#301C10]">
-              <AlertTriangle className="w-4 h-4 text-[#E8B64F]" />
-              <span>Table Verification Notice</span>
-            </div>
-            <p className="text-[#8A6A53]">{tableError}</p>
-          </div>
-        )}
+
 
         {/* Search Bar */}
         <div className="relative">
