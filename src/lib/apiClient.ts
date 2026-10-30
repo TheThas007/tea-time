@@ -159,7 +159,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
             profile = sP.docs[0].data();
             bId = profile.businessId || null;
             // Link to user.uid
-            await setDoc(doc(db, "userProfiles", user.uid), profile, { merge: true }).catch(() => {});
+            await setDoc(doc(db, "userProfiles", user.uid), profile, { merge: true }).catch(() => { });
           }
         }
 
@@ -251,8 +251,8 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
                 qrFooterNote: (branding.qrFooterNote && !branding.qrFooterNote.includes("Good tea brings people together"))
                   ? branding.qrFooterNote
                   : (bizData?.qrFooterNote && !bizData.qrFooterNote.includes("Good tea brings people together"))
-                  ? bizData.qrFooterNote
-                  : (bizData?.slug === "teatime" ? "It's time for you!" : "Enjoy your visit!"),
+                    ? bizData.qrFooterNote
+                    : (bizData?.slug === "teatime" ? "It's time for you!" : "Enjoy your visit!"),
                 qrLogoSize: branding.qrLogoSize || bizData?.qrLogoSize || 112,
               },
               subscription: {
@@ -792,7 +792,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
         if (slugSnap.exists()) {
           bId = slugSnap.data().businessId || bId;
         }
-      } catch {}
+      } catch { }
 
       // 2. Fetch business doc
       let bizSnap = await getDoc(doc(db, "businesses", bId));
@@ -930,7 +930,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
             if (!sB.empty) bId = sB.docs[0].id;
           }
         }
-      } catch {}
+      } catch { }
     }
     if (!bId && typeof window !== "undefined") {
       bId = localStorage.getItem("menyo_auth_businessId") || "teatime";
@@ -1074,7 +1074,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
             isArchived: true,
             isAvailable: false,
             available: false,
-          }).catch(() => {});
+          }).catch(() => { });
         }
       } catch (e) {
         console.warn("Client fallback archive product:", e);
@@ -1120,7 +1120,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
       try {
         await deleteDoc(doc(db, "businesses", bId, "categories", categoryId));
         if (bId === "teatime" || bId === "biz_teatime") {
-          await deleteDoc(doc(db, "categories", categoryId)).catch(() => {});
+          await deleteDoc(doc(db, "categories", categoryId)).catch(() => { });
         }
       } catch (e) {
         console.warn("Client fallback archive category:", e);
@@ -1217,7 +1217,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
         if (bSnap.exists()) {
           bizName = bSnap.data()?.name || bizName;
         }
-      } catch {}
+      } catch { }
     }
 
     const orderId = `ord_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -1232,7 +1232,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
         if (tSnap.exists()) {
           resolvedTableNumber = tSnap.data()?.tableNumber || tSnap.data()?.number || resolvedTableNumber;
         }
-      } catch {}
+      } catch { }
     }
 
     const rawItems: any[] = Array.isArray(data.items) ? data.items : [];
@@ -1254,7 +1254,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
           pImage = pd.imageUrl || pd.image || null;
           pCat = pd.category || pCat;
         }
-      } catch {}
+      } catch { }
 
       const qty = Number(it.quantity) || 1;
       const subtotalMinor = pPriceMinor * qty;
@@ -1316,7 +1316,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
         createdAtMs: nowMs,
       });
       if (bId === "teatime" || bId === "biz_teatime") {
-        await setDoc(doc(db, "orders", orderId), orderDocData).catch(() => {});
+        await setDoc(doc(db, "orders", orderId), orderDocData).catch(() => { });
       }
     } catch (e) {
       console.warn("Client fallback create tenant order:", e);

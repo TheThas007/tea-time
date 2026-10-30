@@ -113,7 +113,7 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
           if (sSnap.exists()) {
             targetBizId = sSnap.data()?.businessId;
           }
-        } catch {}
+        } catch { }
       }
 
       if (targetBizId && isMounted) {
@@ -222,10 +222,10 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
                     {/* Stage icon circle */}
                     <div
                       className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all duration-300 z-10 ${isCurrent
-                          ? "bg-[#4A290F] text-[#FFFCF6] ring-4 ring-[#E8B64F]/40 shadow-warm-md font-bold scale-110"
-                          : isPassed
-                            ? "bg-[#E8B64F] text-[#301C10]"
-                            : "bg-[#FAF7F0] text-[#8A6A53] border border-[#DFC9AC]"
+                        ? "bg-[#4A290F] text-[#FFFCF6] ring-4 ring-[#E8B64F]/40 shadow-warm-md font-bold scale-110"
+                        : isPassed
+                          ? "bg-[#E8B64F] text-[#301C10]"
+                          : "bg-[#FAF7F0] text-[#8A6A53] border border-[#DFC9AC]"
                         }`}
                     >
                       <IconComponent className="w-4 h-4" />
@@ -235,10 +235,10 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
                       <div className="flex items-center justify-between">
                         <span
                           className={`text-xs font-bold ${isCurrent
-                              ? "text-[#301C10] text-sm"
-                              : isPassed
-                                ? "text-[#301C10]"
-                                : "text-[#8A6A53]"
+                            ? "text-[#301C10] text-sm"
+                            : isPassed
+                              ? "text-[#301C10]"
+                              : "text-[#8A6A53]"
                             }`}
                         >
                           {stage.label}
