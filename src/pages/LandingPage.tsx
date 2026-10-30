@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   QrCode,
@@ -14,6 +14,21 @@ import { MenyoWordmark } from "../components/common/MenyoLogo";
 
 export const LandingPage: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Ensure autoplay works reliably on mobile and desktop by strictly setting muted before play
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.muted = true;
+      videoRef.current.defaultMuted = true;
+      const playPromise = videoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn("Hero video autoplay notice:", err);
+        });
+      }
+    }
+  }, []);
 
   const packages = [
     {
@@ -243,47 +258,25 @@ export const LandingPage: React.FC = () => {
               <div className="h-px w-10 bg-[#7BBBFF]/50 border-t border-dashed border-[#7BBBFF]" />
             </div>
 
-            {/* Right: MODERN IPHONE PRO MOCKUP WITH TEA TIME LIVE MENU */}
-            <div className="w-[280px] sm:w-[310px] shrink-0 relative transition-all select-none">
-              {/* Titanium Side Hardware Buttons */}
-              {/* Left Side: Action Button + Volume Buttons */}
-              <div className="absolute -left-[2px] top-[74px] w-[3px] h-[16px] bg-[#38373d] rounded-l-sm shadow-sm" aria-hidden="true" />
-              <div className="absolute -left-[2px] top-[102px] w-[3px] h-[32px] bg-[#38373d] rounded-l-sm shadow-sm" aria-hidden="true" />
-              <div className="absolute -left-[2px] top-[142px] w-[3px] h-[32px] bg-[#38373d] rounded-l-sm shadow-sm" aria-hidden="true" />
-
-              {/* Right Side: Power / Side Button */}
-              <div className="absolute -right-[2px] top-[110px] w-[3px] h-[44px] bg-[#38373d] rounded-r-sm shadow-sm" aria-hidden="true" />
-
-              {/* iPhone Outer Titanium Chassis */}
-              <div className="w-full bg-gradient-to-b from-[#2d2c31] via-[#1f1e22] to-[#17171a] p-[3px] rounded-[48px] shadow-[0_20px_50px_-12px_rgba(5,15,42,0.22),0_8px_16px_-4px_rgba(5,15,42,0.12)] ring-1 ring-white/15">
-                {/* Thin Uniform Black Inner Bezel */}
-                <div className="w-full bg-black p-[2.5px] rounded-[45px]">
-                  {/* Screen Viewport with Smoothly Rounded Display Corners */}
-                  <div className="bg-black rounded-[42px] overflow-hidden flex flex-col relative max-h-[470px] sm:max-h-[500px]">
-                    
-                    {/* Dedicated Top Black Safe Area with Centered Dynamic Island */}
-                    <div className="h-7 bg-black w-full shrink-0 flex items-center justify-center relative px-4 z-20">
-                      {/* Dynamic Island Capsule */}
-                      <div className="w-[74px] h-[18px] bg-[#0c0c0e] rounded-full border border-white/10 flex items-center justify-end pr-1.5 shadow-inner">
-                        {/* Front camera lens reflection dot */}
-                        <div className="w-2.5 h-2.5 rounded-full bg-[#05070d] ring-1 ring-white/10" />
-                      </div>
-                    </div>
-
-                    {/* Clean Tea Time Customer Menu Image (unobstructed, aligned directly below safe area) */}
-                    <div className="w-full bg-[#FAF7F0] flex-1 overflow-hidden relative">
-                      <img
-                        src="/assets/hero-phone-menu.jpg"
-                        alt="Tea Time Customer Menu displayed on iPhone"
-                        width={682}
-                        height={1024}
-                        className="w-full h-auto object-cover object-top block select-none pointer-events-none"
-                        loading="eager"
-                      />
-                    </div>
-
-                  </div>
-                </div>
+            {/* Right: Tea Time Live Mobile Video Demonstration */}
+            <div className="w-[280px] sm:w-[310px] shrink-0 relative transition-all select-none flex items-center justify-center">
+              <div className="w-full rounded-[36px] sm:rounded-[44px] overflow-hidden shadow-[0_20px_50px_-12px_rgba(5,15,42,0.22),0_8px_16px_-4px_rgba(5,15,42,0.12)] ring-1 ring-black/10 bg-black">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  controls={false}
+                  disablePictureInPicture
+                  disableRemotePlayback
+                  poster="/assets/hero-phone-poster.jpg"
+                  className="w-full h-auto object-contain block select-none pointer-events-none"
+                  style={{ objectFit: "contain" }}
+                >
+                  <source src="/assets/hero-phone-video.mp4" type="video/mp4" />
+                  Your browser does not support video playback.
+                </video>
               </div>
             </div>
 

@@ -23,6 +23,7 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Local raw product image source folder (verified assets live in public/images/menu/)
+# Local raw product image and video source folders (verified assets live in public/assets and public/images/menu/)
 menu product/
+video/
 
