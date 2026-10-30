@@ -2,7 +2,6 @@ import React from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Printer, X } from "lucide-react";
 import { TableItem } from "../../types";
-import { Logo } from "../common/Logo";
 
 interface SingleProps {
   businessName: string;
@@ -21,15 +20,15 @@ interface SingleProps {
 }
 
 export function getQrLogoHeight(size?: number | string): number {
-  if (typeof size === "number") return Math.min(Math.max(size, 40), 180);
-  if (!size) return 112; // Default to prominent size matching original 4x6" card
-  if (size === "small" || size === "compact") return 64;
-  if (size === "medium" || size === "default") return 92;
-  if (size === "large" || size === "big") return 116;
-  if (size === "xlarge" || size === "extrabig") return 138;
-  if (size === "huge" || size === "max") return 160;
+  if (typeof size === "number") return Math.min(Math.max(size, 60), 220);
+  if (!size) return 140; // Default prominent size matching original reference card
+  if (size === "small" || size === "compact") return 80;
+  if (size === "medium" || size === "default") return 112;
+  if (size === "large" || size === "big") return 140;
+  if (size === "xlarge" || size === "extrabig") return 165;
+  if (size === "huge" || size === "max") return 195;
   const parsed = parseInt(String(size), 10);
-  return isNaN(parsed) ? 112 : Math.min(Math.max(parsed, 40), 180);
+  return isNaN(parsed) ? 140 : Math.min(Math.max(parsed, 60), 220);
 }
 
 const cleanQrFooterNote = (note?: string, fallback = "☕ Good tea brings people together."): string => {
@@ -41,15 +40,15 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
   businessName,
   businessSlug,
   table,
-  primaryColor = "#2C190E",
+  primaryColor = "#24140E",
   accentColor = "#E8B64F",
-  headerBackgroundColor = "#2C190E",
+  headerBackgroundColor = "#24140E",
   headerTextColor = "#FFFCF6",
   logoUrl,
   qrHeaderTitle,
   qrSubtitle = "SCAN TO ORDER",
   qrFooterNote = "☕ Good tea brings people together.",
-  qrLogoSize = 112,
+  qrLogoSize = 140,
   onClose,
 }) => {
   const origin = window.location.origin;
@@ -60,9 +59,9 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
   };
 
   const isTeaTime = !businessSlug || businessSlug === "teatime";
-  const cardBg = isTeaTime ? "#2C190E" : (headerBackgroundColor || primaryColor || "#050F2A");
+  const cardBg = isTeaTime ? "#24140E" : (headerBackgroundColor || primaryColor || "#24140E");
   const cardTextColor = isTeaTime ? "#FFFCF6" : (headerTextColor || "#FFFCF6");
-  const cardAccent = isTeaTime ? "#E8B64F" : (accentColor || "#7BBBFF");
+  const cardAccent = isTeaTime ? "#E8B64F" : (accentColor || "#E8B64F");
 
   return (
     <div className="fixed inset-0 z-50 bg-[#2C190E]/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn print:p-0 print:bg-white print:fixed print:inset-0">
@@ -119,16 +118,16 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
           </button>
         </div>
 
-        {/* Printable Preview Container - exact 4x6" cardstock size */}
+        {/* Printable Preview Container - exact 4x6" cardstock size matching reference image */}
         <div className="p-6 sm:p-8 bg-[#FAF7F0] flex items-center justify-center print:p-0 print:m-0 print:bg-transparent">
           {/* Cardstock Tent Card */}
           <div
             id="printable-tent-card"
-            className="w-64 sm:w-72 rounded-[28px] p-6 pt-6 pb-6 shadow-2xl flex flex-col items-center text-center space-y-3.5 border transition-transform print-card-exact"
+            className="w-64 sm:w-72 rounded-[28px] p-6 pt-5 pb-6 shadow-2xl flex flex-col items-center text-center space-y-4 border-2 transition-transform print-card-exact"
             style={{
-              backgroundColor: isTeaTime ? "#2C190E" : cardBg,
+              backgroundColor: cardBg,
               color: cardTextColor,
-              borderColor: isTeaTime ? "#4A290F" : cardAccent,
+              borderColor: isTeaTime ? "#C99532" : cardAccent,
             }}
           >
             {/* Optional Top Header Text (only if explicitly specified) */}
@@ -141,25 +140,31 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
               </div>
             )}
 
-            {/* Brand Logo - customizable size from admin panel */}
-            <div className="pt-1 pb-1 flex flex-col items-center justify-center">
+            {/* Brand Logo - prominent vertical styling matching uploaded photo */}
+            <div className="pt-1 pb-1 flex flex-col items-center justify-center min-h-[110px]">
               {logoUrl && !logoUrl.includes("logo-horizontal") ? (
                 <img
                   src={logoUrl}
                   alt={businessName}
-                  style={{ height: `${getQrLogoHeight(qrLogoSize)}px`, maxHeight: `${getQrLogoHeight(qrLogoSize) + 20}px` }}
-                  className="max-w-[210px] w-auto object-contain select-none drop-shadow-md transition-all"
+                  style={{
+                    height: `${getQrLogoHeight(qrLogoSize)}px`,
+                    maxHeight: `${getQrLogoHeight(qrLogoSize) + 20}px`,
+                  }}
+                  className="max-w-[215px] w-auto object-contain select-none drop-shadow-md transition-all"
                 />
               ) : isTeaTime ? (
                 <img
                   src="/assets/logo.png"
                   alt="TEA TIME"
-                  style={{ height: `${getQrLogoHeight(qrLogoSize)}px`, maxHeight: `${getQrLogoHeight(qrLogoSize) + 20}px` }}
-                  className="max-w-[210px] w-auto object-contain select-none drop-shadow-md transition-all"
+                  style={{
+                    height: `${getQrLogoHeight(qrLogoSize)}px`,
+                    maxHeight: `${getQrLogoHeight(qrLogoSize) + 20}px`,
+                  }}
+                  className="max-w-[215px] w-auto object-contain select-none drop-shadow-md transition-all"
                 />
               ) : (
                 <div
-                  className="text-xl font-black tracking-wider uppercase"
+                  className="text-2xl font-black tracking-wider uppercase py-2"
                   style={{ color: cardAccent }}
                 >
                   {businessName}
@@ -174,7 +179,7 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
                 size={144}
                 level="H"
                 includeMargin={false}
-                fgColor={isTeaTime ? "#2C190E" : (primaryColor || "#2C190E")}
+                fgColor={cardBg}
                 bgColor="#FFFCF6"
               />
             </div>
@@ -197,7 +202,7 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
 
             {/* Footer Slogan / Tagline with Divider Line */}
             <div
-              className="pt-3 border-t border-[#E8B64F]/40 w-full text-xs italic tracking-wide"
+              className="pt-3 border-t border-[#E8B64F]/40 w-3/4 mx-auto text-xs italic tracking-wide"
               style={{
                 color: `${cardTextColor}EE`,
               }}
@@ -256,15 +261,15 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
   businessName,
   businessSlug,
   tables,
-  primaryColor = "#2C190E",
+  primaryColor = "#24140E",
   accentColor = "#E8B64F",
-  headerBackgroundColor = "#2C190E",
+  headerBackgroundColor = "#24140E",
   headerTextColor = "#FFFCF6",
   logoUrl,
   qrHeaderTitle,
   qrSubtitle = "SCAN TO ORDER",
   qrFooterNote = "☕ Good tea brings people together.",
-  qrLogoSize = 112,
+  qrLogoSize = 140,
   onClose,
 }) => {
   const origin = window.location.origin;
@@ -274,9 +279,9 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
   };
 
   const isTeaTime = !businessSlug || businessSlug === "teatime";
-  const cardBg = isTeaTime ? "#2C190E" : (headerBackgroundColor || primaryColor || "#050F2A");
+  const cardBg = isTeaTime ? "#24140E" : (headerBackgroundColor || primaryColor || "#24140E");
   const cardTextColor = isTeaTime ? "#FFFCF6" : (headerTextColor || "#FFFCF6");
-  const cardAccent = isTeaTime ? "#E8B64F" : (accentColor || "#7BBBFF");
+  const cardAccent = isTeaTime ? "#E8B64F" : (accentColor || "#E8B64F");
 
   return (
     <div className="fixed inset-0 z-50 bg-[#2C190E]/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn print:p-0 print:bg-white print:fixed print:inset-0">
@@ -320,11 +325,11 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
             return (
               <div
                 key={table.id}
-                className="w-full rounded-[24px] p-5 shadow-lg flex flex-col items-center text-center space-y-3 border print:break-inside-avoid"
+                className="w-full rounded-[24px] p-5 shadow-lg flex flex-col items-center text-center space-y-3.5 border-2 print:break-inside-avoid"
                 style={{
                   backgroundColor: cardBg,
                   color: cardTextColor,
-                  borderColor: isTeaTime ? "#4A290F" : cardAccent,
+                  borderColor: isTeaTime ? "#C99532" : cardAccent,
                 }}
               >
                 {/* Optional Top Header Text */}
@@ -336,24 +341,30 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
                   </div>
                 )}
 
-                <div className="pt-1 flex flex-col items-center justify-center">
+                <div className="pt-1 pb-1 flex flex-col items-center justify-center min-h-[90px]">
                   {logoUrl && !logoUrl.includes("logo-horizontal") ? (
                     <img
                       src={logoUrl}
                       alt={businessName}
-                      style={{ height: `${Math.round(getQrLogoHeight(qrLogoSize) * 0.85)}px`, maxHeight: `${Math.round(getQrLogoHeight(qrLogoSize) * 0.85) + 15}px` }}
-                      className="w-auto max-w-[170px] object-contain select-none drop-shadow transition-all"
+                      style={{
+                        height: `${Math.round(getQrLogoHeight(qrLogoSize) * 0.85)}px`,
+                        maxHeight: `${Math.round(getQrLogoHeight(qrLogoSize) * 0.85) + 15}px`,
+                      }}
+                      className="w-auto max-w-[175px] object-contain select-none drop-shadow transition-all"
                     />
                   ) : isTeaTime ? (
                     <img
                       src="/assets/logo.png"
                       alt="TEA TIME"
-                      style={{ height: `${Math.round(getQrLogoHeight(qrLogoSize) * 0.85)}px`, maxHeight: `${Math.round(getQrLogoHeight(qrLogoSize) * 0.85) + 15}px` }}
-                      className="w-auto max-w-[170px] object-contain select-none drop-shadow transition-all"
+                      style={{
+                        height: `${Math.round(getQrLogoHeight(qrLogoSize) * 0.85)}px`,
+                        maxHeight: `${Math.round(getQrLogoHeight(qrLogoSize) * 0.85) + 15}px`,
+                      }}
+                      className="w-auto max-w-[175px] object-contain select-none drop-shadow transition-all"
                     />
                   ) : (
                     <div
-                      className="text-lg font-black tracking-wider uppercase"
+                      className="text-lg font-black tracking-wider uppercase py-1"
                       style={{ color: cardAccent }}
                     >
                       {businessName}
@@ -367,7 +378,7 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
                     size={120}
                     level="H"
                     includeMargin={false}
-                    fgColor={isTeaTime ? "#2C190E" : (primaryColor || "#2C190E")}
+                    fgColor={cardBg}
                     bgColor="#FFFCF6"
                   />
                 </div>
@@ -388,7 +399,7 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
                 </div>
 
                 <div
-                  className="pt-2.5 border-t border-[#E8B64F]/40 w-full text-[11px] italic leading-tight text-white/90"
+                  className="pt-2.5 border-t border-[#E8B64F]/40 w-3/4 mx-auto text-[11px] italic leading-tight text-white/90"
                 >
                   <span>
                     {cleanQrFooterNote(qrFooterNote, isTeaTime ? "☕ Good tea brings people together." : (qrFooterNote || "Enjoy your visit!"))}

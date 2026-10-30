@@ -247,29 +247,48 @@ export class PlatformEngine {
     const profile = await this.store.getDoc<UserProfileRecord>(
       `userProfiles/${caller.uid}`
     );
-    if (
-      !profile ||
-      !profile.active ||
-      profile.role !== "BUSINESS_OWNER" ||
-      !profile.businessId
-    ) {
+    if (!profile || !profile.active) {
       throw new PlatformApiError(
         "permission-denied",
-        "Business owner access is required."
+        "Active user profile is required."
       );
     }
 
-    if (
-      options.clientSubmittedBusinessId &&
-      options.clientSubmittedBusinessId !== profile.businessId
-    ) {
+    let businessId: string;
+    if (profile.role === "SUPER_ADMIN") {
+      // Super Admin can manage any business if businessId is specified, or teatime by default
+      if (options.clientSubmittedBusinessId) {
+        businessId = options.clientSubmittedBusinessId;
+      } else if (profile.businessId) {
+        businessId = profile.businessId;
+      } else {
+        businessId = "teatime";
+      }
+    } else if (profile.role === "BUSINESS_OWNER") {
+      if (!profile.businessId) {
+        throw new PlatformApiError(
+          "permission-denied",
+          "Business owner has no assigned business."
+        );
+      }
+      if (
+        options.clientSubmittedBusinessId &&
+        options.clientSubmittedBusinessId !== profile.businessId
+      ) {
+        throw new PlatformApiError(
+          "permission-denied",
+          "Cross-business authorization attempt rejected."
+        );
+      }
+      businessId = profile.businessId;
+    } else {
       throw new PlatformApiError(
         "permission-denied",
-        "Cross-business authorization attempt rejected."
+        "Business management access is required."
       );
     }
 
-    if (profile.mustChangePassword || caller.claims?.mustChangePassword === true) {
+    if (profile.role !== "SUPER_ADMIN" && (profile.mustChangePassword || caller.claims?.mustChangePassword === true)) {
       throw new PlatformApiError(
         "failed-precondition",
         "You must change your temporary password before accessing business management.",
@@ -277,7 +296,6 @@ export class PlatformEngine {
       );
     }
 
-    const businessId = profile.businessId;
     const [business, access] = await Promise.all([
       this.store.getDoc<BusinessPublicProfile>(`businesses/${businessId}`),
       this.store.getDoc<BusinessAccessRecord>(`businessAccess/${businessId}`),
@@ -290,7 +308,7 @@ export class PlatformEngine {
       );
     }
 
-    if (options.requireActiveSubscription) {
+    if (options.requireActiveSubscription && profile.role !== "SUPER_ADMIN") {
       const evaluation = evaluateBusinessAccess(access, this.clock.now());
       if (!evaluation.allowed) {
         throw new PlatformApiError(
@@ -1268,6 +1286,24 @@ export class PlatformEngine {
           active: true,
           updatedAtMs: nowMs,
         });
+
+        // Provision starter categories so new business owner can immediately add products
+        const starterCats = [
+          { id: "cat_beverages", name: "Beverages", slug: "beverages", displayOrder: 1 },
+          { id: "cat_food", name: "Food & Meals", slug: "food-meals", displayOrder: 2 },
+          { id: "cat_desserts", name: "Desserts & Snacks", slug: "desserts-snacks", displayOrder: 3 },
+          { id: "cat_specials", name: "Chef's Specials", slug: "chefs-specials", displayOrder: 4 },
+        ];
+        for (const sc of starterCats) {
+          tx.setDoc(`businesses/${businessId}/categories/${sc.id}`, {
+            ...sc,
+            businessId,
+            isVisible: true,
+            createdAtMs: nowMs,
+            updatedAtMs: nowMs,
+          });
+        }
+
         tx.setDoc(`businesses/${businessId}/counters/orders`, {
           lastOrderNumber: 1000,
           updatedAtMs: nowMs,
@@ -2308,7 +2344,8 @@ export class PlatformEngine {
     let category = (input.category || (input as any).categoryId || "").trim();
     let categoryId = (input as any).categoryId;
     if (!category && !categoryId) {
-      throw new PlatformApiError("invalid-argument", "Category is required.");
+      category = "General";
+      categoryId = "cat_general";
     }
     if (categoryId && !input.category) {
       const catDoc = await this.store.getDoc<Category>(
@@ -2316,6 +2353,8 @@ export class PlatformEngine {
       );
       if (catDoc) {
         category = catDoc.name;
+      } else {
+        category = "General";
       }
     }
 
@@ -2664,9 +2703,13 @@ export class PlatformEngine {
         textColor: txtColor.normalized,
         headerBackgroundColor: hBgColor.normalized,
         headerTextColor: hTxtColor.normalized,
-        qrHeaderTitle: (input as any).qrHeaderTitle ?? bInput.qrHeaderTitle ?? business.branding?.qrHeaderTitle ?? (business.slug === "teatime" ? "" : `SCAN TO ORDER • ${name}`),
+        qrHeaderTitle: (input as any).qrHeaderTitle ?? bInput.qrHeaderTitle ?? business.branding?.qrHeaderTitle ?? (business.slug === "teatime" ? "SCAN TO ORDER • TEA TIME" : `SCAN TO ORDER • ${name}`),
         qrSubtitle: (input as any).qrSubtitle ?? bInput.qrSubtitle ?? business.branding?.qrSubtitle ?? "SCAN TO ORDER",
-        qrFooterNote: (input as any).qrFooterNote ?? bInput.qrFooterNote ?? business.branding?.qrFooterNote ?? (business.slug === "teatime" ? "☕ Good tea brings people together." : "Enjoy your visit!"),
+        qrFooterNote: (input as any).qrFooterNote ?? bInput.qrFooterNote ?? (
+          business.branding?.qrFooterNote && !business.branding.qrFooterNote.includes("Good tea brings people together")
+            ? business.branding.qrFooterNote
+            : (business.slug === "teatime" ? "It's time for you!" : "Enjoy your visit!")
+        ),
         qrLogoSize: (input as any).qrLogoSize ?? bInput.qrLogoSize ?? business.branding?.qrLogoSize ?? 112,
       },
       phone: (input.phone ?? business.phone ?? "").trim().slice(0, 40),

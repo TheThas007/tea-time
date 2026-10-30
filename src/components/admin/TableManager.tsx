@@ -347,11 +347,11 @@ export const TableManager: React.FC = () => {
               {/* Dynamic Tent Card Recreation matching exact uploaded 4x6" card style */}
               <div
                 id="printable-tent-card"
-                className="w-64 sm:w-72 rounded-[28px] p-6 pt-6 pb-6 shadow-2xl flex flex-col items-center text-center space-y-3.5 border print-card-exact"
+                className="w-64 sm:w-72 rounded-[28px] p-6 pt-5 pb-6 shadow-2xl flex flex-col items-center text-center space-y-4 border-2 print-card-exact"
                 style={{
-                  backgroundColor: settings.headerBackgroundColor || "#2C190E",
+                  backgroundColor: settings.headerBackgroundColor || "#24140E",
                   color: "#FFFCF6",
-                  borderColor: settings.accentColor || "#4A290F",
+                  borderColor: settings.accentColor || "#C99532",
                 }}
               >
                 {/* Optional Top Header Text */}
@@ -361,8 +361,8 @@ export const TableManager: React.FC = () => {
                   </div>
                 )}
 
-                {/* Brand Logo - clean & balanced with custom size */}
-                <div className="pt-1 pb-1 flex flex-col items-center justify-center">
+                {/* Brand Logo - prominent vertical styling matching uploaded photo */}
+                <div className="pt-1 pb-1 flex flex-col items-center justify-center min-h-[110px]">
                   {settings.logoUrl && !settings.logoUrl.includes("logo-horizontal") ? (
                     <img
                       src={settings.logoUrl}
@@ -371,7 +371,7 @@ export const TableManager: React.FC = () => {
                         height: `${getQrLogoHeight(settings.qrLogoSize)}px`,
                         maxHeight: `${getQrLogoHeight(settings.qrLogoSize) + 20}px`,
                       }}
-                      className="max-w-[210px] w-auto object-contain select-none drop-shadow-md transition-all"
+                      className="max-w-[215px] w-auto object-contain select-none drop-shadow-md transition-all"
                     />
                   ) : (
                     <img
@@ -381,7 +381,7 @@ export const TableManager: React.FC = () => {
                         height: `${getQrLogoHeight(settings.qrLogoSize)}px`,
                         maxHeight: `${getQrLogoHeight(settings.qrLogoSize) + 20}px`,
                       }}
-                      className="max-w-[210px] w-auto object-contain select-none drop-shadow-md transition-all"
+                      className="max-w-[215px] w-auto object-contain select-none drop-shadow-md transition-all"
                     />
                   )}
                 </div>
@@ -393,7 +393,7 @@ export const TableManager: React.FC = () => {
                     size={144}
                     level="H"
                     includeMargin={false}
-                    fgColor="#2C190E"
+                    fgColor={settings.headerBackgroundColor || "#24140E"}
                     bgColor="#FFFCF6"
                   />
                 </div>
@@ -412,7 +412,7 @@ export const TableManager: React.FC = () => {
 
                 {/* Divider Line & Footer Slogan */}
                 <div
-                  className="pt-3 border-t border-[#E8B64F]/40 w-full text-xs italic tracking-wide text-[#FFFCF6]/90"
+                  className="pt-3 border-t border-[#E8B64F]/40 w-3/4 mx-auto text-xs italic tracking-wide text-[#FFFCF6]/90"
                 >
                   <span>
                     {settings.qrFooterNote || "☕ Good tea brings people together."}

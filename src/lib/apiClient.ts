@@ -18,6 +18,8 @@ import {
   getDoc,
   getDocs,
   setDoc,
+  updateDoc,
+  deleteDoc,
   query,
   where,
   serverTimestamp,
@@ -244,9 +246,13 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
                 headerBackgroundColor: branding.headerBackgroundColor || bizData?.headerBackgroundColor || "#050F2A",
                 headerTextColor: branding.headerTextColor || bizData?.headerTextColor || "#F2FDFF",
                 logoUrl: branding.logoUrl || bizData?.logoUrl || null,
-                qrHeaderTitle: branding.qrHeaderTitle ?? bizData?.qrHeaderTitle ?? "",
+                qrHeaderTitle: branding.qrHeaderTitle ?? bizData?.qrHeaderTitle ?? (bizData?.slug === "teatime" ? "SCAN TO ORDER • TEA TIME" : ""),
                 qrSubtitle: branding.qrSubtitle || bizData?.qrSubtitle || "SCAN TO ORDER",
-                qrFooterNote: branding.qrFooterNote || bizData?.qrFooterNote || (bizData?.slug === "teatime" ? "☕ Good tea brings people together." : "Enjoy your visit!"),
+                qrFooterNote: (branding.qrFooterNote && !branding.qrFooterNote.includes("Good tea brings people together"))
+                  ? branding.qrFooterNote
+                  : (bizData?.qrFooterNote && !bizData.qrFooterNote.includes("Good tea brings people together"))
+                  ? bizData.qrFooterNote
+                  : (bizData?.slug === "teatime" ? "It's time for you!" : "Enjoy your visit!"),
                 qrLogoSize: branding.qrLogoSize || bizData?.qrLogoSize || 112,
               },
               subscription: {
@@ -959,6 +965,332 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
     return { success: true } as unknown as T;
   }
 
+  // 5. Owner Upsert Product (Direct client fallback)
+  if (action === "ownerUpsertProduct") {
+    let bId = data.businessId || (typeof window !== "undefined" ? localStorage.getItem("menyo_auth_businessId") : null) || "teatime";
+    const name = (data.name || "").trim();
+    const prodId = data.id && data.id.trim() ? data.id.trim() : `prod_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const priceRupees = typeof data.priceRupees === "number" ? data.priceRupees : (typeof data.priceMinor === "number" ? Math.round(data.priceMinor / 100) : 0);
+    const priceMinor = typeof data.priceMinor === "number" ? data.priceMinor : Math.round(priceRupees * 100);
+
+    let category = (data.category || data.categoryId || "General").trim();
+    let categoryId = data.categoryId || "cat_general";
+
+    const productRecord = {
+      id: prodId,
+      businessId: bId,
+      name,
+      category,
+      categoryId,
+      priceRupees,
+      priceMinor,
+      priceDisplay: priceRupees,
+      price: priceRupees,
+      description: data.description || "",
+      imageUrl: data.imageUrl || null,
+      image: data.imageUrl || null,
+      isAvailable: data.isAvailable !== false,
+      available: data.isAvailable !== false,
+      isVeg: data.isVeg ?? false,
+      isPopular: data.isPopular ?? false,
+      sortOrder: Number(data.sortOrder) || 0,
+      isArchived: false,
+      updatedAt: serverTimestamp(),
+      updatedAtMs: Date.now(),
+    };
+
+    try {
+      await setDoc(doc(db, "businesses", bId, "products", prodId), productRecord, { merge: true });
+      if (bId === "teatime" || bId === "biz_teatime") {
+        await setDoc(doc(db, "menu", prodId), productRecord, { merge: true });
+      }
+      // Ensure category doc exists
+      await setDoc(doc(db, "businesses", bId, "categories", categoryId), {
+        id: categoryId,
+        businessId: bId,
+        name: category,
+        slug: category.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        isVisible: true,
+        updatedAtMs: Date.now(),
+      }, { merge: true });
+    } catch (e) {
+      console.warn("Client fallback upsert product:", e);
+    }
+
+    return productRecord as unknown as T;
+  }
+
+  // 6. Owner Archive Product
+  if (action === "ownerArchiveProduct") {
+    let bId = data.businessId || (typeof window !== "undefined" ? localStorage.getItem("menyo_auth_businessId") : null) || "teatime";
+    const productId = data.productId;
+    if (productId) {
+      try {
+        await updateDoc(doc(db, "businesses", bId, "products", productId), {
+          isArchived: true,
+          isAvailable: false,
+          available: false,
+          updatedAt: serverTimestamp(),
+          updatedAtMs: Date.now(),
+        });
+        if (bId === "teatime" || bId === "biz_teatime") {
+          await updateDoc(doc(db, "menu", productId), {
+            isArchived: true,
+            isAvailable: false,
+            available: false,
+          }).catch(() => {});
+        }
+      } catch (e) {
+        console.warn("Client fallback archive product:", e);
+      }
+    }
+    return { success: true } as unknown as T;
+  }
+
+  // 7. Owner Upsert Category
+  if (action === "ownerUpsertCategory") {
+    let bId = data.businessId || (typeof window !== "undefined" ? localStorage.getItem("menyo_auth_businessId") : null) || "teatime";
+    const name = (data.name || "").trim();
+    const catId = data.id && data.id.trim() ? data.id.trim() : `cat_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const categoryRecord = {
+      id: catId,
+      businessId: bId,
+      name,
+      slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+      sortOrder: Number(data.sortOrder) || 0,
+      icon: data.icon || "",
+      iconUrl: data.iconUrl || data.icon || null,
+      isVisible: true,
+      updatedAt: serverTimestamp(),
+      updatedAtMs: Date.now(),
+    };
+
+    try {
+      await setDoc(doc(db, "businesses", bId, "categories", catId), categoryRecord, { merge: true });
+      if (bId === "teatime" || bId === "biz_teatime") {
+        await setDoc(doc(db, "categories", catId), categoryRecord, { merge: true });
+      }
+    } catch (e) {
+      console.warn("Client fallback upsert category:", e);
+    }
+    return categoryRecord as unknown as T;
+  }
+
+  // 8. Owner Archive Category
+  if (action === "ownerArchiveCategory") {
+    let bId = data.businessId || (typeof window !== "undefined" ? localStorage.getItem("menyo_auth_businessId") : null) || "teatime";
+    const categoryId = data.categoryId;
+    if (categoryId) {
+      try {
+        await deleteDoc(doc(db, "businesses", bId, "categories", categoryId));
+        if (bId === "teatime" || bId === "biz_teatime") {
+          await deleteDoc(doc(db, "categories", categoryId)).catch(() => {});
+        }
+      } catch (e) {
+        console.warn("Client fallback archive category:", e);
+      }
+    }
+    return { success: true } as unknown as T;
+  }
+
+  // 9. Owner Upsert Table
+  if (action === "ownerUpsertTable") {
+    let bId = data.businessId || (typeof window !== "undefined" ? localStorage.getItem("menyo_auth_businessId") : null) || "teatime";
+    const rawNum = (data.tableNumber || data.number || "").trim();
+    const tId = data.id || data.tableId || `tbl_${Date.now().toString().slice(-4)}`;
+    const token = data.token || `tok_${Math.random().toString(36).substring(2, 10)}`;
+
+    const tableRecord = {
+      id: tId,
+      businessId: bId,
+      number: rawNum,
+      tableNumber: rawNum,
+      token,
+      capacity: Number(data.capacity) || 4,
+      notes: data.notes || "",
+      active: data.active ?? true,
+      isArchived: false,
+      updatedAt: serverTimestamp(),
+      updatedAtMs: Date.now(),
+    };
+
+    try {
+      await setDoc(doc(db, "businesses", bId, "tables", tId), tableRecord, { merge: true });
+      await setDoc(doc(db, "businesses", bId, "tableTokens", token), {
+        token,
+        tableId: tId,
+        number: rawNum,
+        tableNumber: rawNum,
+        businessId: bId,
+        active: data.active ?? true,
+        updatedAtMs: Date.now(),
+      }, { merge: true });
+      if (bId === "teatime" || bId === "biz_teatime") {
+        await setDoc(doc(db, "tables", tId), tableRecord, { merge: true });
+      }
+    } catch (e) {
+      console.warn("Client fallback upsert table:", e);
+    }
+    return tableRecord as unknown as T;
+  }
+
+  // 10. Owner Update Order Status
+  if (action === "ownerUpdateOrderStatus") {
+    let bId = data.businessId || (typeof window !== "undefined" ? localStorage.getItem("menyo_auth_businessId") : null) || "teatime";
+    const orderId = data.orderId;
+    const status = data.status;
+    if (orderId && status) {
+      try {
+        await updateDoc(doc(db, "businesses", bId, "orders", orderId), {
+          status,
+          updatedAt: serverTimestamp(),
+          updatedAtMs: Date.now(),
+        });
+        if (bId === "teatime" || bId === "biz_teatime") {
+          await updateDoc(doc(db, "orders", orderId), {
+            status,
+            updatedAt: serverTimestamp(),
+          }).catch(() => {});
+        }
+      } catch (e) {
+        console.warn("Client fallback update order status:", e);
+      }
+    }
+    return { success: true, orderId, status } as unknown as T;
+  }
+
+  // 11. Create Tenant Order (Direct client fallback)
+  if (action === "createTenantOrder") {
+    const slug = (data.businessSlug || "").toLowerCase().trim();
+    let bId = "teatime";
+    let bizName = "Restaurant";
+    if (slug && slug !== "teatime") {
+      try {
+        const slugSnap = await getDoc(doc(db, "businessSlugs", slug));
+        if (slugSnap.exists()) {
+          bId = slugSnap.data()?.businessId || bId;
+        }
+        const bSnap = await getDoc(doc(db, "businesses", bId));
+        if (bSnap.exists()) {
+          bizName = bSnap.data()?.name || bizName;
+        }
+      } catch {}
+    }
+
+    const orderId = `ord_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const trackingToken = `trk_${Math.random().toString(36).substring(2, 12)}`;
+    const nextOrderNum = Math.floor(1000 + Math.random() * 9000);
+    const orderNumberDisplay = `#${nextOrderNum}`;
+
+    let resolvedTableNumber = "Table 01";
+    if (data.tableToken) {
+      try {
+        const tSnap = await getDoc(doc(db, "businesses", bId, "tableTokens", data.tableToken.trim()));
+        if (tSnap.exists()) {
+          resolvedTableNumber = tSnap.data()?.tableNumber || tSnap.data()?.number || resolvedTableNumber;
+        }
+      } catch {}
+    }
+
+    const rawItems: any[] = Array.isArray(data.items) ? data.items : [];
+    let computedTotalMinor = 0;
+    const itemSnapshots: any[] = [];
+
+    // Fetch product details from businesses/{bId}/products
+    for (const it of rawItems) {
+      let pName = "Menu Item";
+      let pPriceMinor = 10000;
+      let pImage: string | null = null;
+      let pCat = "General";
+      try {
+        const pSnap = await getDoc(doc(db, "businesses", bId, "products", it.productId));
+        if (pSnap.exists()) {
+          const pd = pSnap.data();
+          pName = pd.name || pName;
+          pPriceMinor = pd.priceMinor || (pd.priceRupees ? pd.priceRupees * 100 : pPriceMinor);
+          pImage = pd.imageUrl || pd.image || null;
+          pCat = pd.category || pCat;
+        }
+      } catch {}
+
+      const qty = Number(it.quantity) || 1;
+      const subtotalMinor = pPriceMinor * qty;
+      computedTotalMinor += subtotalMinor;
+
+      itemSnapshots.push({
+        productId: it.productId,
+        name: pName,
+        category: pCat,
+        priceMinor: pPriceMinor,
+        quantity: qty,
+        subtotalMinor,
+        imageUrl: pImage,
+        sugarNote: it.sugarSpoons !== undefined && it.sugarSpoons !== null ? `${it.sugarSpoons} spoons sugar` : null,
+      });
+    }
+
+    const nowMs = Date.now();
+    const orderDocData = {
+      id: orderId,
+      businessId: bId,
+      businessSlug: slug,
+      trackingToken,
+      orderNumber: nextOrderNum,
+      orderNumberDisplay,
+      tableNumber: resolvedTableNumber,
+      tableToken: data.tableToken || "",
+      customerId: auth.currentUser?.uid || `guest_${Math.random().toString(36).substring(2, 9)}`,
+      status: "PENDING",
+      items: itemSnapshots,
+      itemCount: itemSnapshots.reduce((acc, i) => acc + i.quantity, 0),
+      totalMinor: computedTotalMinor,
+      totalRupees: Math.round(computedTotalMinor / 100),
+      currency: "LKR",
+      specialInstructions: data.specialInstructions || "",
+      idempotencyKey: data.idempotencyKey || "",
+      paymentStatus: "pay_at_counter",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      createdAtMs: nowMs,
+      updatedAtMs: nowMs,
+    };
+
+    try {
+      await setDoc(doc(db, "businesses", bId, "orders", orderId), orderDocData);
+      await setDoc(doc(db, "businesses", bId, "orderTracking", trackingToken), {
+        trackingToken,
+        orderId,
+        businessId: bId,
+        businessName: bizName,
+        orderNumber: nextOrderNum,
+        orderNumberDisplay,
+        tableNumber: resolvedTableNumber,
+        status: "PENDING",
+        items: itemSnapshots,
+        totalMinor: computedTotalMinor,
+        totalRupees: Math.round(computedTotalMinor / 100),
+        currency: "LKR",
+        createdAtMs: nowMs,
+      });
+      if (bId === "teatime" || bId === "biz_teatime") {
+        await setDoc(doc(db, "orders", orderId), orderDocData).catch(() => {});
+      }
+    } catch (e) {
+      console.warn("Client fallback create tenant order:", e);
+    }
+
+    return {
+      success: true,
+      orderId,
+      trackingToken,
+      orderNumber: nextOrderNum,
+      orderNumberDisplay,
+      tableNumber: resolvedTableNumber,
+      totalMinor: computedTotalMinor,
+      totalRupees: Math.round(computedTotalMinor / 100),
+    } as unknown as T;
+  }
+
   // 5. Default success response for other actions
   return { success: true } as unknown as T;
 }
@@ -1051,7 +1383,9 @@ export const platformApi = {
     return callRpc<{
       success: boolean;
       orderId: string;
-      orderNumber: string;
+      orderNumber: string | number;
+      orderNumberDisplay?: string;
+      tableNumber?: string;
       totalMinor: number;
       totalRupees: number;
       trackingToken: string;
@@ -1534,23 +1868,34 @@ export const platformApi = {
 
   // Business Owner Tenant RPCs
   async ownerUpsertCategory(data: {
+    businessId?: string;
     id?: string;
     name: string;
     slug?: string;
     sortOrder?: number;
     icon?: string;
+    iconUrl?: string;
   }) {
     return callRpc("ownerUpsertCategory", data);
   },
 
-  async ownerArchiveCategory(categoryId: string, reassignToCategoryId?: string) {
-    return callRpc("ownerArchiveCategory", { categoryId, reassignToCategoryId });
+  async ownerArchiveCategory(
+    categoryIdOrData: string | { categoryId: string; reassignToCategoryId?: string; businessId?: string },
+    reassignToCategoryId?: string,
+    businessId?: string
+  ) {
+    if (typeof categoryIdOrData === "string") {
+      return callRpc("ownerArchiveCategory", { categoryId: categoryIdOrData, reassignToCategoryId, businessId });
+    }
+    return callRpc("ownerArchiveCategory", categoryIdOrData);
   },
 
   async ownerUpsertProduct(data: {
+    businessId?: string;
     id?: string;
     name: string;
-    categoryId: string;
+    categoryId?: string;
+    category?: string;
     priceRupees: number;
     description?: string;
     imageUrl?: string | null;
@@ -1562,21 +1907,35 @@ export const platformApi = {
     return callRpc("ownerUpsertProduct", data);
   },
 
-  async ownerArchiveProduct(productId: string) {
-    return callRpc("ownerArchiveProduct", { productId });
+  async ownerArchiveProduct(productIdOrData: string | { productId: string; businessId?: string }) {
+    if (typeof productIdOrData === "string") {
+      return callRpc("ownerArchiveProduct", { productId: productIdOrData });
+    }
+    return callRpc("ownerArchiveProduct", productIdOrData);
   },
 
   async ownerUpsertTable(data: {
+    businessId?: string;
     id?: string;
-    tableNumber: string;
+    tableNumber?: string;
+    number?: string;
     capacity?: number;
     notes?: string;
+    active?: boolean;
+    rotateToken?: boolean;
   }) {
     return callRpc("ownerUpsertTable", data);
   },
 
-  async ownerUpdateOrderStatus(orderId: string, status: OrderStatus) {
-    return callRpc("ownerUpdateOrderStatus", { orderId, status });
+  async ownerUpdateOrderStatus(
+    orderIdOrPayload: string | { orderId: string; status: OrderStatus; businessId?: string },
+    status?: OrderStatus,
+    businessId?: string
+  ) {
+    if (typeof orderIdOrPayload === "string") {
+      return callRpc("ownerUpdateOrderStatus", { orderId: orderIdOrPayload, status, businessId });
+    }
+    return callRpc("ownerUpdateOrderStatus", orderIdOrPayload);
   },
 
   async ownerUpdateSettings(data: {

@@ -2206,7 +2206,7 @@ export const INITIAL_SETTINGS: CafeSettings = {
   qrHeaderTitle: "",
   qrSubtitle: "SCAN TO ORDER",
   qrFooterNote: "☕ Good tea brings people together.",
-  qrLogoSize: 112,
+  qrLogoSize: 140,
   googleReviewUrl: "https://maps.google.com/?q=Tea+Time+Vavuniya",
   instagramUrl: "https://www.instagram.com/teatime_vavuniya/",
   facebookUrl: "https://www.facebook.com/teatime.vavuniya/",

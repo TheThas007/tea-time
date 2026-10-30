@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useSearchParams, useParams, Link } from "react-router-dom";
-import { collection, query, where, getDocs, onSnapshot, doc } from "firebase/firestore";
+import { collection, query, where, getDoc, getDocs, onSnapshot, doc } from "firebase/firestore";
 import { Search, AlertTriangle, Globe, Star } from "lucide-react";
 import { db } from "../lib/firebase";
 import { MenuItem, Category, TableItem, CafeSettings, SocialLinkItem } from "../types";
@@ -197,6 +197,60 @@ export const CustomerMenuPage: React.FC = () => {
       setTableLoading(true);
       setTableError(null);
 
+      // 1. Multi-tenant business table resolution
+      if (!isTeaTime) {
+        try {
+          if (tenantBusiness?.id) {
+            const tokenSnap = await getDoc(
+              doc(db, "businesses", tenantBusiness.id, "tableTokens", rawTableToken.trim())
+            );
+            if (tokenSnap.exists()) {
+              const tData = tokenSnap.data();
+              if (isMounted) {
+                setCurrentTable({
+                  id: tData.tableId || tData.id || "tbl",
+                  number: tData.tableNumber || tData.number || "Table",
+                  token: rawTableToken.trim(),
+                  active: tData.active !== false,
+                });
+                setTableLoading(false);
+                return;
+              }
+            }
+
+            const q = query(
+              collection(db, "businesses", tenantBusiness.id, "tables"),
+              where("token", "==", rawTableToken.trim())
+            );
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+              const d = snap.docs[0];
+              const tData = d.data();
+              if (isMounted) {
+                setCurrentTable({
+                  id: d.id,
+                  number: tData.tableNumber || tData.number || "Table",
+                  token: rawTableToken.trim(),
+                  active: tData.active !== false,
+                });
+                setTableLoading(false);
+                return;
+              }
+            }
+          }
+
+          if (currentTable?.token === rawTableToken.trim()) {
+            if (isMounted) setTableLoading(false);
+            return;
+          }
+        } catch (tenantTableErr) {
+          console.warn("Tenant table lookup notice:", tenantTableErr);
+        }
+        if (isMounted) setTableLoading(false);
+        return;
+      }
+
+      // 2. Tea Time table resolution
       try {
         const q = query(
           collection(db, "tables"),
@@ -247,41 +301,106 @@ export const CustomerMenuPage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [rawTableToken, setCurrentTable]);
+  }, [rawTableToken, isTeaTime, tenantBusiness?.id, setCurrentTable]);
 
-  // Real-time listener for Menu Items (merged idempotently with official catalog)
+  // Real-time listener for Menu Items
   useEffect(() => {
-    const unsub = onSnapshot(
-      collection(db, "menu"),
-      (snap) => {
-        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as MenuItem));
-        setMenuItems(mergeMenuWithSeed(docs, INITIAL_MENU_ITEMS));
-      },
-      (err) => {
-        console.warn("Firestore menu listener fallback to initial seed:", err);
-        setMenuItems(INITIAL_MENU_ITEMS);
-      }
-    );
+    if (!isTeaTime && tenantBusiness?.id) {
+      const prodColl = collection(db, "businesses", tenantBusiness.id, "products");
+      const unsub = onSnapshot(
+        prodColl,
+        (snap) => {
+          if (!snap.empty) {
+            const items = snap.docs.map((d) => {
+              const data = d.data();
+              const pRupees = data.priceRupees || (data.priceMinor ? Math.round(data.priceMinor / 100) : 0);
+              return {
+                id: d.id,
+                name: data.name || "Product",
+                category: data.category || data.categoryId || "General",
+                categoryId: data.categoryId || data.category || "cat_general",
+                priceMinor: data.priceMinor || (pRupees * 100),
+                priceRupees: pRupees,
+                price: pRupees,
+                priceDisplay: `Rs. ${pRupees}`,
+                description: data.description || "",
+                imageUrl: data.imageUrl || data.image || null,
+                image: data.imageUrl || data.image || null,
+                isAvailable: data.isAvailable !== false,
+                available: data.isAvailable !== false,
+                displayOrder: data.displayOrder ?? 0,
+                isArchived: !!data.archived,
+                sugarSelection: data.sugarSelection,
+              } as unknown as MenuItem;
+            }).filter((i: any) => !i.isArchived && !i.archived);
+            setMenuItems(items);
+          }
+        },
+        (err) => {
+          console.warn("Tenant products listener notice:", err);
+        }
+      );
+      return () => unsub();
+    }
 
-    return () => unsub();
-  }, []);
+    if (isTeaTime) {
+      const unsub = onSnapshot(
+        collection(db, "menu"),
+        (snap) => {
+          const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as MenuItem));
+          setMenuItems(mergeMenuWithSeed(docs, INITIAL_MENU_ITEMS));
+        },
+        (err) => {
+          console.warn("Firestore menu listener fallback to initial seed:", err);
+          setMenuItems(INITIAL_MENU_ITEMS);
+        }
+      );
+      return () => unsub();
+    }
+  }, [isTeaTime, tenantBusiness?.id]);
 
-  // Real-time listener for Categories (merged idempotently with official 15 categories)
+  // Real-time listener for Categories
   useEffect(() => {
-    const unsub = onSnapshot(
-      collection(db, "categories"),
-      (snap) => {
-        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Category));
-        setCategories(mergeCategoriesWithSeed(docs, INITIAL_CATEGORIES));
-      },
-      (err) => {
-        console.warn("Firestore categories listener fallback:", err);
-        setCategories(INITIAL_CATEGORIES);
-      }
-    );
+    if (!isTeaTime && tenantBusiness?.id) {
+      const catColl = collection(db, "businesses", tenantBusiness.id, "categories");
+      const unsub = onSnapshot(
+        catColl,
+        (snap) => {
+          if (!snap.empty) {
+            const cats = snap.docs.map((d) => {
+              const data = d.data();
+              return {
+                id: d.id,
+                name: data.name || "Category",
+                sortOrder: data.sortOrder ?? 0,
+                icon: data.icon || "🍽️",
+              } as Category;
+            }).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+            setCategories(cats);
+          }
+        },
+        (err) => {
+          console.warn("Tenant categories listener notice:", err);
+        }
+      );
+      return () => unsub();
+    }
 
-    return () => unsub();
-  }, []);
+    if (isTeaTime) {
+      const unsub = onSnapshot(
+        collection(db, "categories"),
+        (snap) => {
+          const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Category));
+          setCategories(mergeCategoriesWithSeed(docs, INITIAL_CATEGORIES));
+        },
+        (err) => {
+          console.warn("Firestore categories listener fallback:", err);
+          setCategories(INITIAL_CATEGORIES);
+        }
+      );
+      return () => unsub();
+    }
+  }, [isTeaTime, tenantBusiness?.id]);
 
   // Filtered & deduplicated menu items based on category and case-insensitive search
   const filteredProducts = useMemo(() => {

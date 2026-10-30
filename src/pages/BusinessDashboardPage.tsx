@@ -32,7 +32,15 @@ import {
   Globe,
   Star,
   EyeOff,
+  Bell,
+  LayoutGrid,
+  Volume2,
+  VolumeX,
+  User,
+  ChevronDown,
 } from "lucide-react";
+import { soundManager } from "../lib/audio";
+import { formatOrderDateTime } from "../lib/utils";
 import { platformApi } from "../lib/apiClient";
 import { auth, db } from "../lib/firebase";
 import { signOut } from "firebase/auth";
@@ -79,14 +87,43 @@ export const BusinessDashboardPage: React.FC = () => {
   const [business, setBusiness] = useState<any | null>(null);
   const [mustChangePassword, setMustChangePassword] = useState(false);
 
-  // Active Tab
-  const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
+  // Active Tab (defaults to live orders just like Tea Time's admin panel)
+  const [activeTab, setActiveTab] = useState<DashboardTab>("orders");
+
+  // Real-time audio chime, clock, and staff dropdown (matching Tea Time AdminHeader)
+  const [isMuted, setIsMuted] = useState(soundManager.getMuted());
+  const [currentTime, setCurrentTime] = useState(formatOrderDateTime());
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const previousNewOrdersCount = React.useRef<number | null>(null);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(formatOrderDateTime());
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Real-time collections for this tenant
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<MenuItem[]>([]);
   const [tables, setTables] = useState<TableItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+
+  useEffect(() => {
+    const currentNewCount = orders.filter((o) => o.status === "PENDING" || o.status === "new").length;
+    if (previousNewOrdersCount.current !== null && currentNewCount > previousNewOrdersCount.current) {
+      soundManager.playNewOrderChime();
+    }
+    previousNewOrdersCount.current = currentNewCount;
+  }, [orders]);
+
+  const handleToggleSound = () => {
+    const nextMuted = soundManager.toggleMute();
+    setIsMuted(nextMuted);
+    if (!nextMuted) {
+      soundManager.playNewOrderChime();
+    }
+  };
 
   // Search & filter
   const [productSearch, setProductSearch] = useState("");
@@ -125,7 +162,7 @@ export const BusinessDashboardPage: React.FC = () => {
     qrHeaderTitle: "",
     qrSubtitle: "SCAN TO ORDER",
     qrFooterNote: "☕ Good tea brings people together.",
-    qrLogoSize: 112 as number | string,
+    qrLogoSize: 140 as number | string,
     socialLinks: [] as SocialLinkItem[],
   });
   const [savingSettings, setSavingSettings] = useState(false);
@@ -227,8 +264,8 @@ export const BusinessDashboardPage: React.FC = () => {
         headerTextColor: b.branding?.headerTextColor || (isTeaTime ? "#FAF7F0" : "#F2FDFF"),
         qrHeaderTitle: b.branding?.qrHeaderTitle ?? "",
         qrSubtitle: b.branding?.qrSubtitle ?? "SCAN TO ORDER",
-        qrFooterNote: b.branding?.qrFooterNote ?? (isTeaTime ? "☕ Good tea brings people together." : "Enjoy your visit!"),
-        qrLogoSize: b.branding?.qrLogoSize ?? 112,
+        qrFooterNote: b.branding?.qrFooterNote || (isTeaTime ? "☕ Good tea brings people together." : "Enjoy your visit!"),
+        qrLogoSize: b.branding?.qrLogoSize ?? 140,
         socialLinks: initialSocialLinks,
       });
     } catch (err: any) {
@@ -310,7 +347,7 @@ export const BusinessDashboardPage: React.FC = () => {
 
   const handleOrderStatusUpdate = async (orderId: string, status: OrderStatus) => {
     try {
-      await platformApi.ownerUpdateOrderStatus(orderId, status);
+      await platformApi.ownerUpdateOrderStatus(orderId, status, business?.id);
     } catch (err: any) {
       alert(err?.message || "Failed to update order status.");
     }
@@ -518,10 +555,10 @@ export const BusinessDashboardPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F2FDFF] text-[#050F2A] flex flex-col items-center justify-center gap-3 font-sans">
-        <Loader2 className="w-8 h-8 animate-spin text-[#7BBBFF]" />
-        <span className="text-xs text-[#050F2A]/60 uppercase tracking-widest font-bold">
-          Loading Workspace...
+      <div className="min-h-screen bg-[#FAF7F0] text-[#301C10] flex flex-col items-center justify-center gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-[#E8B64F]" />
+        <span className="text-xs text-[#8A6A53] tracking-wide font-bold">
+          Verifying administrative workspace privileges...
         </span>
       </div>
     );
@@ -537,22 +574,22 @@ export const BusinessDashboardPage: React.FC = () => {
 
   if (business && subStatus === "SUSPENDED") {
     return (
-      <div className="min-h-screen bg-[#F2FDFF] text-[#050F2A] flex flex-col items-center justify-center p-4 font-sans">
-        <div className="bg-white border border-[#050F2A]/10 rounded-3xl max-w-md w-full p-8 text-center shadow-lg">
+      <div className="min-h-screen bg-[#FAF7F0] text-[#301C10] flex flex-col items-center justify-center p-4">
+        <div className="bg-[#FFFCF6] border border-[#DFC9AC] rounded-3xl max-w-md w-full p-8 text-center shadow-warm-xl">
           <div className="w-14 h-14 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 mx-auto mb-4">
             <ShieldAlert className="w-8 h-8" />
           </div>
-          <h1 className="text-2xl font-black text-[#050F2A] mb-2">Workspace Suspended</h1>
-          <p className="text-sm text-[#050F2A]/70 mb-6 leading-relaxed">
-            Your restaurant workspace has been temporarily suspended by Menyo platform administration.
+          <h1 className="text-2xl font-black text-[#301C10] mb-2 tracking-tight">Workspace Suspended</h1>
+          <p className="text-sm text-[#8A6A53] mb-6 leading-relaxed">
+            Your restaurant workspace has been temporarily suspended by platform administration.
           </p>
-          <div className="p-4 bg-[#F2FDFF] rounded-2xl border border-[#050F2A]/10 text-xs text-[#050F2A]/80 mb-6 space-y-1">
-            <p>Please contact Menyo support to resolve account status:</p>
-            <p className="font-bold text-[#050F2A]">support@aevonix.lk / WhatsApp: +94 76 000 0000</p>
+          <div className="p-4 bg-[#FAF7F0] rounded-2xl border border-[#DFC9AC] text-xs text-[#301C10] mb-6 space-y-1">
+            <p className="text-[#8A6A53]">Please contact support to resolve account status:</p>
+            <p className="font-bold text-[#4A290F]">support@aevonix.lk / WhatsApp: +94 76 484 7081</p>
           </div>
           <button
             onClick={handleLogout}
-            className="w-full py-2.5 rounded-full bg-[#050F2A] text-white font-bold text-xs uppercase tracking-wider transition-all"
+            className="w-full py-2.5 rounded-xl bg-[#4A290F] hover:bg-[#623B1B] text-[#FFFCF6] font-bold text-xs uppercase tracking-wider transition-all shadow-warm"
           >
             Sign Out
           </button>
@@ -565,31 +602,31 @@ export const BusinessDashboardPage: React.FC = () => {
   if (business && subStatus === "EXPIRED") {
     const isTrial = business.isTrial || business.subscription?.packageId === "2_days_trial";
     return (
-      <div className="min-h-screen bg-[#F2FDFF] text-[#050F2A] flex flex-col items-center justify-center p-4 font-sans">
-        <div className="bg-white border border-[#050F2A]/10 rounded-3xl max-w-lg w-full p-8 text-center shadow-lg">
-          <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700 mx-auto mb-4">
+      <div className="min-h-screen bg-[#FAF7F0] text-[#301C10] flex flex-col items-center justify-center p-4">
+        <div className="bg-[#FFFCF6] border border-[#DFC9AC] rounded-3xl max-w-lg w-full p-8 text-center shadow-warm-xl">
+          <div className="w-14 h-14 rounded-2xl bg-[#E8B64F]/20 border border-[#E8B64F]/50 flex items-center justify-center text-[#4A290F] mx-auto mb-4">
             <Clock className="w-8 h-8" />
           </div>
-          <h1 className="text-2xl font-black text-[#050F2A] mb-2">
+          <h1 className="text-2xl font-black text-[#301C10] mb-2 tracking-tight">
             {isTrial ? "2-Day Free Trial Concluded" : "Subscription Expired"}
           </h1>
-          <p className="text-sm text-[#050F2A]/70 mb-6 leading-relaxed">
+          <p className="text-sm text-[#8A6A53] mb-6 leading-relaxed">
             {isTrial
               ? `Your 48-hour free trial for "${business.name}" has completed. Contact our team on WhatsApp to activate your official subscription key.`
-              : "Your Menyo menu subscription has ended. Customer ordering has been temporarily paused."}
+              : "Your menu subscription has ended. Customer ordering has been temporarily paused."}
           </p>
 
-          <div className="p-4 bg-[#F2FDFF] rounded-2xl border border-[#050F2A]/10 text-xs text-[#050F2A]/80 mb-6 space-y-2 text-left">
-            <div className="flex justify-between items-center pb-2 border-b border-[#050F2A]/10">
-              <span className="text-[#050F2A]/60">Your Login Email:</span>
-              <span className="font-bold text-[#050F2A] font-mono">{currentUser?.email || business.ownerEmail || "N/A"}</span>
+          <div className="p-4 bg-[#FAF7F0] rounded-2xl border border-[#DFC9AC] text-xs text-[#301C10] mb-6 space-y-2 text-left">
+            <div className="flex justify-between items-center pb-2 border-b border-[#DFC9AC]">
+              <span className="text-[#8A6A53]">Your Login Email:</span>
+              <span className="font-bold text-[#301C10] font-mono">{currentUser?.email || business.ownerEmail || "N/A"}</span>
             </div>
-            <div className="flex justify-between items-center pb-2 border-b border-[#050F2A]/10">
-              <span className="text-[#050F2A]/60">Select Plan:</span>
-              <span className="font-bold text-[#050F2A]">Monthly (Rs. 2k) / 6 Mo (Rs. 10k) / 1 Yr (Rs. 18k)</span>
+            <div className="flex justify-between items-center pb-2 border-b border-[#DFC9AC]">
+              <span className="text-[#8A6A53]">Available Plans:</span>
+              <span className="font-bold text-[#301C10]">Monthly (Rs. 2,000) / 6 Mo / 1 Yr</span>
             </div>
-            <p className="text-[#050F2A]/60 text-[11px] pt-1">
-              💬 When you contact our support team on WhatsApp, our Super Admin will look up your email and activate your subscription key instantly.
+            <p className="text-[#8A6A53] text-[11px] pt-1">
+              💬 When you contact our support team on WhatsApp, we will look up your email and activate your plan key instantly.
             </p>
           </div>
 
@@ -602,14 +639,14 @@ export const BusinessDashboardPage: React.FC = () => {
               )})%20has%20ended.%20I%20would%20like%20to%20pay%20and%20activate%20my%20subscription%20key.`}
               target="_blank"
               rel="noopener noreferrer"
-              className="w-full py-3 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm"
+              className="w-full py-3 rounded-xl bg-[#4A290F] hover:bg-[#623B1B] text-[#FFFCF6] font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-warm"
             >
-              <MessageCircle className="w-4 h-4" />
-              <span>Contact to Pay & Activate via WhatsApp (076 484 7081)</span>
+              <MessageCircle className="w-4 h-4 text-[#E8B64F]" />
+              <span>Contact to Pay & Activate via WhatsApp</span>
             </a>
             <button
               onClick={handleLogout}
-              className="w-full py-2.5 rounded-full bg-white hover:bg-[#F2FDFF] border border-[#050F2A]/15 text-[#050F2A]/70 hover:text-[#050F2A] font-bold text-xs transition-all"
+              className="w-full py-2.5 rounded-xl bg-[#FAF7F0] hover:bg-[#DFC9AC]/30 border border-[#DFC9AC] text-[#301C10] font-bold text-xs transition-all"
             >
               Sign Out
             </button>
@@ -627,182 +664,228 @@ export const BusinessDashboardPage: React.FC = () => {
     daysRemaining <= 7 &&
     daysRemaining >= 0;
 
+  const navItems: { id: DashboardTab; label: string; icon: any; badge?: number }[] = [
+    { id: "orders", label: "Live Orders", icon: Bell, badge: orders.filter((o) => o.status === "PENDING" || o.status === "PREPARING").length },
+    { id: "menu", label: "Menu Items", icon: UtensilsCrossed, badge: products.length },
+    { id: "categories", label: "Categories", icon: Layers, badge: categories.length },
+    { id: "tables", label: "Tables & QRs", icon: QrCode, badge: tables.length },
+    { id: "settings", label: "Settings", icon: Settings },
+    { id: "overview", label: "Overview", icon: LayoutGrid },
+  ];
+
   return (
-    <div className="min-h-screen bg-[#F2FDFF] text-[#050F2A] flex flex-col font-sans selection:bg-[#7BBBFF]/40 selection:text-[#050F2A]">
-      {/* 1. TOP FLOATING INSET PILL NAVBAR */}
-      <div className="sticky top-4 z-40 px-4 sm:px-6 max-w-7xl mx-auto w-full">
-        <header className="bg-white/95 backdrop-blur-md border border-[#050F2A]/10 rounded-full px-5 py-3 shadow-sm flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Link to="/" className="flex items-center gap-2" title="Menyo Platform">
-              <MenyoIcon size={26} />
-              <MenyoWordmark variant="dark" height={16} className="hidden sm:block" />
-            </Link>
+    <div className="min-h-screen bg-[#FAF7F0] flex flex-col text-[#301C10] selection:bg-[#E8B64F]/30">
+      {/* 1. TOP ESPRESSO HEADER BAR (Exact Tea Time style) */}
+      <header className="bg-[#0A0A0A] text-[#FFFCF6] border-b border-white/10 px-4 sm:px-6 py-2.5 flex items-center justify-between sticky top-0 z-30 shadow-warm-md">
+        {/* Left: Brand Logo + / Admin */}
+        <div className="flex items-center gap-2.5">
+          {business?.branding?.logoUrl ? (
+            <img
+              src={business.branding.logoUrl}
+              alt={business.name}
+              className="w-8 h-8 rounded-full object-contain bg-white/10 p-0.5 border border-white/20"
+            />
+          ) : (
+            <div
+              className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-[#1A0F08] text-xs shadow-warm"
+              style={{ backgroundColor: business?.branding?.accentColor || "#E8B64F" }}
+            >
+              {business?.name?.charAt(0) || "B"}
+            </div>
+          )}
+          <span className="font-extrabold text-sm text-[#FFFCF6] tracking-tight truncate max-w-[130px] sm:max-w-xs">
+            {business?.name || "Restaurant"}
+          </span>
+          <span className="text-white/40 font-bold text-sm select-none translate-y-0.5">/</span>
+          <span className="text-[#DFC9AC] font-bold text-sm tracking-wide translate-y-0.5">
+            Admin
+          </span>
+        </div>
 
-            <span className="text-[#050F2A]/20">/</span>
+        {/* Center: Live indicator & Real-time clock */}
+        <div className="hidden md:flex items-center gap-4 text-xs">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#1A1A1A] border border-[#E8B64F]/40 text-[#E8B64F] font-semibold shadow-warm">
+            <span className="w-2 h-2 rounded-full bg-[#E8B64F] animate-ping" />
+            <span>Live Orders Active</span>
+          </div>
 
-            {/* Business Logo & Name */}
-            <div className="flex items-center gap-2.5">
-              {business?.branding?.logoUrl ? (
-                <img
-                  src={business.branding.logoUrl}
-                  alt={business.name}
-                  className="w-8 h-8 rounded-full object-cover border border-[#050F2A]/10"
-                />
-              ) : (
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-xs shadow-sm"
-                  style={{ backgroundColor: business?.branding?.primaryColor || "#050F2A" }}
-                >
-                  {business?.name?.charAt(0) || "B"}
-                </div>
-              )}
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm tracking-tight text-[#050F2A]">
+          <span className="text-[#DFC9AC] font-medium font-mono">
+            {currentTime}
+          </span>
+        </div>
+
+        {/* Right: Sound toggle, View Menu, Staff account */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* View Menu Button */}
+          <a
+            href={`/${business?.slug}/menu`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1A1A1A] hover:bg-[#2A2A2A] border border-white/15 text-[#DFC9AC] hover:text-[#FFFCF6] text-xs font-bold transition shadow-warm"
+          >
+            <span>View Menu</span>
+            <ExternalLink className="w-3.5 h-3.5 text-[#E8B64F]" />
+          </a>
+
+          {/* Sound Toggle */}
+          <button
+            onClick={handleToggleSound}
+            title={isMuted ? "Unmute order chime" : "Mute order chime"}
+            className={`p-2 px-2.5 rounded-xl transition flex items-center gap-1.5 text-xs font-extrabold focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532] ${
+              isMuted
+                ? "bg-[#1A1A1A] text-[#DFC9AC] hover:bg-[#2A2A2A] border border-white/10"
+                : "bg-[#E8B64F] text-[#1A0F08] hover:bg-[#d9a53d] shadow-warm"
+            }`}
+          >
+            {isMuted ? (
+              <>
+                <VolumeX className="w-4 h-4" />
+                <span className="hidden lg:inline text-[11px]">Muted</span>
+              </>
+            ) : (
+              <>
+                <Volume2 className="w-4 h-4" />
+                <span className="hidden lg:inline text-[11px]">Sound On</span>
+              </>
+            )}
+          </button>
+
+          {/* User Account Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowUserDropdown(!showUserDropdown)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#1A1A1A] hover:bg-[#2A2A2A] border border-white/15 text-[#FFFCF6] text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
+            >
+              <div className="w-6 h-6 rounded-full bg-[#0A0A0A] flex items-center justify-center text-[#E8B64F]">
+                <User className="w-3.5 h-3.5" />
+              </div>
+              <span className="hidden md:inline truncate max-w-[120px]">
+                {currentUser?.email?.split("@")[0] || business?.name || "Owner"}
+              </span>
+              <ChevronDown className="w-3.5 h-3.5 text-[#DFC9AC]" />
+            </button>
+
+            {showUserDropdown && (
+              <div className="absolute right-0 mt-2 w-52 bg-[#FFFCF6] border border-[#DFC9AC] rounded-2xl shadow-warm-xl py-2 text-xs text-[#301C10] z-50 animate-fadeIn">
+                <div className="px-3.5 py-2 border-b border-[#DFC9AC]">
+                  <p className="text-[10px] uppercase font-bold text-[#8A6A53]">Signed in as</p>
+                  <p className="font-bold truncate text-[#301C10]">
+                    {currentUser?.email || "Owner"}
+                  </p>
+                  <span className="inline-block mt-1 text-[9px] uppercase font-black px-2 py-0.5 rounded-full bg-[#E8B64F]/20 text-[#4A290F]">
                     {business?.name}
                   </span>
-                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                    business?.isTrial || business?.subscription?.packageId === "2_days_trial"
-                      ? "bg-amber-500/15 text-amber-800 border border-amber-500/30"
-                      : "bg-emerald-500/15 text-emerald-800"
-                  }`}>
-                    {business?.subscription?.isLifetime
-                      ? "Lifetime"
-                      : business?.isTrial || business?.subscription?.packageId === "2_days_trial"
-                      ? `Trial: ${daysRemaining ?? 0}d left`
-                      : `${daysRemaining ?? 0}d left`}
-                  </span>
+                </div>
+                <div className="p-1">
+                  <a
+                    href={`/${business?.slug}/menu`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-[#FAF7F0] font-bold text-[#301C10] transition"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-[#E8B64F]" />
+                    <span>Open Guest Menu</span>
+                  </a>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-rose-600 hover:bg-rose-50 font-bold transition"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Sign Out</span>
+                  </button>
                 </div>
               </div>
-            </div>
+            )}
           </div>
-
-          <div className="flex items-center gap-2.5">
-            <a
-              href={`/${business?.slug}/menu`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-4 py-1.5 rounded-full bg-[#F2FDFF] hover:bg-[#7BBBFF]/20 border border-[#050F2A]/10 text-xs font-bold text-[#050F2A] flex items-center gap-1.5 transition-all"
-            >
-              <span>View Menu</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-
-            <button
-              onClick={handleLogout}
-              className="p-2 rounded-full text-[#050F2A]/60 hover:text-[#050F2A] hover:bg-[#F2FDFF] transition-all"
-              title="Sign Out"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        </header>
-
-        {/* 2-Day Free Trial Active Notification Banner */}
-        {(business?.isTrial || business?.subscription?.packageId === "2_days_trial") && (
-          <div className="mt-3 bg-gradient-to-r from-amber-50 via-amber-100/70 to-amber-50 border border-amber-300/70 rounded-2xl px-4 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-sm">
-            <div className="flex items-center gap-2.5">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
-              </span>
-              <div>
-                <span className="font-bold text-amber-950">
-                  2-Day Free Trial Active ({daysRemaining ?? 0} {daysRemaining === 1 ? "day" : "days"} remaining)
-                </span>
-                <span className="text-amber-900/70 ml-1.5 hidden md:inline">
-                  • Test out menus, tables, QR codes, and custom colors!
-                </span>
-              </div>
-            </div>
-            <a
-              href={`https://wa.me/94764847081?text=Hi%20Menyo,%20I'm%20using%20the%202-day%20trial%20for%20${encodeURIComponent(
-                business.name
-              )}%20(Email:%20${encodeURIComponent(
-                currentUser?.email || business.ownerEmail || ""
-              )}).%20I%20would%20like%20to%20activate%20my%20full%20plan%20key.`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-4 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition-all flex items-center gap-1.5 shadow-sm shrink-0"
-            >
-              <MessageCircle className="w-3.5 h-3.5" />
-              <span>WhatsApp to Activate Key</span>
-            </a>
-          </div>
-        )}
-
-        {/* 2. PILL TAB BAR */}
-        <div className="mt-3 flex items-center gap-2 overflow-x-auto no-scrollbar py-1 text-xs font-semibold text-[#050F2A]/60">
-          <button
-            onClick={() => setActiveTab("overview")}
-            className={`py-2 px-4 rounded-full transition-all whitespace-nowrap ${
-              activeTab === "overview"
-                ? "bg-[#050F2A] text-white font-bold shadow-sm"
-                : "bg-white/80 hover:bg-white text-[#050F2A] border border-[#050F2A]/10"
-            }`}
-          >
-            Overview
-          </button>
-          <button
-            onClick={() => setActiveTab("orders")}
-            className={`py-2 px-4 rounded-full transition-all flex items-center gap-1.5 whitespace-nowrap ${
-              activeTab === "orders"
-                ? "bg-[#050F2A] text-white font-bold shadow-sm"
-                : "bg-white/80 hover:bg-white text-[#050F2A] border border-[#050F2A]/10"
-            }`}
-          >
-            <ShoppingBag className="w-3.5 h-3.5" />
-            <span>Orders ({orders.filter((o) => o.status === "PENDING" || o.status === "PREPARING").length})</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("menu")}
-            className={`py-2 px-4 rounded-full transition-all flex items-center gap-1.5 whitespace-nowrap ${
-              activeTab === "menu"
-                ? "bg-[#050F2A] text-white font-bold shadow-sm"
-                : "bg-white/80 hover:bg-white text-[#050F2A] border border-[#050F2A]/10"
-            }`}
-          >
-            <UtensilsCrossed className="w-3.5 h-3.5" />
-            <span>Menu Items ({products.length})</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("categories")}
-            className={`py-2 px-4 rounded-full transition-all flex items-center gap-1.5 whitespace-nowrap ${
-              activeTab === "categories"
-                ? "bg-[#050F2A] text-white font-bold shadow-sm"
-                : "bg-white/80 hover:bg-white text-[#050F2A] border border-[#050F2A]/10"
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>Categories ({categories.length})</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("tables")}
-            className={`py-2 px-4 rounded-full transition-all flex items-center gap-1.5 whitespace-nowrap ${
-              activeTab === "tables"
-                ? "bg-[#050F2A] text-white font-bold shadow-sm"
-                : "bg-white/80 hover:bg-white text-[#050F2A] border border-[#050F2A]/10"
-            }`}
-          >
-            <QrCode className="w-3.5 h-3.5" />
-            <span>Tables & QRs ({tables.length})</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("settings")}
-            className={`py-2 px-4 rounded-full transition-all flex items-center gap-1.5 whitespace-nowrap ${
-              activeTab === "settings"
-                ? "bg-[#050F2A] text-white font-bold shadow-sm"
-                : "bg-white/80 hover:bg-white text-[#050F2A] border border-[#050F2A]/10"
-            }`}
-          >
-            <Settings className="w-3.5 h-3.5" />
-            <span>Settings & Branding</span>
-          </button>
         </div>
-      </div>
+      </header>
 
-      {/* 3. MAIN DASHBOARD CONTENT */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full flex-1 space-y-6">
+      {/* 2. BODY: LEFT SIDEBAR + MAIN CONTENT (Exact Tea Time style) */}
+      <div className="flex-1 flex">
+        {/* Left Espresso Sidebar */}
+        <aside className="w-56 shrink-0 bg-[#0A0A0A] text-[#FFFCF6] flex flex-col justify-between p-4 border-r border-white/10 hidden md:flex min-h-[calc(100vh-61px)]">
+          <div className="space-y-1.5">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-white/40 px-3 py-2">
+              Operations
+            </div>
+
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532] ${
+                    isActive
+                      ? "bg-[#E8B64F] text-[#1A0F08] shadow-warm font-extrabold"
+                      : "text-[#DFC9AC] hover:text-[#FFFCF6] hover:bg-[#1A1A1A]"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Icon className={`w-4 h-4 ${isActive ? "text-[#1A0F08]" : "text-[#DFC9AC]"}`} />
+                    <span>{item.label}</span>
+                  </div>
+
+                  {item.badge !== undefined && item.badge > 0 ? (
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold shadow-warm ${
+                        isActive ? "bg-[#0A0A0A] text-[#E8B64F]" : "bg-[#E8B64F] text-[#1A0F08]"
+                      }`}
+                    >
+                      {item.badge}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Footer brand info */}
+          <div className="p-3 bg-[#1A1A1A] rounded-xl border border-white/10 text-[11px] text-[#DFC9AC]">
+            <p className="font-bold text-[#FFFCF6] truncate">{business?.name || "Restaurant"} Kitchen</p>
+            <p className="text-[10px] text-[#DFC9AC]/80 mt-0.5">Real-time Order System</p>
+            {(business?.isTrial || business?.subscription?.packageId === "2_days_trial") && (
+              <span className="mt-1.5 inline-block text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                Trial: {daysRemaining ?? 0}d left
+              </span>
+            )}
+          </div>
+        </aside>
+
+        {/* Mobile Bottom Navigation Bar */}
+        <nav className="md:hidden fixed bottom-0 inset-x-0 bg-[#0A0A0A] border-t border-white/10 z-40 px-2 py-2 flex items-center justify-around shadow-warm-xl">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl text-[10px] font-bold transition relative focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532] ${
+                  isActive
+                    ? "text-[#E8B64F]"
+                    : "text-[#DFC9AC] hover:text-[#FFFCF6]"
+                }`}
+              >
+                <div className="relative">
+                  <Icon className="w-5 h-5" />
+                  {item.badge !== undefined && item.badge > 0 ? (
+                    <span className="absolute -top-1.5 -right-2 bg-[#E8B64F] text-[#1A0F08] text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+                      {item.badge}
+                    </span>
+                  ) : null}
+                </div>
+                <span className="truncate max-w-[50px]">{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* 3. MAIN DASHBOARD CONTENT */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto max-w-7xl mx-auto w-full pb-20 md:pb-8 space-y-6">
         {/* 7-Day Expiry Reminder Banner */}
         {isExpiringWithin7Days && (
           <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm animate-fadeIn">
@@ -841,63 +924,63 @@ export const BusinessDashboardPage: React.FC = () => {
         {activeTab === "overview" && (
           <div className="space-y-6">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div className="p-6 rounded-3xl bg-white border border-[#050F2A]/10 shadow-sm">
-                <span className="text-xs font-bold text-[#050F2A]/60 block mb-1">Total Products</span>
-                <span className="text-3xl font-black text-[#050F2A]">{products.length}</span>
+              <div className="p-6 rounded-3xl bg-[#FFFCF6] border border-[#DFC9AC] shadow-warm">
+                <span className="text-xs font-bold text-[#8A6A53] block mb-1">Total Products</span>
+                <span className="text-3xl font-black text-[#301C10]">{products.length}</span>
               </div>
-              <div className="p-6 rounded-3xl bg-white border border-[#050F2A]/10 shadow-sm">
-                <span className="text-xs font-bold text-[#050F2A]/60 block mb-1">Categories</span>
-                <span className="text-3xl font-black text-[#050F2A]">{categories.length}</span>
+              <div className="p-6 rounded-3xl bg-[#FFFCF6] border border-[#DFC9AC] shadow-warm">
+                <span className="text-xs font-bold text-[#8A6A53] block mb-1">Categories</span>
+                <span className="text-3xl font-black text-[#301C10]">{categories.length}</span>
               </div>
-              <div className="p-6 rounded-3xl bg-white border border-[#050F2A]/10 shadow-sm">
-                <span className="text-xs font-bold text-[#050F2A]/60 block mb-1">Active Dining Tables</span>
-                <span className="text-3xl font-black text-[#050F2A]">{tables.length}</span>
+              <div className="p-6 rounded-3xl bg-[#FFFCF6] border border-[#DFC9AC] shadow-warm">
+                <span className="text-xs font-bold text-[#8A6A53] block mb-1">Active Dining Tables</span>
+                <span className="text-3xl font-black text-[#301C10]">{tables.length}</span>
               </div>
-              <div className="p-6 rounded-3xl bg-white border border-[#050F2A]/10 shadow-sm">
-                <span className="text-xs font-bold text-[#050F2A]/60 block mb-1">Pending Orders</span>
-                <span className="text-3xl font-black text-[#7BBBFF]">
+              <div className="p-6 rounded-3xl bg-[#FFFCF6] border border-[#DFC9AC] shadow-warm">
+                <span className="text-xs font-bold text-[#8A6A53] block mb-1">Pending Orders</span>
+                <span className="text-3xl font-black text-[#E8B64F]">
                   {orders.filter((o) => o.status === "PENDING").length}
                 </span>
               </div>
             </div>
 
             {/* Recent Orders in Overview */}
-            <div className="bg-white border border-[#050F2A]/10 rounded-3xl p-6 sm:p-8 space-y-4 shadow-sm">
+            <div className="bg-[#FFFCF6] border border-[#DFC9AC] rounded-3xl p-6 sm:p-8 space-y-4 shadow-warm">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-bold text-[#050F2A]">Recent Dining Orders</h2>
-                  <p className="text-xs text-[#050F2A]/60">Real-time table orders feed</p>
+                  <h2 className="text-lg font-bold text-[#301C10]">Recent Dining Orders</h2>
+                  <p className="text-xs text-[#8A6A53]">Real-time table orders feed</p>
                 </div>
                 <button
                   onClick={() => setActiveTab("orders")}
-                  className="text-xs font-bold text-[#050F2A] hover:text-[#7BBBFF] transition-colors"
+                  className="text-xs font-bold text-[#4A290F] hover:text-[#E8B64F] transition-colors"
                 >
                   View All Orders &rarr;
                 </button>
               </div>
 
-              <div className="divide-y divide-[#050F2A]/10 border border-[#050F2A]/10 rounded-2xl overflow-hidden">
+              <div className="divide-y divide-[#DFC9AC]/60 border border-[#DFC9AC] rounded-2xl overflow-hidden">
                 {orders.slice(0, 5).map((order) => (
-                  <div key={order.id} className="p-4 bg-white flex items-center justify-between text-xs">
+                  <div key={order.id} className="p-4 bg-[#FFFCF6] hover:bg-[#FAF7F0] flex items-center justify-between text-xs transition">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-[#050F2A]">
+                        <span className="font-bold text-[#301C10]">
                           {order.orderNumberDisplay || order.orderNumber}
                         </span>
-                        <span className="px-2 py-0.5 rounded-full bg-[#7BBBFF]/20 text-[#050F2A] font-bold text-[10px]">
+                        <span className="px-2 py-0.5 rounded-full bg-[#4A290F] text-[#FFFCF6] font-bold text-[10px]">
                           {order.tableNumber}
                         </span>
                       </div>
-                      <p className="text-[11px] text-[#050F2A]/60 mt-1">
+                      <p className="text-[11px] text-[#8A6A53] mt-1">
                         {order.items?.length || 0} items &bull; Rs. {(order.totalRupees || (order.totalMinor / 100)).toLocaleString()}
                       </p>
                     </div>
 
                     <div className="flex items-center gap-3">
                       <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
-                        order.status === "PENDING" ? "bg-amber-100 text-amber-800" :
-                        order.status === "PREPARING" ? "bg-blue-100 text-blue-800" :
-                        order.status === "SERVED" ? "bg-emerald-100 text-emerald-800" : "bg-zinc-100 text-zinc-600"
+                        order.status === "PENDING" ? "bg-amber-100 text-amber-900 border border-amber-300" :
+                        order.status === "PREPARING" ? "bg-[#E8B64F]/20 text-[#4A290F] border border-[#E8B64F]/40" :
+                        order.status === "SERVED" ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-[#FAF7F0] text-[#8A6A53] border border-[#DFC9AC]"
                       }`}>
                         {order.status}
                       </span>
@@ -905,7 +988,7 @@ export const BusinessDashboardPage: React.FC = () => {
                   </div>
                 ))}
                 {orders.length === 0 && (
-                  <div className="p-8 text-center text-[#050F2A]/40 text-xs">
+                  <div className="p-8 text-center text-[#8A6A53]/60 text-xs">
                     No orders placed yet. Scan a table QR code to test your customer flow.
                   </div>
                 )}
@@ -916,18 +999,18 @@ export const BusinessDashboardPage: React.FC = () => {
 
         {/* TAB 2: LIVE ORDERS FEED */}
         {activeTab === "orders" && (
-          <div className="bg-white border border-[#050F2A]/10 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
+          <div className="bg-[#FFFCF6] border border-[#DFC9AC] rounded-3xl p-6 sm:p-8 space-y-6 shadow-warm">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="text-xl font-bold tracking-tight text-[#050F2A]">Live Kitchen & Counter Feed</h2>
-                <p className="text-xs text-[#050F2A]/60">Manage real-time order states</p>
+                <h2 className="text-xl font-bold tracking-tight text-[#301C10]">Live Kitchen & Counter Feed</h2>
+                <p className="text-xs text-[#8A6A53]">Manage real-time order states</p>
               </div>
 
               <div className="flex items-center gap-3">
                 <select
                   value={orderStatusFilter}
                   onChange={(e) => setOrderStatusFilter(e.target.value)}
-                  className="bg-[#F2FDFF] border border-[#050F2A]/15 rounded-full px-4 py-2 text-xs text-[#050F2A] focus:outline-none focus:border-[#7BBBFF]"
+                  className="bg-[#FAF7F0] border border-[#DFC9AC] rounded-full px-4 py-2 text-xs text-[#301C10] font-bold focus:outline-none focus:border-[#C99532]"
                 >
                   <option value="ALL">All Order States</option>
                   <option value="PENDING">Pending</option>
@@ -941,42 +1024,42 @@ export const BusinessDashboardPage: React.FC = () => {
 
             <div className="space-y-4">
               {filteredOrders.length === 0 ? (
-                <div className="p-12 text-center text-[#050F2A]/40 text-xs border border-dashed border-[#050F2A]/15 rounded-3xl">
+                <div className="p-12 text-center text-[#8A6A53]/70 text-xs border border-dashed border-[#DFC9AC] rounded-3xl bg-[#FAF7F0]">
                   No orders found matching the filter.
                 </div>
               ) : (
                 filteredOrders.map((order) => (
                   <div
                     key={order.id}
-                    className="p-5 rounded-3xl bg-[#F2FDFF]/50 border border-[#050F2A]/10 space-y-3 shadow-sm"
+                    className="p-5 rounded-3xl bg-[#FAF7F0] border border-[#DFC9AC] space-y-3 shadow-warm"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="font-black text-sm text-[#050F2A]">
+                        <span className="font-black text-sm text-[#301C10]">
                           {order.orderNumberDisplay || order.orderNumber}
                         </span>
-                        <span className="px-2.5 py-0.5 rounded-full bg-[#050F2A] text-white text-[10px] font-bold">
+                        <span className="px-2.5 py-0.5 rounded-full bg-[#4A290F] text-[#FFFCF6] text-[10px] font-bold">
                           {order.tableNumber}
                         </span>
                       </div>
                       <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
-                        order.status === "PENDING" ? "bg-amber-100 text-amber-800" :
-                        order.status === "PREPARING" ? "bg-blue-100 text-blue-800" :
-                        order.status === "SERVED" ? "bg-emerald-100 text-emerald-800" : "bg-zinc-200 text-zinc-700"
+                        order.status === "PENDING" ? "bg-amber-100 text-amber-900 border border-amber-300" :
+                        order.status === "PREPARING" ? "bg-[#E8B64F]/20 text-[#4A290F] border border-[#E8B64F]/40" :
+                        order.status === "SERVED" ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-[#FAF7F0] text-[#8A6A53] border border-[#DFC9AC]"
                       }`}>
                         {order.status}
                       </span>
                     </div>
 
                     {/* Order items */}
-                    <div className="divide-y divide-[#050F2A]/10 py-1">
+                    <div className="divide-y divide-[#DFC9AC]/60 py-1">
                       {order.items?.map((item, idx) => (
                         <div key={idx} className="py-2 flex items-center justify-between text-xs">
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-[#050F2A]">{item.quantity}x</span>
-                            <span className="text-[#050F2A]">{item.name}</span>
+                            <span className="font-bold text-[#301C10]">{item.quantity}x</span>
+                            <span className="text-[#301C10] font-medium">{item.name}</span>
                           </div>
-                          <span className="font-mono text-[#050F2A]/70">
+                          <span className="font-mono text-[#8A6A53]">
                             Rs. {((item.subtotalRupees || (item.subtotalMinor / 100)) || 0).toLocaleString()}
                           </span>
                         </div>
@@ -990,8 +1073,8 @@ export const BusinessDashboardPage: React.FC = () => {
                       </div>
                     )}
 
-                    <div className="pt-3 border-t border-[#050F2A]/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="text-sm font-black text-[#050F2A]">
+                    <div className="pt-3 border-t border-[#DFC9AC]/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="text-sm font-black text-[#301C10]">
                         Total: Rs. {(order.totalRupees || (order.totalMinor / 100)).toLocaleString()}
                       </div>
 
@@ -999,7 +1082,7 @@ export const BusinessDashboardPage: React.FC = () => {
                         {order.status === "PENDING" && (
                           <button
                             onClick={() => handleOrderStatusUpdate(order.id, "PREPARING")}
-                            className="px-4 py-1.5 rounded-full bg-[#7BBBFF] hover:bg-[#68a8f5] text-[#050F2A] font-bold text-xs uppercase tracking-wider transition-all"
+                            className="px-4 py-1.5 rounded-full bg-[#E8B64F] hover:bg-[#D6A038] text-[#1A0F08] font-bold text-xs uppercase tracking-wider transition-all shadow-warm"
                           >
                             Mark Preparing
                           </button>
@@ -1007,7 +1090,7 @@ export const BusinessDashboardPage: React.FC = () => {
                         {order.status === "PREPARING" && (
                           <button
                             onClick={() => handleOrderStatusUpdate(order.id, "SERVED")}
-                            className="px-4 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs uppercase tracking-wider transition-all"
+                            className="px-4 py-1.5 rounded-full bg-[#4A290F] hover:bg-[#623B1B] text-[#FFFCF6] font-bold text-xs uppercase tracking-wider transition-all shadow-warm"
                           >
                             Mark Served
                           </button>
@@ -1015,7 +1098,7 @@ export const BusinessDashboardPage: React.FC = () => {
                         {order.status === "SERVED" && (
                           <button
                             onClick={() => handleOrderStatusUpdate(order.id, "COMPLETED")}
-                            className="px-4 py-1.5 rounded-full bg-[#050F2A] hover:bg-[#0b1739] text-white font-bold text-xs uppercase tracking-wider transition-all"
+                            className="px-4 py-1.5 rounded-full bg-[#2C190E] hover:bg-[#1A0F08] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-warm"
                           >
                             Complete Order
                           </button>
@@ -1027,7 +1110,7 @@ export const BusinessDashboardPage: React.FC = () => {
                                 handleOrderStatusUpdate(order.id, "CANCELLED");
                               }
                             }}
-                            className="px-3.5 py-1.5 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs transition-all"
+                            className="px-3.5 py-1.5 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 transition-all"
                           >
                             Cancel
                           </button>
@@ -1969,18 +2052,22 @@ export const BusinessDashboardPage: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={settingsForm.qrFooterNote}
+                    value={
+                      !settingsForm.qrFooterNote || settingsForm.qrFooterNote.includes("Good tea brings people together")
+                        ? "It's time for you!"
+                        : settingsForm.qrFooterNote
+                    }
                     onChange={(e) => setSettingsForm({ ...settingsForm, qrFooterNote: e.target.value })}
-                    placeholder="e.g. ☕ Good tea brings people together. or Enjoy your visit!"
-                    className="w-full text-xs px-3 py-2 rounded-xl border border-[#050F2A]/15 bg-white text-[#050F2A] focus:outline-none focus:border-[#7BBBFF]"
+                    placeholder="e.g. It's time for you! or Enjoy your visit!"
+                    className="w-full text-xs px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:outline-none focus:border-[#C99532]"
                   />
                   <div className="flex flex-wrap gap-1.5 mt-1.5">
-                    {["☕ Good tea brings people together.", "Enjoy your visit!", "Need help? Ask our friendly staff"].map((preset, idx) => (
+                    {["It's time for you!", "Enjoy your visit!", "Need help? Ask our friendly staff"].map((preset, idx) => (
                       <button
                         key={idx}
                         type="button"
                         onClick={() => setSettingsForm({ ...settingsForm, qrFooterNote: preset })}
-                        className="text-[10px] text-[#050F2A]/70 hover:text-[#050F2A] px-2 py-0.5 rounded bg-white border border-[#050F2A]/15"
+                        className="text-[10px] text-[#8A6A53] hover:text-[#301C10] px-2 py-0.5 rounded bg-white border border-[#DFC9AC]"
                       >
                         {preset}
                       </button>
@@ -2006,8 +2093,8 @@ export const BusinessDashboardPage: React.FC = () => {
 
                   <input
                     type="range"
-                    min={48}
-                    max={160}
+                    min={60}
+                    max={200}
                     step={4}
                     value={getQrLogoHeight(settingsForm.qrLogoSize)}
                     onChange={(e) => setSettingsForm({ ...settingsForm, qrLogoSize: parseInt(e.target.value, 10) })}
@@ -2018,11 +2105,11 @@ export const BusinessDashboardPage: React.FC = () => {
                   <div className="flex flex-wrap items-center gap-1.5 pt-1">
                     <span className="text-[10px] font-bold text-[#050F2A]/60 mr-1 uppercase">Presets:</span>
                     {[
-                      { label: "Compact (56px)", val: 56 },
-                      { label: "Medium (76px)", val: 76 },
-                      { label: "Big (108px)", val: 108 },
-                      { label: "Extra Big (132px)", val: 132 },
-                      { label: "Huge (156px)", val: 156 },
+                      { label: "Compact (80px)", val: 80 },
+                      { label: "Standard (112px)", val: 112 },
+                      { label: "Big (140px)", val: 140 },
+                      { label: "Extra Big (165px)", val: 165 },
+                      { label: "Huge (195px)", val: 195 },
                     ].map((btn) => (
                       <button
                         key={btn.val}
@@ -2054,10 +2141,12 @@ export const BusinessDashboardPage: React.FC = () => {
           </div>
         )}
       </main>
+      </div>
 
       {/* Modals */}
       {showProductModal && (
         <ProductModal
+          businessId={business?.id}
           product={editingProduct}
           categories={categories}
           onClose={() => {
@@ -2073,6 +2162,7 @@ export const BusinessDashboardPage: React.FC = () => {
 
       {showCategoryModal && (
         <CategoryUpsertModal
+          businessId={business?.id}
           category={editingCategory}
           onClose={() => {
             setShowCategoryModal(false);
@@ -2087,6 +2177,7 @@ export const BusinessDashboardPage: React.FC = () => {
 
       {archivingCategory && (
         <ArchiveCategoryModal
+          businessId={business?.id}
           category={archivingCategory}
           categories={categories}
           products={products}
@@ -2097,6 +2188,7 @@ export const BusinessDashboardPage: React.FC = () => {
 
       {showTableModal && (
         <TableModal
+          businessId={business?.id}
           table={editingTable}
           onClose={() => {
             setShowTableModal(false);
@@ -2114,15 +2206,15 @@ export const BusinessDashboardPage: React.FC = () => {
           table={singlePrintTable}
           businessSlug={business.slug}
           businessName={business.name}
-          primaryColor={business.branding?.primaryColor || (business.slug === "teatime" ? "#2C190E" : "#050F2A")}
+          primaryColor={business.branding?.primaryColor || (business.slug === "teatime" ? "#24140E" : "#050F2A")}
           accentColor={business.branding?.accentColor || (business.slug === "teatime" ? "#E8B64F" : "#7BBBFF")}
-          headerBackgroundColor={business.branding?.headerBackgroundColor || (business.slug === "teatime" ? "#2C190E" : "#050F2A")}
+          headerBackgroundColor={business.branding?.headerBackgroundColor || (business.slug === "teatime" ? "#24140E" : "#050F2A")}
           headerTextColor={business.branding?.headerTextColor || (business.slug === "teatime" ? "#FAF7F0" : "#F2FDFF")}
           logoUrl={business.branding?.logoUrl || null}
           qrHeaderTitle={business.branding?.qrHeaderTitle ?? ""}
           qrSubtitle={business.branding?.qrSubtitle || "SCAN TO ORDER"}
           qrFooterNote={business.branding?.qrFooterNote || (business.slug === "teatime" ? "☕ Good tea brings people together." : "Enjoy your visit!")}
-          qrLogoSize={business.branding?.qrLogoSize || settingsForm.qrLogoSize || 112}
+          qrLogoSize={business.branding?.qrLogoSize || settingsForm.qrLogoSize || 140}
           onClose={() => setSinglePrintTable(null)}
         />
       )}
@@ -2132,15 +2224,15 @@ export const BusinessDashboardPage: React.FC = () => {
           tables={tables}
           businessSlug={business.slug}
           businessName={business.name}
-          primaryColor={business.branding?.primaryColor || (business.slug === "teatime" ? "#2C190E" : "#050F2A")}
+          primaryColor={business.branding?.primaryColor || (business.slug === "teatime" ? "#24140E" : "#050F2A")}
           accentColor={business.branding?.accentColor || (business.slug === "teatime" ? "#E8B64F" : "#7BBBFF")}
-          headerBackgroundColor={business.branding?.headerBackgroundColor || (business.slug === "teatime" ? "#2C190E" : "#050F2A")}
+          headerBackgroundColor={business.branding?.headerBackgroundColor || (business.slug === "teatime" ? "#24140E" : "#050F2A")}
           headerTextColor={business.branding?.headerTextColor || (business.slug === "teatime" ? "#FAF7F0" : "#F2FDFF")}
           logoUrl={business.branding?.logoUrl || null}
           qrHeaderTitle={business.branding?.qrHeaderTitle ?? ""}
           qrSubtitle={business.branding?.qrSubtitle || "SCAN TO ORDER"}
           qrFooterNote={business.branding?.qrFooterNote || (business.slug === "teatime" ? "☕ Good tea brings people together." : "Enjoy your visit!")}
-          qrLogoSize={business.branding?.qrLogoSize || settingsForm.qrLogoSize || 112}
+          qrLogoSize={business.branding?.qrLogoSize || settingsForm.qrLogoSize || 140}
           onClose={() => setShowBatchPrint(false)}
         />
       )}

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { X, Trash2, Minus, Plus, Send, Loader2, AlertCircle, Utensils } from "lucide-react";
 import confetti from "canvas-confetti";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, serverTimestamp } from "firebase/firestore";
 import { signInAnonymously } from "firebase/auth";
 import { useCart } from "../../context/CartContext";
 import {
@@ -156,8 +156,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
         if (tenantRes && tenantRes.success) {
           orderId = tenantRes.orderId;
-          orderNum = parseInt(tenantRes.orderNumber.replace(/\D/g, ""), 10) || 1001;
-          orderNumDisplay = tenantRes.orderNumber;
+          orderNum = typeof tenantRes.orderNumber === "number"
+            ? tenantRes.orderNumber
+            : parseInt(String(tenantRes.orderNumber || "").replace(/\D/g, ""), 10) || 1001;
+          orderNumDisplay = tenantRes.orderNumberDisplay || String(tenantRes.orderNumber || `#${orderNum}`);
+          resolvedTableNumber = tenantRes.tableNumber || resolvedTableNumber;
         }
       } catch (tenantErr: any) {
         if (tenantErr?.code === "failed-precondition" || tenantErr?.code === "resource-exhausted") {
@@ -178,6 +181,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           console.warn("Falling back to direct Firestore order placement:", cloudFnErr);
 
           // 2. Direct Firestore fallback (works immediately even without Cloud Functions deployed)
+          let tenantBizId: string | null = null;
+          if (businessSlug && businessSlug !== "teatime") {
+            try {
+              const slugDoc = await getDoc(doc(db, "businessSlugs", businessSlug.toLowerCase().trim()));
+              if (slugDoc.exists()) {
+                tenantBizId = slugDoc.data()?.businessId || null;
+              }
+            } catch {}
+          }
+
           const currentUid = currentUser?.uid || "guest_" + Math.random().toString(36).substring(2, 9);
           const orderData = {
             orderNumber: orderNum,
@@ -185,7 +198,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             tableNumber: resolvedTableNumber,
             tableToken: tableToken.trim(),
             customerId: currentUid,
-            status: "new",
+            status: "PENDING",
             items: items.map((i) => ({
               productId: i.product.id,
               name: i.product.name,
@@ -209,8 +222,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             updatedAt: serverTimestamp(),
           };
 
-          const docRef = await addDoc(collection(db, "orders"), orderData);
-          orderId = docRef.id;
+          if (tenantBizId) {
+            const docRef = await addDoc(collection(db, "businesses", tenantBizId, "orders"), orderData);
+            orderId = docRef.id;
+          } else {
+            const docRef = await addDoc(collection(db, "orders"), orderData);
+            orderId = docRef.id;
+          }
         }
       }
 

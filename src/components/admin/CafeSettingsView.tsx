@@ -996,13 +996,17 @@ export const CafeSettingsView: React.FC = () => {
                   </div>
                   <input
                     type="text"
-                    value={settings.qrFooterNote || ""}
+                    value={
+                      !settings.qrFooterNote || settings.qrFooterNote.includes("Good tea brings people together")
+                        ? "It's time for you!"
+                        : settings.qrFooterNote
+                    }
                     onChange={(e) => setSettings({ ...settings, qrFooterNote: e.target.value })}
-                    placeholder="e.g. ☕ Good tea brings people together."
+                    placeholder="e.g. It's time for you!"
                     className="w-full text-xs px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none"
                   />
                   <div className="flex flex-wrap gap-1.5 mt-1.5">
-                    {["☕ Good tea brings people together.", "Need help? Call: 076 484 1111", "Enjoy your visit!"].map((preset, idx) => (
+                    {["It's time for you!", "Need help? Call: 076 484 1111", "Enjoy your visit!"].map((preset, idx) => (
                       <button
                         key={idx}
                         type="button"
@@ -1027,25 +1031,25 @@ export const CafeSettingsView: React.FC = () => {
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-[10px] text-[#8A6A53] font-bold">48px</span>
+                    <span className="text-[10px] text-[#8A6A53] font-bold">60px</span>
                     <input
                       type="range"
-                      min="48"
-                      max="160"
+                      min="60"
+                      max="200"
                       step="4"
                       value={getQrLogoHeight(settings.qrLogoSize)}
                       onChange={(e) => setSettings({ ...settings, qrLogoSize: Number(e.target.value) })}
                       className="flex-1 h-2 bg-[#DFC9AC]/40 rounded-lg appearance-none cursor-pointer accent-[#C99532]"
                     />
-                    <span className="text-[10px] text-[#8A6A53] font-bold">160px</span>
+                    <span className="text-[10px] text-[#8A6A53] font-bold">200px</span>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 mt-2">
                     {[
-                      { label: "Compact", val: 56 },
-                      { label: "Medium", val: 76 },
-                      { label: "Big (104px)", val: 104 },
-                      { label: "Extra Big", val: 128 },
-                      { label: "Maximum", val: 156 },
+                      { label: "Compact (80px)", val: 80 },
+                      { label: "Standard (112px)", val: 112 },
+                      { label: "Big (140px)", val: 140 },
+                      { label: "Extra Big (165px)", val: 165 },
+                      { label: "Maximum (195px)", val: 195 },
                     ].map((preset) => {
                       const current = getQrLogoHeight(settings.qrLogoSize);
                       const isSelected = Math.abs(current - preset.val) <= 4;
@@ -1753,7 +1757,7 @@ export const CafeSettingsView: React.FC = () => {
 
                   {/* Slogan / Footer note */}
                   <div
-                    className="pt-3 border-t border-[#E8B64F]/40 w-full text-[11px] italic leading-tight text-white/90"
+                    className="pt-3 border-t border-[#E8B64F]/40 w-3/4 mx-auto text-[11px] italic leading-tight text-white/90"
                   >
                     <span>
                       {settings.qrFooterNote || "☕ Good tea brings people together."}
