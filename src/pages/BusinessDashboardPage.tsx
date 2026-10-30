@@ -348,6 +348,9 @@ export const BusinessDashboardPage: React.FC = () => {
   const handleOrderStatusUpdate = async (orderId: string, status: OrderStatus) => {
     try {
       await platformApi.ownerUpdateOrderStatus(orderId, status, business?.id);
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status } : o))
+      );
     } catch (err: any) {
       alert(err?.message || "Failed to update order status.");
     }
@@ -1079,7 +1082,7 @@ export const BusinessDashboardPage: React.FC = () => {
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2">
-                        {order.status === "PENDING" && (
+                        {(order.status === "PENDING" || order.status === "new" || (order.status as string) === "pending") && (
                           <button
                             onClick={() => handleOrderStatusUpdate(order.id, "PREPARING")}
                             className="px-4 py-1.5 rounded-full bg-[#E8B64F] hover:bg-[#D6A038] text-[#1A0F08] font-bold text-xs uppercase tracking-wider transition-all shadow-warm"
@@ -1087,7 +1090,23 @@ export const BusinessDashboardPage: React.FC = () => {
                             Mark Preparing
                           </button>
                         )}
-                        {order.status === "PREPARING" && (
+                        {(order.status === "PREPARING" || (order.status as string) === "preparing") && (
+                          <>
+                            <button
+                              onClick={() => handleOrderStatusUpdate(order.id, "READY")}
+                              className="px-4 py-1.5 rounded-full bg-[#2C190E] hover:bg-[#1A0F08] text-[#FFFCF6] font-bold text-xs uppercase tracking-wider transition-all shadow-warm"
+                            >
+                              Mark Ready
+                            </button>
+                            <button
+                              onClick={() => handleOrderStatusUpdate(order.id, "SERVED")}
+                              className="px-4 py-1.5 rounded-full bg-[#4A290F] hover:bg-[#623B1B] text-[#FFFCF6] font-bold text-xs uppercase tracking-wider transition-all shadow-warm"
+                            >
+                              Mark Served
+                            </button>
+                          </>
+                        )}
+                        {(order.status === "READY" || (order.status as string) === "ready") && (
                           <button
                             onClick={() => handleOrderStatusUpdate(order.id, "SERVED")}
                             className="px-4 py-1.5 rounded-full bg-[#4A290F] hover:bg-[#623B1B] text-[#FFFCF6] font-bold text-xs uppercase tracking-wider transition-all shadow-warm"
@@ -1095,7 +1114,7 @@ export const BusinessDashboardPage: React.FC = () => {
                             Mark Served
                           </button>
                         )}
-                        {order.status === "SERVED" && (
+                        {(order.status === "SERVED" || (order.status as string) === "served") && (
                           <button
                             onClick={() => handleOrderStatusUpdate(order.id, "COMPLETED")}
                             className="px-4 py-1.5 rounded-full bg-[#2C190E] hover:bg-[#1A0F08] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-warm"
@@ -1103,7 +1122,7 @@ export const BusinessDashboardPage: React.FC = () => {
                             Complete Order
                           </button>
                         )}
-                        {order.status !== "COMPLETED" && order.status !== "CANCELLED" && (
+                        {order.status !== "COMPLETED" && (order.status as string) !== "completed" && order.status !== "CANCELLED" && (order.status as string) !== "cancelled" && (
                           <button
                             onClick={() => {
                               if (window.confirm("Cancel this order?")) {

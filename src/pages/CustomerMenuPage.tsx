@@ -834,6 +834,8 @@ export const CustomerMenuPage: React.FC = () => {
       {activeTrackerOrderId && (
         <LiveOrderTracker
           orderId={activeTrackerOrderId}
+          businessSlug={businessSlug}
+          businessId={tenantBusiness?.id}
           onClose={() => setActiveTrackerOrderId(null)}
           onOrderMore={() => {
             setActiveTrackerOrderId(null);

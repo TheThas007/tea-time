@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, getDoc } from "firebase/firestore";
 import {
   CheckCircle2,
   Clock,
@@ -22,12 +22,16 @@ const FACEBOOK_URL = "https://www.facebook.com/teatime.vavuniya/";
 
 interface LiveOrderTrackerProps {
   orderId: string;
+  businessSlug?: string;
+  businessId?: string;
   onClose: () => void;
   onOrderMore?: () => void;
 }
 
 export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
   orderId,
+  businessSlug,
+  businessId,
   onClose,
   onOrderMore,
 }) => {
@@ -76,42 +80,78 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
       return;
     }
 
-    // Real-time Firestore document listener for actual customer orders
-    const unsubscribe = onSnapshot(
+    let isMounted = true;
+    let unsubRoot: (() => void) | null = null;
+    let unsubTenant: (() => void) | null = null;
+
+    const handleSnapshot = (snap: any) => {
+      if (snap.exists() && isMounted) {
+        setOrder((prev) => ({
+          ...(prev || {}),
+          id: snap.id,
+          ...snap.data(),
+        } as Order));
+        setLoading(false);
+      }
+    };
+
+    // 1. Primary listener on root orders/{orderId}
+    unsubRoot = onSnapshot(
       doc(db, "orders", orderId),
-      (snap) => {
-        if (snap.exists()) {
-          setOrder({ id: snap.id, ...snap.data() } as Order);
-        }
-        setLoading(false);
-      },
+      handleSnapshot,
       (error) => {
-        console.warn("Real-time order listener error:", error);
-        setLoading(false);
+        console.warn("Root order tracker listener notice:", error);
       }
     );
 
-    return () => unsubscribe();
-  }, [orderId]);
+    // 2. Multi-tenant subcollection listener on businesses/{bId}/orders/{orderId}
+    const attachTenantListener = async () => {
+      let targetBizId = businessId;
+      if (!targetBizId && businessSlug && businessSlug !== "teatime") {
+        try {
+          const sSnap = await getDoc(doc(db, "businessSlugs", businessSlug.toLowerCase().trim()));
+          if (sSnap.exists()) {
+            targetBizId = sSnap.data()?.businessId;
+          }
+        } catch {}
+      }
 
-  const stages: { key: OrderStatus; label: string; icon: any; desc: string }[] = [
+      if (targetBizId && isMounted) {
+        unsubTenant = onSnapshot(
+          doc(db, "businesses", targetBizId, "orders", orderId),
+          handleSnapshot,
+          (error) => {
+            console.warn("Tenant order tracker listener notice:", error);
+          }
+        );
+      }
+    };
+
+    attachTenantListener();
+
+    return () => {
+      isMounted = false;
+      if (unsubRoot) unsubRoot();
+      if (unsubTenant) unsubTenant();
+    };
+  }, [orderId, businessId, businessSlug]);
+
+  const stages: { key: string; label: string; icon: any; desc: string }[] = [
     { key: "new", label: "Received", icon: Clock, desc: "Sent to the kitchen." },
     { key: "preparing", label: "Preparing", icon: ChefHat, desc: "Our team is brewing and baking." },
     { key: "ready", label: "Ready", icon: BellRing, desc: "Ready for pickup or serving!" },
     { key: "served", label: "Served", icon: CheckCheck, desc: "Enjoy your tea time!" },
   ];
 
-  const getStageIndex = (status?: OrderStatus) => {
-    switch (status) {
-      case "new": return 0;
-      case "preparing": return 1;
-      case "ready": return 2;
-      case "served": return 3;
-      default: return 0;
-    }
+  const getStageIndex = (rawStatus?: string): number => {
+    const s = (rawStatus || "").toLowerCase().trim();
+    if (s === "preparing" || s === "accepted" || s === "cooking" || s === "brewing") return 1;
+    if (s === "ready" || s === "ready_for_pickup") return 2;
+    if (s === "served" || s === "completed" || s === "done") return 3;
+    return 0;
   };
 
-  const currentStageIndex = getStageIndex(order?.status);
+  const currentStageIndex = getStageIndex(order?.status as string);
 
   return (
     <div className="fixed inset-0 z-50 bg-[#2C190E]/60 backdrop-blur-sm flex justify-center items-end sm:items-center p-0 sm:p-4 md:p-6 animate-fadeIn">
@@ -149,10 +189,10 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
             </div>
             <div>
               <h4 className="font-extrabold text-[#301C10] text-sm">
-                Order {order?.orderNumberDisplay || `#${order?.orderNumber || "---"}`} received
+                Order {order?.orderNumberDisplay || `#${order?.orderNumber || "---"}`} {currentStageIndex === 0 ? "received" : currentStageIndex === 1 ? "is preparing" : currentStageIndex === 2 ? "is ready" : "is served"}
               </h4>
               <p className="text-xs text-[#8A6A53] mt-0.5">
-                Sent to the kitchen. We'll notify you when it's ready.
+                {stages[currentStageIndex]?.desc || "Sent to the kitchen. We'll notify you when it's ready."}
               </p>
             </div>
           </div>

@@ -1140,20 +1140,27 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
     const orderId = data.orderId;
     const status = data.status;
     if (orderId && status) {
+      const nowMs = Date.now();
+      const updatePayload: Record<string, any> = {
+        status,
+        updatedAt: serverTimestamp(),
+        updatedAtMs: nowMs,
+      };
+      const statusLower = String(status).toLowerCase();
+      if (statusLower === "served" || statusLower === "completed") {
+        updatePayload.servedAt = serverTimestamp();
+      }
+
       try {
-        await updateDoc(doc(db, "businesses", bId, "orders", orderId), {
-          status,
-          updatedAt: serverTimestamp(),
-          updatedAtMs: Date.now(),
-        });
-        if (bId === "teatime" || bId === "biz_teatime") {
-          await updateDoc(doc(db, "orders", orderId), {
-            status,
-            updatedAt: serverTimestamp(),
-          }).catch(() => {});
-        }
+        await updateDoc(doc(db, "businesses", bId, "orders", orderId), updatePayload);
       } catch (e) {
-        console.warn("Client fallback update order status:", e);
+        console.warn("Client fallback update tenant order status:", e);
+      }
+
+      try {
+        await updateDoc(doc(db, "orders", orderId), updatePayload);
+      } catch {
+        // non-critical if root order doc does not exist
       }
     }
     return { success: true, orderId, status } as unknown as T;

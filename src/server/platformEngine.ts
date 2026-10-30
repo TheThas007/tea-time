@@ -2598,6 +2598,16 @@ export class PlatformEngine {
 
     await this.store.updateDoc(orderPath, updatePayload);
 
+    // Mirror to root orders for universal live listeners
+    await this.store
+      .updateDoc(`orders/${input.orderId}`, {
+        status: targetStatus,
+        cancelReason: updatePayload.cancelReason || null,
+        updatedAt: new Date(nowMs),
+        updatedAtMs: nowMs,
+      })
+      .catch(() => {});
+
     if (order.trackingToken) {
       await this.store
         .updateDoc(
