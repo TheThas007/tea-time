@@ -54,7 +54,7 @@ export const SuperAdminMetricsCards: React.FC<Props> = ({ metrics }) => {
     },
     {
       label: "Collected This Month",
-      value: `Rs. ${(metrics.incomeThisMonthRupees ?? 18000).toLocaleString()}`,
+      value: `Rs. ${(metrics.incomeThisMonthRupees ?? 0).toLocaleString()}`,
       icon: CreditCard,
       color: "text-[#050F2A]",
       bg: "bg-[#B8A9FF]/25 border-[#B8A9FF]/40",
@@ -62,7 +62,7 @@ export const SuperAdminMetricsCards: React.FC<Props> = ({ metrics }) => {
     },
     {
       label: "Total Payments",
-      value: `Rs. ${(metrics.incomeTotalRupees ?? 18000).toLocaleString()}`,
+      value: `Rs. ${(metrics.incomeTotalRupees ?? 0).toLocaleString()}`,
       icon: DollarSign,
       color: "text-emerald-800",
       bg: "bg-emerald-500/15 border-emerald-500/25",
@@ -77,27 +77,27 @@ export const SuperAdminMetricsCards: React.FC<Props> = ({ metrics }) => {
         return (
           <div
             key={idx}
-            className={`p-4 rounded-2xl bg-white border transition-all shadow-sm ${
+            className={`p-4 rounded-2xl bg-white border transition-all shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)] ${
               card.alert
-                ? "border-amber-400 ring-2 ring-amber-400/20"
-                : "border-[#050F2A]/10"
+                ? "border-amber-400/70 ring-1 ring-amber-400/20"
+                : "border-black/[0.06]"
             }`}
           >
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-[#050F2A]/70 leading-tight">
+              <span className="text-xs font-bold text-[#6E6E73] leading-tight">
                 {card.label}
               </span>
               <div
-                className={`w-8 h-8 rounded-lg flex items-center justify-center border ${card.bg} ${card.color}`}
+                className={`w-8 h-8 rounded-xl flex items-center justify-center border ${card.bg} ${card.color}`}
               >
                 <Icon className="w-4 h-4" />
               </div>
             </div>
-            <div className="text-xl font-black text-[#050F2A] tracking-tight">
+            <div className="text-2xl font-extrabold text-[#1D1D1F] tracking-tight">
               {card.value}
             </div>
             {card.subtext && (
-              <p className="text-[10px] text-[#050F2A]/50 mt-1 truncate">
+              <p className="text-[11px] font-medium text-[#86868B] mt-1 truncate">
                 {card.subtext}
               </p>
             )}

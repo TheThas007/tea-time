@@ -1,10 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
-import { Lock, User, AlertCircle, ArrowLeft, Loader2, Store, Phone, CheckCircle2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { platformApi } from "../lib/apiClient";
 import { ForcePasswordChangeModal } from "../components/auth/ForcePasswordChangeModal";
-import { auth } from "../lib/firebase";
-import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { MenyoIcon, MenyoWordmark } from "../components/common/MenyoLogo";
 
 interface LoginPageProps {
@@ -21,30 +19,58 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
   );
 
   // Sign In Form State
-  const [identifier, setIdentifier] = useState("");
+  const [identifier, setIdentifier] = useState(() => {
+    return localStorage.getItem("menyo_remembered_identifier") || "";
+  });
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+
+  // Auto-Redirect if user is already authenticated
+  useEffect(() => {
+    const existingRole = localStorage.getItem("menyo_auth_role");
+    const existingSlug = localStorage.getItem("menyo_auth_businessSlug");
+    const existingBizId = localStorage.getItem("menyo_auth_businessId");
+    if (existingRole === "SUPER_ADMIN") {
+      navigate("/super-admin");
+    } else if (existingRole === "BUSINESS_OWNER") {
+      const target = existingSlug || existingBizId;
+      if (target && target !== "teatime") {
+        navigate(`/${target}/admin`);
+      } else {
+        navigate("/admin");
+      }
+    }
+  }, [navigate]);
 
   // Sign Up Form State (2-Day Free Trial)
   const [restaurantName, setRestaurantName] = useState("");
   const [ownerName, setOwnerName] = useState("");
-  const [signupEmail, setSignupEmail] = useState("");
+  const [signupContact, setSignupContact] = useState(""); // Phone number or email
   const [signupPassword, setSignupPassword] = useState("");
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [signupPhone, setSignupPhone] = useState("");
 
   const [loading, setLoading] = useState(false);
-  const [oauthLoading, setOauthLoading] = useState<"google" | "apple" | null>(null);
+  const [oauthLoading, setOauthLoading] = useState<"google" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
 
-  // Handle Standard Sign In
+  // Handle Sign In
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
     try {
+      if (rememberMe) {
+        localStorage.setItem("menyo_remembered_identifier", identifier.trim());
+      } else {
+        localStorage.removeItem("menyo_remembered_identifier");
+      }
+
       const res = await platformApi.loginWithIdentifier({
         identifier: identifier.trim(),
         password,
@@ -61,67 +87,32 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
           navigate("/super-admin");
         } else {
           localStorage.setItem("menyo_auth_role", "BUSINESS_OWNER");
-          const isTeaTime =
-            identifier.trim().toLowerCase() === "teatime" ||
-            identifier.trim().toLowerCase() === "admin@teatime.lk" ||
-            res.businessId === "teatime";
-          if (isTeaTime) {
-            localStorage.setItem("menyo_auth_email", "admin@teatime.lk");
-            navigate("/admin");
+          localStorage.setItem("menyo_auth_email", identifier.trim());
+          const targetSlug = (res as any)?.slug || res.businessId;
+          if (targetSlug && targetSlug !== "teatime") {
+            localStorage.setItem("menyo_auth_businessSlug", targetSlug);
+            navigate(`/${targetSlug}/admin`);
           } else {
-            navigate("/dashboard");
+            navigate("/admin");
           }
         }
       }
     } catch (err: any) {
-      // Fallback for local dev or direct Firebase Auth
-      try {
-        const idTrimmed = identifier.trim();
-        let targetEmail = idTrimmed;
-        if (!idTrimmed.includes("@")) {
-          if (idTrimmed.toLowerCase() === "admin" || idTrimmed.toLowerCase() === "aevonix") {
-            targetEmail = "admin@aevonix.lk";
-          } else if (idTrimmed.toLowerCase() === "teatime") {
-            targetEmail = "admin@teatime.lk";
-          }
-        }
-
-        const userCred = await signInWithEmailAndPassword(auth, targetEmail, password);
-        const tokenResult = await userCred.user.getIdTokenResult();
-        const isSuperAdmin =
-          targetEmail.toLowerCase() === "admin@aevonix.lk" ||
-          tokenResult.claims?.role === "SUPER_ADMIN";
-
-        if (isSuperAdmin) {
-          localStorage.setItem("menyo_auth_role", "SUPER_ADMIN");
-          localStorage.setItem("menyo_auth_email", "admin@aevonix.lk");
-          navigate("/super-admin");
-        } else {
-          localStorage.setItem("menyo_auth_role", "BUSINESS_OWNER");
-          if (targetEmail.toLowerCase() === "admin@teatime.lk" || targetEmail.toLowerCase() === "teatime") {
-            localStorage.setItem("menyo_auth_email", "admin@teatime.lk");
-            navigate("/admin");
-          } else {
-            navigate("/dashboard");
-          }
-        }
-        return;
-      } catch (fallbackErr: any) {
-        setError(err?.message || fallbackErr?.message || "Invalid username/email or password.");
-      }
+      console.error("Sign in error:", err);
+      setError(err?.message || "Invalid credentials. Please verify and try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle 2-Day Free Trial Sign Up
+  // Handle Sign Up
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
     if (!restaurantName.trim()) {
-      setError("Please enter your restaurant or café name.");
+      setError("Please enter your business name.");
       setLoading(false);
       return;
     }
@@ -130,8 +121,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
       setLoading(false);
       return;
     }
-    if (!signupEmail.trim() || !signupEmail.includes("@")) {
-      setError("Please enter a valid email address.");
+
+    const contactVal = signupContact.trim();
+    const isEmail = contactVal.includes("@");
+    const digitsOnly = contactVal.replace(/[^0-9]/g, "");
+    const isPhone = digitsOnly.length >= 9;
+
+    if (!isEmail && !isPhone) {
+      setError("Please enter a valid Phone number (e.g. 0771234567) or Email.");
       setLoading(false);
       return;
     }
@@ -142,17 +139,21 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
     }
 
     try {
-      await platformApi.registerOwnerWithTrial({
+      const regRes = await platformApi.registerOwnerWithTrial({
         businessName: restaurantName.trim(),
         ownerName: ownerName.trim(),
-        email: signupEmail.trim(),
+        email: contactVal,
         password: signupPassword,
-        phone: signupPhone.trim(),
-        whatsapp: signupPhone.trim(),
+        phone: signupPhone.trim() || (isPhone ? contactVal : ""),
+        whatsapp: signupPhone.trim() || (isPhone ? contactVal : ""),
       });
 
-      // Redirect immediately to their new dashboard
-      navigate("/dashboard");
+      localStorage.setItem("menyo_auth_role", "BUSINESS_OWNER");
+      localStorage.setItem("menyo_auth_email", contactVal);
+      if (regRes.slug) {
+        localStorage.setItem("menyo_auth_businessSlug", regRes.slug);
+      }
+      navigate("/admin");
     } catch (err: any) {
       console.error("Signup error:", err);
       setError(err?.message || "Failed to create account. Please try again.");
@@ -167,36 +168,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
     setOauthLoading("google");
     try {
       const res = await platformApi.loginWithGoogleOAuth();
+      if ((res as any)?.redirecting) return;
       if (res.role === "SUPER_ADMIN") {
         navigate("/super-admin");
       } else {
-        navigate("/dashboard");
+        localStorage.setItem("menyo_auth_role", "BUSINESS_OWNER");
+        localStorage.setItem("menyo_auth_email", (res as any)?.email || "admin@teatime.lk");
+        const storedSlug = localStorage.getItem("menyo_auth_businessSlug");
+        if (storedSlug && storedSlug !== "teatime") {
+          navigate(`/${storedSlug}/admin`);
+        } else {
+          navigate("/admin");
+        }
       }
     } catch (err: any) {
       console.warn("Google sign-in notice:", err);
       if (err?.code !== "auth/popup-closed-by-user") {
-        setError(err?.message || "Google sign-in failed. Please try again or use email.");
-      }
-    } finally {
-      setOauthLoading(null);
-    }
-  };
-
-  // Apple OAuth Login
-  const handleAppleLogin = async () => {
-    setError(null);
-    setOauthLoading("apple");
-    try {
-      const res = await platformApi.loginWithAppleOAuth();
-      if (res.role === "SUPER_ADMIN") {
-        navigate("/super-admin");
-      } else {
-        navigate("/dashboard");
-      }
-    } catch (err: any) {
-      console.warn("Apple sign-in notice:", err);
-      if (err?.code !== "auth/popup-closed-by-user") {
-        setError(err?.message || "Apple sign-in failed. Please try again or use email.");
+        setError(err?.message || "Google sign-in is being enabled. Please use Phone / Email & password.");
       }
     } finally {
       setOauthLoading(null);
@@ -208,99 +196,93 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
     if (userRole === "SUPER_ADMIN") {
       navigate("/super-admin");
     } else {
-      navigate("/dashboard");
+      localStorage.setItem("menyo_auth_role", "BUSINESS_OWNER");
+      const storedSlug = localStorage.getItem("menyo_auth_businessSlug");
+      if (storedSlug && storedSlug !== "teatime") {
+        navigate(`/${storedSlug}/admin`);
+      } else {
+        navigate("/admin");
+      }
     }
   };
 
-  const handleLogout = async () => {
-    await signOut(auth).catch(() => {});
-    setMustChangePassword(false);
-    setUserRole(null);
-  };
-
   return (
-    <div className="min-h-screen bg-[#F2FDFF] text-[#050F2A] flex flex-col justify-center py-10 px-4 sm:px-6 lg:px-8 relative selection:bg-[#7BBBFF]/40 selection:text-[#050F2A]">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10">
+    <div className="min-h-screen bg-[#F8F9FA] text-[#050F2A] flex flex-col justify-between selection:bg-[#7BBBFF]/30 font-sans tracking-[-0.01em]">
+      {/* 1. Clean Minimal Top Navigation Bar */}
+      <header className="w-full max-w-7xl mx-auto px-6 sm:px-12 py-6 flex items-center justify-between">
+        <Link to="/" className="flex items-center">
+          <MenyoWordmark height={26} />
+        </Link>
         <Link
           to="/"
-          className="inline-flex items-center gap-2 text-xs font-semibold text-[#050F2A]/60 hover:text-[#050F2A] transition-colors mb-6"
+          className="text-xs font-semibold text-[#050F2A] hover:text-[#0b1739] transition-colors"
         >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Back to Menyo Home</span>
+          Back to home
         </Link>
+      </header>
 
-        {/* Minimal pill header */}
-        <div className="flex items-center gap-3 mb-2">
-          <MenyoIcon size={36} />
-          <MenyoWordmark variant="dark" height={26} />
-          <span className="ml-1 text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-[#7BBBFF]/20 text-[#050F2A]">
-            Portal
-          </span>
-        </div>
+      {/* 2. Main Authentication Card Area */}
+      <main className="flex-1 flex flex-col items-center justify-center px-4 py-8">
+        <div className="w-full max-w-[420px] bg-white rounded-2xl border border-gray-200/80 p-8 sm:p-10 shadow-sm">
+          {/* Logo Brand Symbol: Original Menyo Logo */}
+          <div className="flex justify-center mb-6">
+            <MenyoIcon size={48} className="shadow-xs" />
+          </div>
 
-        <h1 className="text-2xl font-black tracking-tight text-[#050F2A] mt-2">
-          {activeTab === "signin" ? "Sign In to Your Workspace" : "Create Restaurant Account"}
-        </h1>
-        <p className="text-xs text-[#050F2A]/60 mt-1">
-          {activeTab === "signin"
-            ? "Access your restaurant dashboard, live orders, menu items, and QR codes."
-            : "Get started with full access for 2 days. No credit card required."}
-        </p>
+          {/* Heading & Subtitle */}
+          <div className="text-center mb-8">
+            <h1 className="text-2xl sm:text-[26px] font-extrabold text-[#111827] tracking-tight">
+              {activeTab === "signin" ? "Welcome to Menyo." : "Make it yours."}
+            </h1>
+            <p className="text-xs sm:text-[13px] text-gray-500 mt-1.5 font-normal">
+              {activeTab === "signin"
+                ? "Everything for your restaurant. In one place."
+                : "Try Menyo free for 2 days. No credit card required."}
+            </p>
+          </div>
 
-        {/* Tab Switcher */}
-        <div className="flex items-center p-1 bg-white border border-[#050F2A]/10 rounded-2xl mt-4 shadow-xs">
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("signin");
-              setError(null);
-            }}
-            className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
-              activeTab === "signin"
-                ? "bg-[#050F2A] text-white shadow-sm"
-                : "text-[#050F2A]/70 hover:text-[#050F2A]"
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("signup");
-              setError(null);
-            }}
-            className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center ${
-              activeTab === "signup"
-                ? "bg-[#050F2A] text-white shadow-sm"
-                : "text-[#050F2A]/70 hover:text-[#050F2A]"
-            }`}
-          >
-            <span>2-Day Free Trial</span>
-          </button>
-        </div>
-      </div>
+          {/* Clean Segmented Tab Switcher (Underline style) */}
+          <div className="flex border-b border-gray-200 mb-6">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("signin");
+                setError(null);
+              }}
+              className={`flex-1 pb-2.5 text-xs font-bold text-center transition-all relative ${activeTab === "signin"
+                  ? "text-black border-b-2 border-black -mb-[1px]"
+                  : "text-gray-400 hover:text-gray-700"
+                }`}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("signup");
+                setError(null);
+              }}
+              className={`flex-1 pb-2.5 text-xs font-bold text-center transition-all relative ${activeTab === "signup"
+                  ? "text-black border-b-2 border-black -mb-[1px]"
+                  : "text-gray-400 hover:text-gray-700"
+                }`}
+            >
+              Create account
+            </button>
+          </div>
 
-      <div className="mt-4 sm:mx-auto sm:w-full sm:max-w-md relative z-10">
-        <div className="bg-white border border-[#050F2A]/10 rounded-3xl p-6 sm:p-8 shadow-sm space-y-5">
-          {error && (
-            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-2.5 text-xs text-rose-700 animate-fadeIn">
-              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {/* Social Logins: Google & Apple */}
-          <div className="space-y-2.5">
+          {/* Social OAuth Buttons (Google) */}
+          <div className="mb-6">
             <button
               type="button"
               onClick={handleGoogleLogin}
               disabled={oauthLoading !== null || loading}
-              className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-zinc-50 active:scale-[0.99] border border-zinc-300 text-zinc-800 font-bold text-xs transition flex items-center justify-center gap-2.5 shadow-xs disabled:opacity-50"
+              className="w-full py-2.5 px-3 rounded-lg border border-gray-300 hover:bg-gray-50 transition text-xs font-semibold text-gray-800 flex items-center justify-center gap-2 shadow-2xs disabled:opacity-50"
             >
               {oauthLoading === "google" ? (
-                <Loader2 className="w-4 h-4 animate-spin text-[#7BBBFF]" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-600" />
               ) : (
-                <svg className="w-4 h-4" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
                   <path
                     fill="#4285F4"
                     d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -321,233 +303,217 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
               )}
               <span>Continue with Google</span>
             </button>
-
-            <button
-              type="button"
-              onClick={handleAppleLogin}
-              disabled={oauthLoading !== null || loading}
-              className="w-full py-2.5 px-4 rounded-xl bg-black hover:bg-zinc-900 active:scale-[0.99] border border-black text-white font-bold text-xs transition flex items-center justify-center gap-2.5 shadow-xs disabled:opacity-50"
-            >
-              {oauthLoading === "apple" ? (
-                <Loader2 className="w-4 h-4 animate-spin text-white" />
-              ) : (
-                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                  <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.62-.75 1.04-1.8 0.92-2.85-.9.04-1.98.6-2.63 1.35-.57.65-1.07 1.72-.94 2.74 1.01.08 2.03-.49 2.65-1.24z" />
-                </svg>
-              )}
-              <span>Continue with Apple</span>
-            </button>
           </div>
 
-          <div className="relative flex items-center justify-center">
-            <div className="border-t border-[#050F2A]/10 w-full" />
-            <span className="bg-white px-3 text-[11px] font-semibold text-[#050F2A]/40 uppercase tracking-wider shrink-0">
-              Or with email
+          {/* Divider */}
+          <div className="relative flex items-center justify-center mb-6">
+            <div className="border-t border-gray-200 w-full" />
+            <span className="bg-white px-3 text-[11px] text-gray-400 font-normal shrink-0">
+              {activeTab === "signin" ? "or continue with email" : "or use email / phone"}
             </span>
           </div>
 
-          {/* TAB 1: SIGN IN FORM */}
+          {/* Error Banner */}
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-xs leading-relaxed animate-fadeIn">
+              {error}
+            </div>
+          )}
+
+          {/* 3. SIGN IN FORM */}
           {activeTab === "signin" && (
-            <form onSubmit={handleSignIn} className="space-y-4">
+            <form onSubmit={handleSignIn} className="space-y-3.5">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#050F2A]/70 mb-1.5">
-                  Username or Email
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#050F2A]/40">
-                    <User className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="text"
-                    value={identifier}
-                    onChange={(e) => setIdentifier(e.target.value)}
-                    className="w-full bg-[#F2FDFF]/50 border border-[#050F2A]/15 rounded-2xl pl-10 pr-4 py-2.5 text-[#050F2A] placeholder-[#050F2A]/40 focus:outline-none focus:border-[#7BBBFF] focus:ring-2 focus:ring-[#7BBBFF]/20 text-sm transition-all"
-                    placeholder="owner_username or email@domain.com"
-                    autoComplete="username"
-                    required
-                  />
-                </div>
+                <input
+                  type="text"
+                  required
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] text-xs text-gray-900 placeholder-gray-400 outline-none transition"
+                  placeholder="Email or username"
+                  autoComplete="username"
+                />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#050F2A]/70 mb-1.5">
-                  Password
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#050F2A]/40">
-                    <Lock className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full bg-[#F2FDFF]/50 border border-[#050F2A]/15 rounded-2xl pl-10 pr-4 py-2.5 text-[#050F2A] placeholder-[#050F2A]/40 focus:outline-none focus:border-[#7BBBFF] focus:ring-2 focus:ring-[#7BBBFF]/20 text-sm transition-all"
-                    placeholder="••••••••••••"
-                    autoComplete="current-password"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="pt-2">
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] text-xs text-gray-900 placeholder-gray-400 outline-none transition pr-10"
+                  placeholder="Password"
+                  autoComplete="current-password"
+                />
                 <button
-                  type="submit"
-                  disabled={loading || !identifier.trim() || !password}
-                  className="w-full py-3 rounded-full bg-[#050F2A] hover:bg-[#0b1739] active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none text-white font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center justify-center gap-2"
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer"
                 >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin text-[#7BBBFF]" />
-                      <span>Verifying Credentials...</span>
-                    </>
-                  ) : (
-                    <span>Sign In to Dashboard</span>
-                  )}
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-            </form>
-          )}
 
-          {/* TAB 2: SIGN UP FOR 2-DAY FREE TRIAL */}
-          {activeTab === "signup" && (
-            <form onSubmit={handleSignUp} className="space-y-3.5">
-              {/* Highlight Banner */}
-              <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 text-emerald-950 text-xs flex items-center gap-2.5">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                <div>
-                  <span className="font-black block">48-Hour Full Access Free Trial</span>
-                  <span className="text-[11px] text-emerald-800">
-                    Test live QR menu ordering & themes with zero upfront payment.
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#050F2A]/70 mb-1">
-                  Restaurant / Café Name *
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#050F2A]/40">
-                    <Store className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="text"
-                    required
-                    value={restaurantName}
-                    onChange={(e) => setRestaurantName(e.target.value)}
-                    className="w-full bg-[#F2FDFF]/50 border border-[#050F2A]/15 rounded-2xl pl-10 pr-4 py-2 text-[#050F2A] placeholder-[#050F2A]/40 focus:outline-none focus:border-[#7BBBFF] text-sm"
-                    placeholder="e.g. Ceylon Spices Café"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#050F2A]/70 mb-1">
-                  Owner / Manager Full Name *
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#050F2A]/40">
-                    <User className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="text"
-                    required
-                    value={ownerName}
-                    onChange={(e) => setOwnerName(e.target.value)}
-                    className="w-full bg-[#F2FDFF]/50 border border-[#050F2A]/15 rounded-2xl pl-10 pr-4 py-2 text-[#050F2A] placeholder-[#050F2A]/40 focus:outline-none focus:border-[#7BBBFF] text-sm"
-                    placeholder="e.g. Kamal Perera"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-[#050F2A]/70 mb-1">
-                    Email Address *
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={signupEmail}
-                    onChange={(e) => setSignupEmail(e.target.value)}
-                    className="w-full bg-[#F2FDFF]/50 border border-[#050F2A]/15 rounded-2xl px-3.5 py-2 text-[#050F2A] placeholder-[#050F2A]/40 focus:outline-none focus:border-[#7BBBFF] text-sm"
-                    placeholder="cafe@domain.com"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-[#050F2A]/70 mb-1">
-                    Password *
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    minLength={8}
-                    value={signupPassword}
-                    onChange={(e) => setSignupPassword(e.target.value)}
-                    className="w-full bg-[#F2FDFF]/50 border border-[#050F2A]/15 rounded-2xl px-3.5 py-2 text-[#050F2A] placeholder-[#050F2A]/40 focus:outline-none focus:border-[#7BBBFF] text-sm"
-                    placeholder="Min 8 characters"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#050F2A]/70 mb-1">
-                  WhatsApp Contact Number
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#050F2A]/40">
-                    <Phone className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="tel"
-                    value={signupPhone}
-                    onChange={(e) => setSignupPhone(e.target.value)}
-                    className="w-full bg-[#F2FDFF]/50 border border-[#050F2A]/15 rounded-2xl pl-10 pr-4 py-2 text-[#050F2A] placeholder-[#050F2A]/40 focus:outline-none focus:border-[#7BBBFF] text-sm"
-                    placeholder="e.g. 076 484 7081"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-3 rounded-full bg-[#050F2A] hover:bg-[#0b1739] active:scale-[0.99] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center justify-center gap-2"
+              {/* Forgot password link */}
+              <div className="flex justify-end pt-0.5">
+                <a
+                  href="https://wa.me/94764847081?text=Hi%20Menyo,%20I%20forgot%20my%20password%20for%20my%20restaurant%20account."
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] font-semibold text-[#2563EB] hover:underline"
                 >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin text-[#7BBBFF]" />
-                      <span>Creating Your Workspace...</span>
-                    </>
-                  ) : (
-                    <span>Start 2-Day Free Trial</span>
-                  )}
-                </button>
+                  Forgot password?
+                </a>
               </div>
-            </form>
-          )}
 
-          <div className="pt-3 border-t border-[#050F2A]/10 text-center">
-            <p className="text-xs text-[#050F2A]/60">
-              Need assistance or want to activate directly?{" "}
-              <a
-                href="https://wa.me/94764847081?text=Hi%20Menyo,%20I%20have%20a%20question%20about%20starting%20my%20digital%20menu."
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[#050F2A] hover:text-[#7BBBFF] font-bold underline transition-colors"
+              {/* Solid Navy Blue Continue Button (Matching Menyo Brand Color) */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 rounded-lg bg-[#050F2A] hover:bg-[#0b1739] active:scale-[0.99] text-white font-bold text-xs transition flex items-center justify-center gap-2 shadow-xs cursor-pointer mt-4"
               >
-                WhatsApp (076 484 7081)
-              </a>
-            </p>
-          </div>
-        </div>
-      </div>
+                {loading ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : "Continue"}
+              </button>
 
+              {/* Bottom Switcher */}
+              <div className="text-center pt-4">
+                <p className="text-xs text-gray-500">
+                  New to Menyo?{" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab("signup");
+                      setError(null);
+                    }}
+                    className="font-bold text-[#050F2A] hover:underline cursor-pointer"
+                  >
+                    Try 2 days free
+                  </button>
+                </p>
+              </div>
+            </form>
+          )}
+
+          {/* 4. CREATE ACCOUNT FORM (Free Trial) */}
+          {activeTab === "signup" && (
+            <form onSubmit={handleSignUp} className="space-y-3">
+              <div>
+                <input
+                  type="text"
+                  required
+                  value={restaurantName}
+                  onChange={(e) => setRestaurantName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 focus:border-[#050F2A] focus:ring-1 focus:ring-[#050F2A] text-xs text-gray-900 placeholder-gray-400 outline-none transition"
+                  placeholder="Business name"
+                />
+              </div>
+
+              <div>
+                <input
+                  type="text"
+                  required
+                  value={ownerName}
+                  onChange={(e) => setOwnerName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] text-xs text-gray-900 placeholder-gray-400 outline-none transition"
+                  placeholder="Your name"
+                />
+              </div>
+
+              <div>
+                <input
+                  type="text"
+                  required
+                  value={signupContact}
+                  onChange={(e) => setSignupContact(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] text-xs text-gray-900 placeholder-gray-400 outline-none transition"
+                  placeholder="Email or phone number"
+                />
+              </div>
+
+              <div className="relative">
+                <input
+                  type={showSignupPassword ? "text" : "password"}
+                  required
+                  minLength={8}
+                  value={signupPassword}
+                  onChange={(e) => setSignupPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] text-xs text-gray-900 placeholder-gray-400 outline-none transition pr-10"
+                  placeholder="Password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSignupPassword(!showSignupPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer"
+                >
+                  {showSignupPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+
+              <div>
+                <input
+                  type="tel"
+                  value={signupPhone}
+                  onChange={(e) => setSignupPhone(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] text-xs text-gray-900 placeholder-gray-400 outline-none transition"
+                  placeholder="WhatsApp number (optional)"
+                />
+              </div>
+
+              {/* Solid Navy Blue Create Account Button (Matching Menyo Brand Color) */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 rounded-lg bg-[#050F2A] hover:bg-[#0b1739] active:scale-[0.99] text-white font-bold text-xs transition flex items-center justify-center gap-2 shadow-xs cursor-pointer mt-4"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : "Create account"}
+              </button>
+
+              {/* Bottom Switcher */}
+              <div className="text-center pt-4">
+                <p className="text-xs text-gray-500">
+                  Already have an account?{" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab("signin");
+                      setError(null);
+                    }}
+                    className="font-bold text-[#050F2A] hover:underline cursor-pointer"
+                  >
+                    Sign in
+                  </button>
+                </p>
+              </div>
+            </form>
+          )}
+        </div>
+      </main>
+
+      {/* 5. Minimal Footer Links (Matching Design) */}
+      <footer className="w-full py-6 text-center text-xs text-gray-400 flex items-center justify-center gap-6">
+        <a href="#" className="hover:text-gray-600 transition">
+          Privacy
+        </a>
+        <a href="#" className="hover:text-gray-600 transition">
+          Terms
+        </a>
+        <a
+          href="https://wa.me/94764847081?text=Hi%20Menyo%20Support,%20I%20need%20help%20with%20my%20account."
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-gray-600 transition"
+        >
+          Get help
+        </a>
+      </footer>
+
+      {/* Temporary Password Reset Modal if required */}
       {mustChangePassword && (
         <ForcePasswordChangeModal
           onSuccess={handlePasswordChangeSuccess}
-          onLogout={handleLogout}
+          onLogout={() => {
+            setMustChangePassword(false);
+          }}
         />
       )}
     </div>

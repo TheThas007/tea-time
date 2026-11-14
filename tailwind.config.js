@@ -47,12 +47,15 @@ export default {
       },
       fontFamily: {
         sans: [
-          'Inter',
-          '-apple-system',
-          'BlinkMacSystemFont',
-          '"Segoe UI"',
-          'Roboto',
-          'sans-serif'
+          "-apple-system",
+          "BlinkMacSystemFont",
+          '"SF Pro Display"',
+          '"SF Pro Text"',
+          '"SF Pro"',
+          '"Helvetica Neue"',
+          "Helvetica",
+          "Arial",
+          "sans-serif"
         ]
       }
     },

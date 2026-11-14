@@ -8,6 +8,7 @@ interface CustomerHeaderProps {
   onOpenOrderTracker?: () => void;
   brandName?: string;
   logoUrl?: string | null;
+  logoHeight?: number | string;
   primaryColor?: string;
   accentColor?: string;
 }
@@ -18,36 +19,40 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
   onOpenOrderTracker,
   brandName,
   logoUrl,
-  primaryColor = "#0A0A0A",
-  accentColor = "#E8B64F",
+  logoHeight,
+  primaryColor = "#050F2A",
+  accentColor = "#7BBBFF",
 }) => {
   const isTeaTime =
-    !brandName ||
+    (!brandName ||
     brandName.toLowerCase() === "tea time" ||
-    brandName.toLowerCase() === "teatime";
+    brandName.toLowerCase() === "teatime") && !logoUrl;
+
+  const parsedLogoH = typeof logoHeight === "number" ? `${logoHeight}px` : (logoHeight || undefined);
 
   return (
     <header
-      className="sticky top-0 z-30 text-[#FFFCF6] shadow-warm-md border-b border-white/10"
-      style={{ backgroundColor: isTeaTime ? "#0A0A0A" : primaryColor }}
+      className="sticky top-0 z-30 text-white shadow-md border-b border-white/10"
+      style={{ backgroundColor: primaryColor }}
     >
       <div className="max-w-md md:max-w-3xl lg:max-w-6xl xl:max-w-7xl mx-auto px-4 md:px-6 lg:px-8 py-2 md:py-3 flex items-center justify-between gap-2">
         {/* Left: Brand Logo */}
-        {isTeaTime ? (
+        {logoUrl ? (
+          <div className="flex items-center">
+            <img
+              src={logoUrl}
+              alt={brandName || "Logo"}
+              style={parsedLogoH ? { height: parsedLogoH, maxHeight: "90px" } : undefined}
+              className={parsedLogoH ? "w-auto object-contain select-none" : "h-11 sm:h-12 md:h-[52px] w-auto object-contain select-none"}
+            />
+          </div>
+        ) : isTeaTime ? (
           <Logo size="md" theme="dark" />
         ) : (
           <div className="flex items-center">
-            {logoUrl ? (
-              <img
-                src={logoUrl}
-                alt={brandName || "Logo"}
-                className="h-11 sm:h-12 md:h-[52px] w-auto object-contain select-none"
-              />
-            ) : (
-              <div className="font-extrabold text-lg sm:text-xl tracking-tight text-white uppercase">
-                {brandName}
-              </div>
-            )}
+            <div className="font-extrabold text-lg sm:text-xl tracking-tight text-white uppercase">
+              {brandName}
+            </div>
           </div>
         )}
 
@@ -67,7 +72,7 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
             >
               <Clock className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" />
               <span>
-                {activeOrderCount} {activeOrderCount === 1 ? "Order" : "Orders"}
+                Order
               </span>
             </button>
           )}

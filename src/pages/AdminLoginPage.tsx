@@ -1,8 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { signInWithEmailAndPassword } from "firebase/auth";
 import { Lock, Mail, AlertCircle, Loader2, ArrowLeft } from "lucide-react";
-import { auth } from "../lib/firebase";
+import { auth, signInWithEmailAndPassword } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/common/Logo";
 
@@ -21,17 +20,13 @@ export const AdminLoginPage: React.FC = () => {
     setErrorMessage(null);
 
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      await signInWithEmailAndPassword(auth, email.trim(), password);
       // Refresh claims check
       await refreshAdminClaims();
       navigate("/admin");
     } catch (err: any) {
       console.error("Admin sign in failed:", err);
-      if (err.code === "auth/configuration-not-found") {
-        setErrorMessage(
-          "Firebase Authentication is not activated yet! Go to Firebase Console > Authentication > Click 'Get started' and enable Email/Password & Anonymous."
-        );
-      } else if (
+      if (
         err.code === "auth/invalid-credential" ||
         err.code === "auth/user-not-found" ||
         err.code === "auth/wrong-password"

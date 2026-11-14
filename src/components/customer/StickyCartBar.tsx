@@ -19,7 +19,8 @@ export const StickyCartBar: React.FC<StickyCartBarProps> = ({
     <div className="fixed bottom-4 md:bottom-6 inset-x-0 z-40 px-4 max-w-md md:max-w-lg lg:max-w-xl mx-auto pointer-events-none">
       <button
         onClick={onClick}
-        className="pointer-events-auto w-full bg-[#E8B64F] hover:bg-[#d9a53d] text-[#1A0F08] p-3.5 md:p-4 px-4 md:px-5 rounded-2xl shadow-warm-xl border border-[#C99532]/50 flex items-center justify-between transition-all duration-300 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A] group"
+        style={{ backgroundColor: "var(--tenant-primary, #E8B64F)", color: "#FFFFFF" }}
+        className="pointer-events-auto w-full p-3.5 md:p-4 px-4 md:px-5 rounded-2xl shadow-warm-xl border border-black/10 flex items-center justify-between transition-all duration-300 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A] group"
       >
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-full bg-[#0A0A0A] text-[#E8B64F] flex items-center justify-center font-bold text-xs shadow-warm">

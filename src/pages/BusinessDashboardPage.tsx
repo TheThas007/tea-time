@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import {
+  Camera,
   UtensilsCrossed,
   Layers,
   QrCode,
@@ -24,6 +25,7 @@ import {
   ShieldAlert,
   Sparkles,
   Phone,
+  CreditCard,
   MessageCircle,
   Smartphone,
   Monitor,
@@ -38,18 +40,26 @@ import {
   VolumeX,
   User,
   ChevronDown,
+  Power,
+  Sparkle
 } from "lucide-react";
 import { soundManager } from "../lib/audio";
-import { formatOrderDateTime } from "../lib/utils";
+import { formatOrderDateTime, formatTimeAgo } from "../lib/utils";
 import { platformApi } from "../lib/apiClient";
-import { auth, db } from "../lib/firebase";
-import { signOut } from "firebase/auth";
+import { auth, signOut, storage, ref, uploadBytes, getDownloadURL } from "../lib/supabase";
 import {
+  db,
+  doc as storeDoc,
   collection,
   query,
+  where,
   orderBy,
+  getDoc,
+  setDoc,
+  updateDoc,
+  getDocs,
   onSnapshot,
-} from "firebase/firestore";
+} from "../lib/supabaseStore";
 import {
   Category,
   MenuItem,
@@ -62,13 +72,23 @@ import {
 } from "../types";
 import { ForcePasswordChangeModal } from "../components/auth/ForcePasswordChangeModal";
 import { SingleTablePrintModal, BatchTablesPrintModal, getQrLogoHeight } from "../components/admin/PrintableTableCard";
+import { SubscriptionUpgradeModal } from "../components/admin/SubscriptionUpgradeModal";
+import { QuickOnboardingChecklist } from "../components/admin/QuickOnboardingChecklist";
+import { WORLD_COUNTRIES, getPhonePlaceholder } from "../lib/countries";
+import { getSupabase } from "../lib/supabase";
+import { BillingSystemTab } from "../components/admin/BillingSystemTab";
+import { InstallAppBanner } from "../components/admin/InstallAppBanner";
 import { CategoryUpsertModal, ArchiveCategoryModal } from "../components/admin/CategoryModal";
 import { ProductModal } from "../components/admin/ProductModal";
 import { TableModal } from "../components/admin/TableModal";
+import { CafeSettingsView } from "../components/admin/CafeSettingsView";
 import { MenyoIcon, MenyoWordmark } from "../components/common/MenyoLogo";
 import { AdminDashboardPage } from "./AdminDashboardPage";
 
-type DashboardTab = "overview" | "orders" | "menu" | "categories" | "tables" | "settings";
+import { Gift } from "lucide-react";
+import { CustomerRewardRecord } from "../lib/rewards";
+
+type DashboardTab = "overview" | "orders" | "billing" | "menu" | "categories" | "tables" | "rewards" | "settings" | "memory" | "plan";
 
 export const BusinessDashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -86,9 +106,41 @@ export const BusinessDashboardPage: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<UserProfileRecord | null>(null);
   const [business, setBusiness] = useState<any | null>(null);
   const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [showBusinessSetupModal, setShowBusinessSetupModal] = useState(false);
+  const [memoryLogoPos, setMemoryLogoPos] = useState<string>("bottom-right");
+  const [memoryLogoUrl, setMemoryLogoUrl] = useState<string>("");
+  const [setupBusinessName, setSetupBusinessName] = useState("");
+  const [setupCountry, setSetupCountry] = useState("");
+  const [setupCountryCode, setSetupCountryCode] = useState("+94");
+  const [setupPhone, setSetupPhone] = useState("");
+  const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
+  const [countrySearch, setCountrySearch] = useState("");
+  const [codeDropdownOpen, setCodeDropdownOpen] = useState(false);
+  const [codeSearch, setCodeSearch] = useState("");
+  const [setupSaving, setSetupSaving] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
 
   // Active Tab (defaults to live orders just like Tea Time's admin panel)
   const [activeTab, setActiveTab] = useState<DashboardTab>("orders");
+  const [billingPreloadItems, setBillingPreloadItems] = useState<{ productId: string; name: string; price: number; qty: number }[] | null>(null);
+  const [billingPreloadPhone, setBillingPreloadPhone] = useState<string | null>(null);
+  const [billedOrderIds, setBilledOrderIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem("menyo_billed_orders");
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const last1AmCutoffMs = useMemo(() => {
+    const now = new Date();
+    const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 1, 0, 0, 0);
+    if (now.getTime() < cutoff.getTime()) {
+      cutoff.setDate(cutoff.getDate() - 1);
+    }
+    return cutoff.getTime();
+  }, []);
 
   // Real-time audio chime, clock, and staff dropdown (matching Tea Time AdminHeader)
   const [isMuted, setIsMuted] = useState(soundManager.getMuted());
@@ -108,6 +160,19 @@ export const BusinessDashboardPage: React.FC = () => {
   const [products, setProducts] = useState<MenuItem[]>([]);
   const [tables, setTables] = useState<TableItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [customers, setCustomers] = useState<CustomerRewardRecord[]>([]);
+  const [rewardPointValue, setRewardPointValue] = useState<number>(5);
+  const [rewardPointsPer100, setRewardPointsPer100] = useState<number>(2);
+  const [todaySpecial, setTodaySpecial] = useState<{
+    enabled: boolean;
+    productId: string;
+    title: string;
+    priceRupees: number;
+    imageUrl: string;
+  }>({ enabled: false, productId: "", title: "", priceRupees: 0, imageUrl: "" });
+  const [rewardSearchQuery, setRewardSearchQuery] = useState<string>("");
+  const [savingRewardRate, setSavingRewardRate] = useState(false);
+  const [rewardRateSaved, setRewardRateSaved] = useState(false);
 
   useEffect(() => {
     const currentNewCount = orders.filter((o) => o.status === "PENDING" || o.status === "new").length;
@@ -142,6 +207,7 @@ export const BusinessDashboardPage: React.FC = () => {
   const [editingTable, setEditingTable] = useState<TableItem | null>(null);
   const [singlePrintTable, setSinglePrintTable] = useState<TableItem | null>(null);
   const [showBatchPrint, setShowBatchPrint] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   // Settings form state (6 branding colors + logo + details + QR card settings)
   const [settingsForm, setSettingsForm] = useState({
@@ -153,18 +219,47 @@ export const BusinessDashboardPage: React.FC = () => {
     instagramUrl: "",
     facebookUrl: "",
     logoUrl: "",
-    primaryColor: "#7BBBFF",
-    accentColor: "#B8A9FF",
-    backgroundColor: "#F2FDFF",
+    primaryColor: "#050F2A",
+    accentColor: "#7BBBFF",
+    backgroundColor: "#F8F9FA",
     textColor: "#050F2A",
     headerBackgroundColor: "#050F2A",
-    headerTextColor: "#F2FDFF",
+    headerTextColor: "#F8F9FA",
     qrHeaderTitle: "",
     qrSubtitle: "SCAN TO ORDER",
-    qrFooterNote: "☕ Good tea brings people together.",
-    qrLogoSize: 140 as number | string,
+    qrFooterNote: "Good food. One scan away.",
+    qrLogoSize: 140,
+    allCategoryIcon: "✨",
     socialLinks: [] as SocialLinkItem[],
   });
+
+  // Real-time live settings for this tenant (reads localStorage fallback + business.branding)
+  const effectiveLiveBranding = useMemo(() => {
+    let localData: any = null;
+    if (typeof window !== "undefined") {
+      try {
+        const bKey = business?.slug ? `menyo_settings_${business.slug}` : (businessSlug ? `menyo_settings_${businessSlug}` : null);
+        const bKeyId = business?.id ? `menyo_settings_${business.id}` : null;
+        const raw = (bKey && localStorage.getItem(bKey)) || (bKeyId && localStorage.getItem(bKeyId));
+        if (raw) localData = JSON.parse(raw);
+      } catch { }
+    }
+    const b = business?.branding || {};
+    return {
+      primaryColor: localData?.primaryColor || b.primaryColor || (business?.slug === "teatime" ? "#24140E" : "#050F2A"),
+      accentColor: localData?.accentColor || b.accentColor || (business?.slug === "teatime" ? "#7BBBFF" : "#7BBBFF"),
+      headerBackgroundColor: localData?.headerBackgroundColor || b.headerBackgroundColor || (business?.slug === "teatime" ? "#24140E" : "#050F2A"),
+      headerTextColor: localData?.headerTextColor || b.headerTextColor || (business?.slug === "teatime" ? "#F8F9FA" : "#F2FDFF"),
+      logoUrl: localData?.logoUrl !== undefined ? localData.logoUrl : (b.logoUrl || null),
+      qrHeaderTitle: localData?.qrHeaderTitle !== undefined ? localData.qrHeaderTitle : (b.qrHeaderTitle ?? ""),
+      qrSubtitle: localData?.qrSubtitle !== undefined ? localData.qrSubtitle : (b.qrSubtitle || "SCAN TO ORDER"),
+      qrFooterNote: localData?.qrFooterNote !== undefined ? localData.qrFooterNote : (b.qrFooterNote || (business?.slug === "teatime" ? "☕ Good tea brings people together." : "Good food. One scan away.")),
+      qrLogoSize: localData?.qrLogoSize !== undefined ? localData.qrLogoSize : (b.qrLogoSize || settingsForm.qrLogoSize || 140),
+      cardBgColor: localData?.qrCardBgColor || b.qrCardBgColor || "#FFFFFF",
+      cardTextColor: localData?.qrCardTextColor || b.qrCardTextColor || "#050F2A",
+    };
+  }, [business?.branding, business?.slug, business?.id, businessSlug, settingsForm.qrLogoSize]);
+
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
   const [previewMode, setPreviewMode] = useState<"mobile" | "desktop">("mobile");
@@ -190,18 +285,17 @@ export const BusinessDashboardPage: React.FC = () => {
       // If URL slug param is present (e.g. /ffgfgffg/admin), resolve that specific business
       if (businessSlug && businessSlug !== "teatime") {
         try {
-          const { getDoc, doc: fsDoc, collection: fsCol, query: fsQ, where: fsWhere, getDocs: fsGetDocs } = await import("firebase/firestore");
           let targetBId = businessSlug;
-          const slugSnap = await getDoc(fsDoc(db, "businessSlugs", businessSlug)).catch(() => null);
+          const slugSnap = await getDoc(storeDoc(db, "businessSlugs", businessSlug)).catch(() => null);
           if (slugSnap && slugSnap.exists()) {
             targetBId = slugSnap.data().businessId || businessSlug;
           }
-          const bSnap = await getDoc(fsDoc(db, "businesses", targetBId)).catch(() => null);
+          const bSnap = await getDoc(storeDoc(db, "businesses", targetBId)).catch(() => null);
           if (bSnap && bSnap.exists()) {
             b = { id: bSnap.id, ...(bSnap.data() as any) } as any;
           } else {
-            const qSlug = fsQ(fsCol(db, "businesses"), fsWhere("slug", "==", businessSlug));
-            const sSlug = await fsGetDocs(qSlug).catch(() => null);
+            const qSlug = query(collection(db, "businesses"), where("slug", "==", businessSlug));
+            const sSlug = await getDocs(qSlug).catch(() => null);
             if (sSlug && !sSlug.empty) {
               b = { id: sSlug.docs[0].id, ...(sSlug.docs[0].data() as any) } as any;
             }
@@ -214,12 +308,27 @@ export const BusinessDashboardPage: React.FC = () => {
         }
       }
 
+      if (!b && session.business) {
+        b = session.business;
+      }
       if (!b) {
         throw new Error(`Business "${businessSlug}" could not be found.`);
       }
 
       setCurrentUser(session.user);
       setBusiness(b);
+      if (
+        b.slug !== "teatime" &&
+        (!(b as any).country || !String((b as any).country).trim() || !b.phone || !String(b.phone).trim() || !b.name || b.name === "My Business" || b.name === "My Cafe" || b.name === "My Restaurant") &&
+        localStorage.getItem(`menyo_setup_done_${b.id}`) !== "1"
+      ) {
+        setSetupBusinessName(b.name && b.name !== "My Business" && b.name !== "My Cafe" && b.name !== "My Restaurant" ? b.name : "");
+        setSetupPhone(b.phone || "");
+        setShowBusinessSetupModal(true);
+      }
+      if ((b as any).rewardPointValueRupees && Number((b as any).rewardPointValueRupees) > 0) {
+        setRewardPointValue(Number((b as any).rewardPointValueRupees));
+      }
 
       if (session.claims.mustChangePassword) {
         setMustChangePassword(true);
@@ -256,16 +365,17 @@ export const BusinessDashboardPage: React.FC = () => {
         instagramUrl: b.instagramUrl || "",
         facebookUrl: b.facebookUrl || "",
         logoUrl: b.branding?.logoUrl || "",
-        primaryColor: b.branding?.primaryColor || (isTeaTime ? "#2C190E" : "#7BBBFF"),
-        accentColor: b.branding?.accentColor || (isTeaTime ? "#E8B64F" : "#B8A9FF"),
-        backgroundColor: b.branding?.backgroundColor || (isTeaTime ? "#FAF7F0" : "#F2FDFF"),
-        textColor: b.branding?.textColor || (isTeaTime ? "#301C10" : "#050F2A"),
-        headerBackgroundColor: b.branding?.headerBackgroundColor || (isTeaTime ? "#2C190E" : "#050F2A"),
-        headerTextColor: b.branding?.headerTextColor || (isTeaTime ? "#FAF7F0" : "#F2FDFF"),
+        primaryColor: b.branding?.primaryColor || (isTeaTime ? "#050F2A" : "#7BBBFF"),
+        accentColor: b.branding?.accentColor || (isTeaTime ? "#7BBBFF" : "#B8A9FF"),
+        backgroundColor: b.branding?.backgroundColor || (isTeaTime ? "#F8F9FA" : "#F2FDFF"),
+        textColor: b.branding?.textColor || (isTeaTime ? "#050F2A" : "#050F2A"),
+        headerBackgroundColor: b.branding?.headerBackgroundColor || (isTeaTime ? "#050F2A" : "#050F2A"),
+        headerTextColor: b.branding?.headerTextColor || (isTeaTime ? "#F8F9FA" : "#F2FDFF"),
         qrHeaderTitle: b.branding?.qrHeaderTitle ?? "",
         qrSubtitle: b.branding?.qrSubtitle ?? "SCAN TO ORDER",
         qrFooterNote: b.branding?.qrFooterNote || (isTeaTime ? "☕ Good tea brings people together." : "Enjoy your visit!"),
         qrLogoSize: b.branding?.qrLogoSize ?? 140,
+        allCategoryIcon: b.branding?.allCategoryIcon || "✨",
         socialLinks: initialSocialLinks,
       });
     } catch (err: any) {
@@ -289,24 +399,70 @@ export const BusinessDashboardPage: React.FC = () => {
 
     const bId = business.id;
 
+    // Load instant localStorage cache so newly added items never disappear on refresh
+    try {
+      const localCats = JSON.parse(localStorage.getItem(`menyo_categories_${bId}`) || "[]");
+      if (Array.isArray(localCats) && localCats.length > 0) {
+        setCategories(localCats);
+      }
+      const localProds = JSON.parse(localStorage.getItem(`menyo_products_${bId}`) || "[]");
+      if (Array.isArray(localProds) && localProds.length > 0) {
+        setProducts(localProds.filter((p: any) => !p.isArchived && !p.archived));
+      }
+    } catch {}
+
     const unsubCategories = onSnapshot(
-      query(collection(db, `businesses/${bId}/categories`), orderBy("sortOrder", "asc")),
+      collection(db, `businesses/${bId}/categories`),
       (snap) => {
         const list: Category[] = [];
         snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() } as Category));
-        setCategories(list);
+        try {
+          const localCats: any[] = JSON.parse(localStorage.getItem(`menyo_categories_${bId}`) || "[]");
+          const mergedMap = new Map<string, any>();
+          list.forEach((c) => mergedMap.set(c.id, c));
+          localCats.forEach((lc) => {
+            const remote = mergedMap.get(lc.id);
+            if (!remote || (lc.updatedAtMs || 0) > (remote.updatedAtMs || 0)) {
+              mergedMap.set(lc.id, lc);
+            }
+          });
+          const merged = Array.from(mergedMap.values());
+          merged.sort((a, b) => (a.sortOrder ?? a.displayOrder ?? 0) - (b.sortOrder ?? b.displayOrder ?? 0));
+          setCategories(merged);
+          localStorage.setItem(`menyo_categories_${bId}`, JSON.stringify(merged));
+        } catch {
+          list.sort((a, b) => (a.sortOrder ?? a.displayOrder ?? 0) - (b.sortOrder ?? b.displayOrder ?? 0));
+          setCategories(list);
+        }
       },
-      () => {}
+      () => { }
     );
 
     const unsubProducts = onSnapshot(
-      query(collection(db, `businesses/${bId}/products`), orderBy("sortOrder", "asc")),
+      collection(db, `businesses/${bId}/products`),
       (snap) => {
         const list: MenuItem[] = [];
         snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() } as MenuItem));
-        setProducts(list);
+        try {
+          const localProds: any[] = JSON.parse(localStorage.getItem(`menyo_products_${bId}`) || "[]");
+          const mergedMap = new Map<string, any>();
+          list.forEach((p) => mergedMap.set(p.id, p));
+          localProds.forEach((lp) => {
+            const remote = mergedMap.get(lp.id);
+            if (!remote || (lp.updatedAtMs || 0) > (remote.updatedAtMs || 0)) {
+              mergedMap.set(lp.id, lp);
+            }
+          });
+          const merged = Array.from(mergedMap.values()).filter((p: any) => !p.isArchived && !p.archived);
+          merged.sort((a, b) => ((a as any).sortOrder ?? 0) - ((b as any).sortOrder ?? 0));
+          setProducts(merged);
+          localStorage.setItem(`menyo_products_${bId}`, JSON.stringify(merged));
+        } catch {
+          list.sort((a, b) => ((a as any).sortOrder ?? 0) - ((b as any).sortOrder ?? 0));
+          setProducts(list.filter((p: any) => !p.isArchived && !p.archived));
+        }
       },
-      () => {}
+      () => { }
     );
 
     const unsubTables = onSnapshot(
@@ -316,7 +472,7 @@ export const BusinessDashboardPage: React.FC = () => {
         snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() } as TableItem));
         setTables(list);
       },
-      () => {}
+      () => { }
     );
 
     const unsubOrders = onSnapshot(
@@ -327,22 +483,78 @@ export const BusinessDashboardPage: React.FC = () => {
         // Filter out any demo orders so the live café kitchen queue remains 100% genuine
         setOrders(list.filter((o) => !(o as any).isDemo && !o.id.startsWith("demo_")));
       },
-      () => {}
+      () => { }
     );
 
+    const loadLocalCustomers = (): CustomerRewardRecord[] => {
+      try {
+        const raw = localStorage.getItem(`menyo_rewards_${bId}`);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : Object.values(parsed || {});
+      } catch {
+        return [];
+      }
+    };
+    const initialLocalCustomers = loadLocalCustomers();
+    if (initialLocalCustomers.length > 0) {
+      initialLocalCustomers.sort((a, b) => (b.lastOrderAtMs || 0) - (a.lastOrderAtMs || 0));
+      setCustomers(initialLocalCustomers);
+    }
+
+    const unsubCustomers = onSnapshot(
+      collection(db, `businesses/${bId}/customers`),
+      (snap) => {
+        const map = new Map<string, CustomerRewardRecord>();
+        snap.forEach((doc) => {
+          const d = doc.data() as CustomerRewardRecord;
+          if (d && d.phone) map.set(d.phone, d);
+        });
+        for (const lc of loadLocalCustomers()) {
+          if (lc && lc.phone) {
+            const existing = map.get(lc.phone);
+            if (!existing || (lc.lastOrderAtMs || 0) >= (existing.lastOrderAtMs || 0)) {
+              map.set(lc.phone, lc);
+            }
+          }
+        }
+        const list = Array.from(map.values());
+        list.sort((a, b) => (b.lastOrderAtMs || 0) - (a.lastOrderAtMs || 0));
+        setCustomers(list);
+      },
+      () => { }
+    );
+
+    const handleStorageRewards = (ev: StorageEvent) => {
+      if (ev.key === `menyo_rewards_${bId}`) {
+        const updated = loadLocalCustomers();
+        updated.sort((a, b) => (b.lastOrderAtMs || 0) - (a.lastOrderAtMs || 0));
+        setCustomers(updated);
+      }
+    };
+    window.addEventListener("storage", handleStorageRewards);
+
     return () => {
+      window.removeEventListener("storage", handleStorageRewards);
       unsubCategories();
       unsubProducts();
       unsubTables();
       unsubOrders();
+      unsubCustomers();
     };
   }, [business?.id]);
 
   const handleLogout = async () => {
     localStorage.removeItem("menyo_auth_role");
     localStorage.removeItem("menyo_auth_email");
-    await signOut(auth).catch(() => {});
-    navigate("/login");
+    Object.keys(localStorage).forEach((key) => {
+      if (key.startsWith("sb-")) localStorage.removeItem(key);
+    });
+    await Promise.race([
+      signOut(auth).catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, 1000)),
+    ]);
+    window.location.replace("/login");
   };
 
   const handleOrderStatusUpdate = async (orderId: string, status: OrderStatus) => {
@@ -495,10 +707,10 @@ export const BusinessDashboardPage: React.FC = () => {
           logoUrl: res.branding.logoUrl || "",
           primaryColor: res.branding.primaryColor,
           accentColor: res.branding.accentColor,
-          backgroundColor: res.branding.backgroundColor || (business.slug === "teatime" ? "#FAF7F0" : "#F2FDFF"),
-          textColor: res.branding.textColor || (business.slug === "teatime" ? "#301C10" : "#050F2A"),
-          headerBackgroundColor: res.branding.headerBackgroundColor || (business.slug === "teatime" ? "#2C190E" : "#050F2A"),
-          headerTextColor: res.branding.headerTextColor || (business.slug === "teatime" ? "#FAF7F0" : "#F2FDFF"),
+          backgroundColor: res.branding.backgroundColor || (business.slug === "teatime" ? "#F8F9FA" : "#F2FDFF"),
+          textColor: res.branding.textColor || (business.slug === "teatime" ? "#050F2A" : "#050F2A"),
+          headerBackgroundColor: res.branding.headerBackgroundColor || (business.slug === "teatime" ? "#050F2A" : "#050F2A"),
+          headerTextColor: res.branding.headerTextColor || (business.slug === "teatime" ? "#F8F9FA" : "#F2FDFF"),
         }));
       }
       setSettingsSuccess(true);
@@ -510,20 +722,36 @@ export const BusinessDashboardPage: React.FC = () => {
     }
   };
 
-  const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+
+  const handleLogoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      alert("Image must be smaller than 2MB.");
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image must be smaller than 5MB.");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        setSettingsForm((prev) => ({ ...prev, logoUrl: reader.result as string }));
-      }
-    };
-    reader.readAsDataURL(file);
+    setUploadingLogo(true);
+    try {
+      const ext = file.name.split(".").pop() || "png";
+      const bId = business?.id || "business";
+      const fileName = `logos/${bId}/${Date.now()}_logo.${ext}`;
+      const storageRef = ref(storage, fileName);
+      await uploadBytes(storageRef, file);
+      const downloadUrl = await getDownloadURL(storageRef);
+      setSettingsForm((prev) => ({ ...prev, logoUrl: downloadUrl }));
+    } catch (err: any) {
+      console.warn("Direct upload fallback to base64:", err);
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          setSettingsForm((prev) => ({ ...prev, logoUrl: reader.result as string }));
+        }
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setUploadingLogo(false);
+    }
   };
 
   const copyTableLink = (tableToken: string) => {
@@ -532,6 +760,51 @@ export const BusinessDashboardPage: React.FC = () => {
     navigator.clipboard.writeText(url);
     setCopiedToken(tableToken);
     setTimeout(() => setCopiedToken(null), 2500);
+  };
+
+  const handleToggleTableActive = async (table: TableItem) => {
+    const nextActive = table.active === false ? true : false;
+    try {
+      await platformApi.ownerUpsertTable({
+        businessId: business?.id,
+        id: table.id,
+        tableNumber: table.number,
+        active: nextActive,
+      });
+      setTables((prev) =>
+        prev.map((t) => (t.id === table.id ? { ...t, active: nextActive } : t))
+      );
+    } catch (err: any) {
+      alert(err?.message || "Failed to update table status.");
+    }
+  };
+
+  const [generatingTables, setGeneratingTables] = useState(false);
+  const handleAutoGenerate15Tables = async () => {
+    if (!window.confirm("Auto-generate 15 Dining Tables (Table 01 to Table 15) with instant QR codes for your restaurant?")) {
+      return;
+    }
+    setGeneratingTables(true);
+    try {
+      for (let i = 1; i <= 15; i++) {
+        const numStr = i < 10 ? `Table 0${i}` : `Table ${i}`;
+        // Skip if already exists
+        const exists = tables.some((t) => t.number.toLowerCase() === numStr.toLowerCase());
+        if (!exists) {
+          await platformApi.ownerUpsertTable({
+            businessId: business?.id,
+            tableNumber: numStr,
+            capacity: 4,
+            active: true,
+          });
+        }
+      }
+      alert("Successfully generated 15 QR Tables! You can now Batch Print QR cards.");
+    } catch (err: any) {
+      alert(err?.message || "Failed to auto-generate tables.");
+    } finally {
+      setGeneratingTables(false);
+    }
   };
 
   // Filtered products
@@ -558,9 +831,9 @@ export const BusinessDashboardPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FAF7F0] text-[#301C10] flex flex-col items-center justify-center gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-[#E8B64F]" />
-        <span className="text-xs text-[#8A6A53] tracking-wide font-bold">
+      <div className="min-h-screen bg-[#F8F9FA] text-[#050F2A] flex flex-col items-center justify-center gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-[#7BBBFF]" />
+        <span className="text-xs text-[#050F2A]/60 tracking-wide font-bold">
           Verifying administrative workspace privileges...
         </span>
       </div>
@@ -577,22 +850,22 @@ export const BusinessDashboardPage: React.FC = () => {
 
   if (business && subStatus === "SUSPENDED") {
     return (
-      <div className="min-h-screen bg-[#FAF7F0] text-[#301C10] flex flex-col items-center justify-center p-4">
-        <div className="bg-[#FFFCF6] border border-[#DFC9AC] rounded-3xl max-w-md w-full p-8 text-center shadow-warm-xl">
+      <div className="min-h-screen bg-[#F8F9FA] text-[#050F2A] flex flex-col items-center justify-center p-4">
+        <div className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-3xl max-w-md w-full p-8 text-center shadow-xl">
           <div className="w-14 h-14 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 mx-auto mb-4">
             <ShieldAlert className="w-8 h-8" />
           </div>
-          <h1 className="text-2xl font-black text-[#301C10] mb-2 tracking-tight">Workspace Suspended</h1>
-          <p className="text-sm text-[#8A6A53] mb-6 leading-relaxed">
+          <h1 className="text-2xl font-black text-[#050F2A] mb-2 tracking-tight">Workspace Suspended</h1>
+          <p className="text-sm text-[#64748B] mb-6 leading-relaxed">
             Your restaurant workspace has been temporarily suspended by platform administration.
           </p>
-          <div className="p-4 bg-[#FAF7F0] rounded-2xl border border-[#DFC9AC] text-xs text-[#301C10] mb-6 space-y-1">
-            <p className="text-[#8A6A53]">Please contact support to resolve account status:</p>
-            <p className="font-bold text-[#4A290F]">support@aevonix.lk / WhatsApp: +94 76 484 7081</p>
+          <div className="p-4 bg-[#F8F9FA] rounded-2xl border border-[#E2E8F0] text-xs text-[#050F2A] mb-6 space-y-1">
+            <p className="text-[#64748B]">Please contact support to resolve account status:</p>
+            <p className="font-bold text-[#050F2A]">support@aevonix.lk / WhatsApp: +94 76 484 7081</p>
           </div>
           <button
             onClick={handleLogout}
-            className="w-full py-2.5 rounded-xl bg-[#4A290F] hover:bg-[#623B1B] text-[#FFFCF6] font-bold text-xs uppercase tracking-wider transition-all shadow-warm"
+            className="w-full py-2.5 rounded-xl bg-[#050F2A] hover:bg-[#0A1840] text-[#FFFFFF] font-bold text-xs uppercase tracking-wider transition-all shadow-sm"
           >
             Sign Out
           </button>
@@ -605,35 +878,41 @@ export const BusinessDashboardPage: React.FC = () => {
   if (business && subStatus === "EXPIRED") {
     const isTrial = business.isTrial || business.subscription?.packageId === "2_days_trial";
     return (
-      <div className="min-h-screen bg-[#FAF7F0] text-[#301C10] flex flex-col items-center justify-center p-4">
-        <div className="bg-[#FFFCF6] border border-[#DFC9AC] rounded-3xl max-w-lg w-full p-8 text-center shadow-warm-xl">
-          <div className="w-14 h-14 rounded-2xl bg-[#E8B64F]/20 border border-[#E8B64F]/50 flex items-center justify-center text-[#4A290F] mx-auto mb-4">
+      <div className="min-h-screen bg-[#F8F9FA] text-[#050F2A] flex flex-col items-center justify-center p-4">
+        <div className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-3xl max-w-lg w-full p-8 text-center shadow-xl">
+          <div className="w-14 h-14 rounded-2xl bg-[#7BBBFF]/20 border border-[#7BBBFF]/50 flex items-center justify-center text-[#050F2A] mx-auto mb-4">
             <Clock className="w-8 h-8" />
           </div>
-          <h1 className="text-2xl font-black text-[#301C10] mb-2 tracking-tight">
+          <h1 className="text-2xl font-black text-[#050F2A] mb-2 tracking-tight">
             {isTrial ? "2-Day Free Trial Concluded" : "Subscription Expired"}
           </h1>
-          <p className="text-sm text-[#8A6A53] mb-6 leading-relaxed">
+          <p className="text-sm text-[#64748B] mb-6 leading-relaxed">
             {isTrial
               ? `Your 48-hour free trial for "${business.name}" has completed. Contact our team on WhatsApp to activate your official subscription key.`
               : "Your menu subscription has ended. Customer ordering has been temporarily paused."}
           </p>
 
-          <div className="p-4 bg-[#FAF7F0] rounded-2xl border border-[#DFC9AC] text-xs text-[#301C10] mb-6 space-y-2 text-left">
-            <div className="flex justify-between items-center pb-2 border-b border-[#DFC9AC]">
-              <span className="text-[#8A6A53]">Your Login Email:</span>
-              <span className="font-bold text-[#301C10] font-mono">{currentUser?.email || business.ownerEmail || "N/A"}</span>
+          <div className="p-4 bg-[#F8F9FA] rounded-2xl border border-[#E2E8F0] text-xs text-[#050F2A] mb-6 space-y-2 text-left">
+            <div className="flex justify-between items-center pb-2 border-b border-[#E2E8F0]">
+              <span className="text-[#64748B]">Your Login Email:</span>
+              <span className="font-bold text-[#050F2A] font-mono">{currentUser?.email || business.ownerEmail || "N/A"}</span>
             </div>
-            <div className="flex justify-between items-center pb-2 border-b border-[#DFC9AC]">
-              <span className="text-[#8A6A53]">Available Plans:</span>
-              <span className="font-bold text-[#301C10]">Monthly (Rs. 2,000) / 6 Mo / 1 Yr</span>
+            <div className="flex justify-between items-center pb-2 border-b border-[#E2E8F0]">
+              <span className="text-[#64748B]">Available Plans:</span>
+              <span className="font-bold text-[#050F2A]">Monthly (Rs. 2,000) / 6 Mo / 1 Yr</span>
             </div>
-            <p className="text-[#8A6A53] text-[11px] pt-1">
+            <p className="text-[#64748B] text-[11px] pt-1">
               💬 When you contact our support team on WhatsApp, we will look up your email and activate your plan key instantly.
             </p>
           </div>
 
           <div className="space-y-3">
+            <button
+              onClick={() => setShowUpgradeModal(true)}
+              className="w-full py-3.5 rounded-xl bg-[#050F2A] hover:bg-[#0A1840] text-[#FFFFFF] font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+            >
+              <span>View Plans & Pay (PayHere / Card)</span>
+            </button>
             <a
               href={`https://wa.me/94764847081?text=Hi%20Menyo,%20my%20trial%20for%20${encodeURIComponent(
                 business.name
@@ -642,18 +921,30 @@ export const BusinessDashboardPage: React.FC = () => {
               )})%20has%20ended.%20I%20would%20like%20to%20pay%20and%20activate%20my%20subscription%20key.`}
               target="_blank"
               rel="noopener noreferrer"
-              className="w-full py-3 rounded-xl bg-[#4A290F] hover:bg-[#623B1B] text-[#FFFCF6] font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-warm"
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm"
             >
-              <MessageCircle className="w-4 h-4 text-[#E8B64F]" />
+              <MessageCircle className="w-4 h-4 text-white" />
               <span>Contact to Pay & Activate via WhatsApp</span>
             </a>
             <button
               onClick={handleLogout}
-              className="w-full py-2.5 rounded-xl bg-[#FAF7F0] hover:bg-[#DFC9AC]/30 border border-[#DFC9AC] text-[#301C10] font-bold text-xs transition-all"
+              className="w-full py-2.5 rounded-xl bg-[#F8F9FA] hover:bg-[#E2E8F0]/30 border border-[#E2E8F0] text-[#050F2A] font-bold text-xs transition-all"
             >
               Sign Out
             </button>
           </div>
+
+          {showUpgradeModal && (
+            <SubscriptionUpgradeModal
+              isOpen={showUpgradeModal}
+              onClose={() => setShowUpgradeModal(false)}
+              businessName={business.name}
+              businessSlug={business.slug}
+              ownerEmail={currentUser?.email || business.ownerEmail}
+              currentDaysRemaining={0}
+              isExpired={true}
+            />
+          )}
         </div>
       </div>
     );
@@ -669,17 +960,21 @@ export const BusinessDashboardPage: React.FC = () => {
 
   const navItems: { id: DashboardTab; label: string; icon: any; badge?: number }[] = [
     { id: "orders", label: "Live Orders", icon: Bell, badge: orders.filter((o) => o.status === "PENDING" || o.status === "PREPARING").length },
-    { id: "menu", label: "Menu Items", icon: UtensilsCrossed, badge: products.length },
-    { id: "categories", label: "Categories", icon: Layers, badge: categories.length },
-    { id: "tables", label: "Tables & QRs", icon: QrCode, badge: tables.length },
+    { id: "billing", label: "Billing System", icon: CreditCard },
+    { id: "menu", label: "Menu Items", icon: UtensilsCrossed },
+    { id: "categories", label: "Categories", icon: Layers },
+    { id: "tables", label: "Tables & QRs", icon: QrCode },
+    { id: "rewards", label: "Reward Points", icon: Gift },
     { id: "settings", label: "Settings", icon: Settings },
     { id: "overview", label: "Overview", icon: LayoutGrid },
+    { id: "memory", label: "Memory Studio", icon: Camera },
+    { id: "plan", label: "Plan & Payment", icon: CreditCard },
   ];
 
   return (
-    <div className="min-h-screen bg-[#FAF7F0] flex flex-col text-[#301C10] selection:bg-[#E8B64F]/30">
-      {/* 1. TOP ESPRESSO HEADER BAR (Exact Tea Time style) */}
-      <header className="bg-[#0A0A0A] text-[#FFFCF6] border-b border-white/10 px-4 sm:px-6 py-2.5 flex items-center justify-between sticky top-0 z-30 shadow-warm-md">
+    <div className="min-h-screen bg-[#F8F9FA] flex flex-col text-[#050F2A] selection:bg-[#7BBBFF]/30">
+      {/* 1. TOP MENYO NAVY HEADER BAR */}
+      <header className="bg-[#050F2A] text-white border-b border-white/10 px-4 sm:px-6 py-2.5 flex items-center justify-between sticky top-0 z-30 shadow-md">
         {/* Left: Brand Logo + / Admin */}
         <div className="flex items-center gap-2.5">
           {business?.branding?.logoUrl ? (
@@ -690,29 +985,28 @@ export const BusinessDashboardPage: React.FC = () => {
             />
           ) : (
             <div
-              className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-[#1A0F08] text-xs shadow-warm"
-              style={{ backgroundColor: business?.branding?.accentColor || "#E8B64F" }}
+              className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-xs shadow-sm bg-[#7BBBFF]"
             >
               {business?.name?.charAt(0) || "B"}
             </div>
           )}
-          <span className="font-extrabold text-sm text-[#FFFCF6] tracking-tight truncate max-w-[130px] sm:max-w-xs">
+          <span className="font-extrabold text-sm text-white tracking-tight truncate max-w-[130px] sm:max-w-xs">
             {business?.name || "Restaurant"}
           </span>
           <span className="text-white/40 font-bold text-sm select-none translate-y-0.5">/</span>
-          <span className="text-[#DFC9AC] font-bold text-sm tracking-wide translate-y-0.5">
+          <span className="text-white/70 font-bold text-sm tracking-wide translate-y-0.5">
             Admin
           </span>
         </div>
 
         {/* Center: Live indicator & Real-time clock */}
         <div className="hidden md:flex items-center gap-4 text-xs">
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#1A1A1A] border border-[#E8B64F]/40 text-[#E8B64F] font-semibold shadow-warm">
-            <span className="w-2 h-2 rounded-full bg-[#E8B64F] animate-ping" />
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 border border-[#7BBBFF]/40 text-[#7BBBFF] font-semibold shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-[#7BBBFF] animate-ping" />
             <span>Live Orders Active</span>
           </div>
 
-          <span className="text-[#DFC9AC] font-medium font-mono">
+          <span className="text-white/70 font-medium font-mono">
             {currentTime}
           </span>
         </div>
@@ -721,24 +1015,23 @@ export const BusinessDashboardPage: React.FC = () => {
         <div className="flex items-center gap-2 sm:gap-3">
           {/* View Menu Button */}
           <a
-            href={`/${business?.slug}/menu`}
+            href={`/${business?.slug || businessSlug || business?.id || "menu"}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1A1A1A] hover:bg-[#2A2A2A] border border-white/15 text-[#DFC9AC] hover:text-[#FFFCF6] text-xs font-bold transition shadow-warm"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white/90 hover:text-white text-xs font-bold transition shadow-sm"
           >
             <span>View Menu</span>
-            <ExternalLink className="w-3.5 h-3.5 text-[#E8B64F]" />
+            <ExternalLink className="w-3.5 h-3.5 text-[#7BBBFF]" />
           </a>
 
           {/* Sound Toggle */}
           <button
             onClick={handleToggleSound}
             title={isMuted ? "Unmute order chime" : "Mute order chime"}
-            className={`p-2 px-2.5 rounded-xl transition flex items-center gap-1.5 text-xs font-extrabold focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532] ${
-              isMuted
-                ? "bg-[#1A1A1A] text-[#DFC9AC] hover:bg-[#2A2A2A] border border-white/10"
-                : "bg-[#E8B64F] text-[#1A0F08] hover:bg-[#d9a53d] shadow-warm"
-            }`}
+            className={`p-2 px-2.5 rounded-xl transition flex items-center gap-1.5 text-xs font-extrabold focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7BBBFF] ${isMuted
+                ? "bg-white/10 text-white/70 hover:bg-white/20 border border-white/10"
+                : "bg-[#7BBBFF] text-[#050F2A] hover:bg-[#68aaff] shadow-sm"
+              }`}
           >
             {isMuted ? (
               <>
@@ -757,25 +1050,25 @@ export const BusinessDashboardPage: React.FC = () => {
           <div className="relative">
             <button
               onClick={() => setShowUserDropdown(!showUserDropdown)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#1A1A1A] hover:bg-[#2A2A2A] border border-white/15 text-[#FFFCF6] text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7BBBFF]"
             >
-              <div className="w-6 h-6 rounded-full bg-[#0A0A0A] flex items-center justify-center text-[#E8B64F]">
+              <div className="w-6 h-6 rounded-full bg-[#050F2A] flex items-center justify-center text-[#7BBBFF] border border-white/20">
                 <User className="w-3.5 h-3.5" />
               </div>
               <span className="hidden md:inline truncate max-w-[120px]">
                 {currentUser?.email?.split("@")[0] || business?.name || "Owner"}
               </span>
-              <ChevronDown className="w-3.5 h-3.5 text-[#DFC9AC]" />
+              <ChevronDown className="w-3.5 h-3.5 text-white/70" />
             </button>
 
             {showUserDropdown && (
-              <div className="absolute right-0 mt-2 w-52 bg-[#FFFCF6] border border-[#DFC9AC] rounded-2xl shadow-warm-xl py-2 text-xs text-[#301C10] z-50 animate-fadeIn">
-                <div className="px-3.5 py-2 border-b border-[#DFC9AC]">
-                  <p className="text-[10px] uppercase font-bold text-[#8A6A53]">Signed in as</p>
-                  <p className="font-bold truncate text-[#301C10]">
+              <div className="absolute right-0 mt-2 w-52 bg-white border border-gray-100 rounded-2xl shadow-xl py-2 text-xs text-[#050F2A] z-50 animate-fadeIn">
+                <div className="px-3.5 py-2 border-b border-gray-100">
+                  <p className="text-[10px] uppercase font-bold text-gray-400">Signed in as</p>
+                  <p className="font-bold truncate text-[#050F2A]">
                     {currentUser?.email || "Owner"}
                   </p>
-                  <span className="inline-block mt-1 text-[9px] uppercase font-black px-2 py-0.5 rounded-full bg-[#E8B64F]/20 text-[#4A290F]">
+                  <span className="inline-block mt-1 text-[9px] uppercase font-black px-2 py-0.5 rounded-full bg-sky-100 text-[#050F2A]">
                     {business?.name}
                   </span>
                 </div>
@@ -784,9 +1077,9 @@ export const BusinessDashboardPage: React.FC = () => {
                     href={`/${business?.slug}/menu`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-[#FAF7F0] font-bold text-[#301C10] transition"
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-gray-50 font-bold text-[#050F2A] transition"
                   >
-                    <ExternalLink className="w-3.5 h-3.5 text-[#E8B64F]" />
+                    <ExternalLink className="w-3.5 h-3.5 text-[#7BBBFF]" />
                     <span>Open Guest Menu</span>
                   </a>
                   <button
@@ -803,10 +1096,10 @@ export const BusinessDashboardPage: React.FC = () => {
         </div>
       </header>
 
-      {/* 2. BODY: LEFT SIDEBAR + MAIN CONTENT (Exact Tea Time style) */}
+      {/* 2. BODY: LEFT SIDEBAR + MAIN CONTENT */}
       <div className="flex-1 flex">
-        {/* Left Espresso Sidebar */}
-        <aside className="w-56 shrink-0 bg-[#0A0A0A] text-[#FFFCF6] flex flex-col justify-between p-4 border-r border-white/10 hidden md:flex min-h-[calc(100vh-61px)]">
+        {/* Left Menyo Navy Sidebar */}
+        <aside className="w-56 shrink-0 bg-[#050F2A] text-white flex flex-col justify-between p-4 border-r border-white/10 hidden md:flex min-h-[calc(100vh-61px)]">
           <div className="space-y-1.5">
             <div className="text-[11px] font-bold uppercase tracking-wider text-white/40 px-3 py-2">
               Operations
@@ -820,22 +1113,20 @@ export const BusinessDashboardPage: React.FC = () => {
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532] ${
-                    isActive
-                      ? "bg-[#E8B64F] text-[#1A0F08] shadow-warm font-extrabold"
-                      : "text-[#DFC9AC] hover:text-[#FFFCF6] hover:bg-[#1A1A1A]"
-                  }`}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7BBBFF] ${isActive
+                      ? "bg-[#7BBBFF] text-[#050F2A] shadow-sm font-extrabold"
+                      : "text-white/70 hover:text-white hover:bg-white/10"
+                    }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Icon className={`w-4 h-4 ${isActive ? "text-[#1A0F08]" : "text-[#DFC9AC]"}`} />
+                    <Icon className={`w-4 h-4 ${isActive ? "text-[#050F2A]" : "text-white/70"}`} />
                     <span>{item.label}</span>
                   </div>
 
                   {item.badge !== undefined && item.badge > 0 ? (
                     <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold shadow-warm ${
-                        isActive ? "bg-[#0A0A0A] text-[#E8B64F]" : "bg-[#E8B64F] text-[#1A0F08]"
-                      }`}
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold shadow-sm ${isActive ? "bg-[#050F2A] text-[#7BBBFF]" : "bg-[#7BBBFF] text-[#050F2A]"
+                        }`}
                     >
                       {item.badge}
                     </span>
@@ -846,9 +1137,9 @@ export const BusinessDashboardPage: React.FC = () => {
           </div>
 
           {/* Footer brand info */}
-          <div className="p-3 bg-[#1A1A1A] rounded-xl border border-white/10 text-[11px] text-[#DFC9AC]">
-            <p className="font-bold text-[#FFFCF6] truncate">{business?.name || "Restaurant"} Kitchen</p>
-            <p className="text-[10px] text-[#DFC9AC]/80 mt-0.5">Real-time Order System</p>
+          <div className="p-3 bg-white/5 rounded-xl border border-white/10 text-[11px] text-white/70">
+            <p className="font-bold text-white truncate">{business?.name || "Restaurant"} Kitchen</p>
+            <p className="text-[10px] text-white/50 mt-0.5">Real-time Order System</p>
             {(business?.isTrial || business?.subscription?.packageId === "2_days_trial") && (
               <span className="mt-1.5 inline-block text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
                 Trial: {daysRemaining ?? 0}d left
@@ -858,7 +1149,7 @@ export const BusinessDashboardPage: React.FC = () => {
         </aside>
 
         {/* Mobile Bottom Navigation Bar */}
-        <nav className="md:hidden fixed bottom-0 inset-x-0 bg-[#0A0A0A] border-t border-white/10 z-40 px-2 py-2 flex items-center justify-around shadow-warm-xl">
+        <nav className="md:hidden fixed bottom-0 inset-x-0 bg-[#050F2A] border-t border-white/10 z-40 px-2 py-2 flex items-center justify-around shadow-xl">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -867,16 +1158,15 @@ export const BusinessDashboardPage: React.FC = () => {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl text-[10px] font-bold transition relative focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532] ${
-                  isActive
-                    ? "text-[#E8B64F]"
-                    : "text-[#DFC9AC] hover:text-[#FFFCF6]"
-                }`}
+                className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl text-[10px] font-bold transition relative focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7BBBFF] ${isActive
+                    ? "text-[#7BBBFF]"
+                    : "text-white/70 hover:text-white"
+                  }`}
               >
                 <div className="relative">
                   <Icon className="w-5 h-5" />
                   {item.badge !== undefined && item.badge > 0 ? (
-                    <span className="absolute -top-1.5 -right-2 bg-[#E8B64F] text-[#1A0F08] text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+                    <span className="absolute -top-1.5 -right-2 bg-[#7BBBFF] text-[#050F2A] text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">
                       {item.badge}
                     </span>
                   ) : null}
@@ -889,1277 +1179,1302 @@ export const BusinessDashboardPage: React.FC = () => {
 
         {/* 3. MAIN DASHBOARD CONTENT */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto max-w-7xl mx-auto w-full pb-20 md:pb-8 space-y-6">
-        {/* 7-Day Expiry Reminder Banner */}
-        {isExpiringWithin7Days && (
-          <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm animate-fadeIn">
-            <div className="flex items-center gap-3 text-amber-900">
-              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
-                <Clock className="w-5 h-5 text-amber-800" />
-              </div>
-              <div>
-                <h4 className="font-bold text-sm">Subscription Expiring in {daysRemaining} Days</h4>
-                <p className="text-xs text-amber-800/80 mt-0.5">
-                  Your access ends on {business.subscription.expiryDateColombo}. Renew now to avoid any disruption to customer QR ordering.
-                </p>
-              </div>
-            </div>
-            <a
-              href={`https://wa.me/94764847081?text=Hi%20Menyo,%20I'd%20like%20to%20renew%20the%20subscription%20for%20${encodeURIComponent(
-                business.name
-              )}.`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-5 py-2.5 rounded-full bg-[#050F2A] text-white text-xs font-bold whitespace-nowrap hover:bg-[#0b1739] transition-all self-start sm:self-auto shadow-sm"
-            >
-              Renew via WhatsApp
-            </a>
-          </div>
-        )}
+          {/* Quick Launch Checklist for New Restaurant Onboarding */}
+          {business && (
+            <QuickOnboardingChecklist
+              productsCount={products.length}
+              tablesCount={tables.length}
+              businessSlug={business.slug}
+              onNavigateTab={(tab) => setActiveTab(tab)}
+            />
+          )}
 
-        {error && (
-          <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700 text-sm">
-            <AlertCircle className="w-5 h-5 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
+          {/* 7-Day Expiry Reminder Banner - Premium Glassmorphic / Apple style */}
+          {isExpiringWithin7Days && (
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#050F2A] via-[#0A1840] to-[#0D2359] border border-[#7BBBFF]/20 p-4 sm:p-5 text-white shadow-xl">
+              {/* Subtle decorative background ambient glow */}
+              <div className="absolute -right-10 -top-10 w-44 h-44 rounded-full bg-[#7BBBFF]/10 blur-2xl pointer-events-none" />
+              <div className="absolute right-1/3 -bottom-10 w-36 h-36 rounded-full bg-amber-400/10 blur-xl pointer-events-none" />
 
-        {/* TAB 1: OVERVIEW */}
-        {activeTab === "overview" && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div className="p-6 rounded-3xl bg-[#FFFCF6] border border-[#DFC9AC] shadow-warm">
-                <span className="text-xs font-bold text-[#8A6A53] block mb-1">Total Products</span>
-                <span className="text-3xl font-black text-[#301C10]">{products.length}</span>
-              </div>
-              <div className="p-6 rounded-3xl bg-[#FFFCF6] border border-[#DFC9AC] shadow-warm">
-                <span className="text-xs font-bold text-[#8A6A53] block mb-1">Categories</span>
-                <span className="text-3xl font-black text-[#301C10]">{categories.length}</span>
-              </div>
-              <div className="p-6 rounded-3xl bg-[#FFFCF6] border border-[#DFC9AC] shadow-warm">
-                <span className="text-xs font-bold text-[#8A6A53] block mb-1">Active Dining Tables</span>
-                <span className="text-3xl font-black text-[#301C10]">{tables.length}</span>
-              </div>
-              <div className="p-6 rounded-3xl bg-[#FFFCF6] border border-[#DFC9AC] shadow-warm">
-                <span className="text-xs font-bold text-[#8A6A53] block mb-1">Pending Orders</span>
-                <span className="text-3xl font-black text-[#E8B64F]">
-                  {orders.filter((o) => o.status === "PENDING").length}
-                </span>
-              </div>
-            </div>
-
-            {/* Recent Orders in Overview */}
-            <div className="bg-[#FFFCF6] border border-[#DFC9AC] rounded-3xl p-6 sm:p-8 space-y-4 shadow-warm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-[#301C10]">Recent Dining Orders</h2>
-                  <p className="text-xs text-[#8A6A53]">Real-time table orders feed</p>
-                </div>
-                <button
-                  onClick={() => setActiveTab("orders")}
-                  className="text-xs font-bold text-[#4A290F] hover:text-[#E8B64F] transition-colors"
-                >
-                  View All Orders &rarr;
-                </button>
-              </div>
-
-              <div className="divide-y divide-[#DFC9AC]/60 border border-[#DFC9AC] rounded-2xl overflow-hidden">
-                {orders.slice(0, 5).map((order) => (
-                  <div key={order.id} className="p-4 bg-[#FFFCF6] hover:bg-[#FAF7F0] flex items-center justify-between text-xs transition">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-[#301C10]">
-                          {order.orderNumberDisplay || order.orderNumber}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full bg-[#4A290F] text-[#FFFCF6] font-bold text-[10px]">
-                          {order.tableNumber}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-[#8A6A53] mt-1">
-                        {order.items?.length || 0} items &bull; Rs. {(order.totalRupees || (order.totalMinor / 100)).toLocaleString()}
-                      </p>
+              <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  {/* Modern Indicator Icon with glowing subtle pulse */}
+                  <div className="relative flex items-center justify-center shrink-0">
+                    <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-md border border-white/15 flex items-center justify-center text-amber-300 shadow-inner">
+                      <Clock className="w-5 h-5 text-amber-300" />
                     </div>
-
-                    <div className="flex items-center gap-3">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
-                        order.status === "PENDING" ? "bg-amber-100 text-amber-900 border border-amber-300" :
-                        order.status === "PREPARING" ? "bg-[#E8B64F]/20 text-[#4A290F] border border-[#E8B64F]/40" :
-                        order.status === "SERVED" ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-[#FAF7F0] text-[#8A6A53] border border-[#DFC9AC]"
-                      }`}>
-                        {order.status}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-                {orders.length === 0 && (
-                  <div className="p-8 text-center text-[#8A6A53]/60 text-xs">
-                    No orders placed yet. Scan a table QR code to test your customer flow.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 2: LIVE ORDERS FEED */}
-        {activeTab === "orders" && (
-          <div className="bg-[#FFFCF6] border border-[#DFC9AC] rounded-3xl p-6 sm:p-8 space-y-6 shadow-warm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-bold tracking-tight text-[#301C10]">Live Kitchen & Counter Feed</h2>
-                <p className="text-xs text-[#8A6A53]">Manage real-time order states</p>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <select
-                  value={orderStatusFilter}
-                  onChange={(e) => setOrderStatusFilter(e.target.value)}
-                  className="bg-[#FAF7F0] border border-[#DFC9AC] rounded-full px-4 py-2 text-xs text-[#301C10] font-bold focus:outline-none focus:border-[#C99532]"
-                >
-                  <option value="ALL">All Order States</option>
-                  <option value="PENDING">Pending</option>
-                  <option value="PREPARING">Preparing</option>
-                  <option value="SERVED">Served</option>
-                  <option value="COMPLETED">Completed</option>
-                  <option value="CANCELLED">Cancelled</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {filteredOrders.length === 0 ? (
-                <div className="p-12 text-center text-[#8A6A53]/70 text-xs border border-dashed border-[#DFC9AC] rounded-3xl bg-[#FAF7F0]">
-                  No orders found matching the filter.
-                </div>
-              ) : (
-                filteredOrders.map((order) => (
-                  <div
-                    key={order.id}
-                    className="p-5 rounded-3xl bg-[#FAF7F0] border border-[#DFC9AC] space-y-3 shadow-warm"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="font-black text-sm text-[#301C10]">
-                          {order.orderNumberDisplay || order.orderNumber}
-                        </span>
-                        <span className="px-2.5 py-0.5 rounded-full bg-[#4A290F] text-[#FFFCF6] text-[10px] font-bold">
-                          {order.tableNumber}
-                        </span>
-                      </div>
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
-                        order.status === "PENDING" ? "bg-amber-100 text-amber-900 border border-amber-300" :
-                        order.status === "PREPARING" ? "bg-[#E8B64F]/20 text-[#4A290F] border border-[#E8B64F]/40" :
-                        order.status === "SERVED" ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-[#FAF7F0] text-[#8A6A53] border border-[#DFC9AC]"
-                      }`}>
-                        {order.status}
-                      </span>
-                    </div>
-
-                    {/* Order items */}
-                    <div className="divide-y divide-[#DFC9AC]/60 py-1">
-                      {order.items?.map((item, idx) => (
-                        <div key={idx} className="py-2 flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-[#301C10]">{item.quantity}x</span>
-                            <span className="text-[#301C10] font-medium">{item.name}</span>
-                          </div>
-                          <span className="font-mono text-[#8A6A53]">
-                            Rs. {((item.subtotalRupees || (item.subtotalMinor / 100)) || 0).toLocaleString()}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {order.specialInstructions && (
-                      <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900">
-                        <span className="font-bold uppercase text-[9px] block text-amber-800">Special Request:</span>
-                        {order.specialInstructions}
-                      </div>
-                    )}
-
-                    <div className="pt-3 border-t border-[#DFC9AC]/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="text-sm font-black text-[#301C10]">
-                        Total: Rs. {(order.totalRupees || (order.totalMinor / 100)).toLocaleString()}
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2">
-                        {(order.status === "PENDING" || order.status === "new" || (order.status as string) === "pending") && (
-                          <button
-                            onClick={() => handleOrderStatusUpdate(order.id, "PREPARING")}
-                            className="px-4 py-1.5 rounded-full bg-[#E8B64F] hover:bg-[#D6A038] text-[#1A0F08] font-bold text-xs uppercase tracking-wider transition-all shadow-warm"
-                          >
-                            Mark Preparing
-                          </button>
-                        )}
-                        {(order.status === "PREPARING" || (order.status as string) === "preparing") && (
-                          <>
-                            <button
-                              onClick={() => handleOrderStatusUpdate(order.id, "READY")}
-                              className="px-4 py-1.5 rounded-full bg-[#2C190E] hover:bg-[#1A0F08] text-[#FFFCF6] font-bold text-xs uppercase tracking-wider transition-all shadow-warm"
-                            >
-                              Mark Ready
-                            </button>
-                            <button
-                              onClick={() => handleOrderStatusUpdate(order.id, "SERVED")}
-                              className="px-4 py-1.5 rounded-full bg-[#4A290F] hover:bg-[#623B1B] text-[#FFFCF6] font-bold text-xs uppercase tracking-wider transition-all shadow-warm"
-                            >
-                              Mark Served
-                            </button>
-                          </>
-                        )}
-                        {(order.status === "READY" || (order.status as string) === "ready") && (
-                          <button
-                            onClick={() => handleOrderStatusUpdate(order.id, "SERVED")}
-                            className="px-4 py-1.5 rounded-full bg-[#4A290F] hover:bg-[#623B1B] text-[#FFFCF6] font-bold text-xs uppercase tracking-wider transition-all shadow-warm"
-                          >
-                            Mark Served
-                          </button>
-                        )}
-                        {(order.status === "SERVED" || (order.status as string) === "served") && (
-                          <button
-                            onClick={() => handleOrderStatusUpdate(order.id, "COMPLETED")}
-                            className="px-4 py-1.5 rounded-full bg-[#2C190E] hover:bg-[#1A0F08] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-warm"
-                          >
-                            Complete Order
-                          </button>
-                        )}
-                        {order.status !== "COMPLETED" && (order.status as string) !== "completed" && order.status !== "CANCELLED" && (order.status as string) !== "cancelled" && (
-                          <button
-                            onClick={() => {
-                              if (window.confirm("Cancel this order?")) {
-                                handleOrderStatusUpdate(order.id, "CANCELLED");
-                              }
-                            }}
-                            className="px-3.5 py-1.5 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 transition-all"
-                          >
-                            Cancel
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: MENU PRODUCTS */}
-        {activeTab === "menu" && (
-          <div className="bg-white border border-[#050F2A]/10 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-bold tracking-tight text-[#050F2A]">Menu Products</h2>
-                <p className="text-xs text-[#050F2A]/60">Manage dishes, drinks, prices, and availability</p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="relative">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#050F2A]/40" />
-                  <input
-                    type="text"
-                    value={productSearch}
-                    onChange={(e) => setProductSearch(e.target.value)}
-                    placeholder="Search product..."
-                    className="bg-[#F2FDFF] border border-[#050F2A]/15 rounded-full pl-9 pr-4 py-2 text-xs text-[#050F2A] placeholder-[#050F2A]/40 focus:outline-none focus:border-[#7BBBFF] w-44"
-                  />
-                </div>
-
-                <select
-                  value={selectedCategoryFilter}
-                  onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-                  className="bg-[#F2FDFF] border border-[#050F2A]/15 rounded-full px-4 py-2 text-xs text-[#050F2A] focus:outline-none focus:border-[#7BBBFF]"
-                >
-                  <option value="ALL">All Categories</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-
-                <button
-                  onClick={() => {
-                    setEditingProduct(null);
-                    setShowProductModal(true);
-                  }}
-                  className="px-5 py-2 rounded-full bg-[#050F2A] hover:bg-[#0b1739] text-white font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Item</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Products Table */}
-            <div className="overflow-x-auto border border-[#050F2A]/10 rounded-2xl">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-[#F2FDFF] text-[#050F2A]/70 border-b border-[#050F2A]/10 uppercase tracking-wider text-[10px] font-bold">
-                  <tr>
-                    <th className="px-4 py-3.5">Product</th>
-                    <th className="px-4 py-3.5">Category</th>
-                    <th className="px-4 py-3.5">Price (LKR)</th>
-                    <th className="px-4 py-3.5">Status</th>
-                    <th className="px-4 py-3.5 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#050F2A]/10 text-[#050F2A]">
-                  {filteredProducts.map((p) => {
-                    const price =
-                      typeof p.priceRupees === "number"
-                        ? p.priceRupees
-                        : typeof p.priceMinor === "number"
-                        ? p.priceMinor / 100
-                        : (p as any).price || 0;
-
-                    const catName =
-                      categories.find((c) => c.id === p.categoryId)?.name ||
-                      (p as any).category ||
-                      "General";
-
-                    return (
-                      <tr key={p.id} className="hover:bg-[#F2FDFF]/50 transition-colors">
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            {p.imageUrl ? (
-                              <img
-                                src={p.imageUrl}
-                                alt={p.name}
-                                className="w-10 h-10 rounded-xl object-contain bg-white border border-[#050F2A]/10"
-                                onError={(e) => ((e.target as any).style.display = "none")}
-                              />
-                            ) : null}
-                            <div>
-                              <span className="font-bold text-[#050F2A] block">{p.name}</span>
-                              {p.description && (
-                                <span className="text-[11px] text-[#050F2A]/60 line-clamp-1 max-w-xs">
-                                  {p.description}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <span className="px-2.5 py-1 rounded-full bg-[#F2FDFF] border border-[#050F2A]/10 text-[10px] font-bold text-[#050F2A]">
-                            {catName}
-                          </span>
-                        </td>
-
-                        <td className="px-4 py-3 font-mono font-bold text-[#050F2A]">
-                          Rs. {price.toLocaleString()}
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                              p.isAvailable !== false
-                                ? "bg-emerald-100 text-emerald-800"
-                                : "bg-zinc-200 text-zinc-600"
-                            }`}
-                          >
-                            {p.isAvailable !== false ? "Active" : "Hidden"}
-                          </span>
-                        </td>
-
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => {
-                                setEditingProduct(p);
-                                setShowProductModal(true);
-                              }}
-                              className="p-1.5 rounded-full bg-white hover:bg-[#F2FDFF] border border-[#050F2A]/15 text-[#050F2A]/70 hover:text-[#050F2A]"
-                              title="Edit item"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {filteredProducts.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-[#050F2A]/40">
-                        No products found.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 4: CATEGORIES */}
-        {activeTab === "categories" && (
-          <div className="bg-white border border-[#050F2A]/10 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold tracking-tight text-[#050F2A]">Menu Categories</h2>
-                <p className="text-xs text-[#050F2A]/60">Organize items into guest browse tabs</p>
-              </div>
-
-              <button
-                onClick={() => {
-                  setEditingCategory(null);
-                  setShowCategoryModal(true);
-                }}
-                className="px-5 py-2 rounded-full bg-[#050F2A] hover:bg-[#0b1739] text-white font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add Category</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {categories.map((c) => (
-                <div
-                  key={c.id}
-                  className="p-4 rounded-3xl bg-[#F2FDFF]/50 border border-[#050F2A]/10 flex items-center justify-between shadow-sm"
-                >
-                  <div className="flex items-center gap-3">
-                    {c.iconUrl ? (
-                      <img src={c.iconUrl} alt={c.name} className="w-8 h-8 rounded-full object-contain" />
-                    ) : (
-                      <div className="w-8 h-8 rounded-full bg-[#7BBBFF]/20 flex items-center justify-center font-bold text-xs text-[#050F2A]">
-                        {c.name.charAt(0)}
-                      </div>
-                    )}
-                    <div>
-                      <span className="font-bold text-sm text-[#050F2A] block">{c.name}</span>
-                      <span className="text-[10px] text-[#050F2A]/50 font-mono">
-                        {products.filter((p) => p.categoryId === c.id || (p as any).category === c.name).length} items
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => {
-                        setEditingCategory(c);
-                        setShowCategoryModal(true);
-                      }}
-                      className="p-1.5 rounded-full bg-white hover:bg-[#F2FDFF] border border-[#050F2A]/15 text-[#050F2A]/70 hover:text-[#050F2A]"
-                      title="Edit Category"
-                    >
-                      <Edit className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => setArchivingCategory(c)}
-                      className="p-1.5 rounded-full bg-white hover:bg-rose-50 border border-[#050F2A]/15 text-rose-600"
-                      title="Archive Category"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 5: TABLES & QR CODES */}
-        {activeTab === "tables" && (
-          <div className="bg-white border border-[#050F2A]/10 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-bold tracking-tight text-[#050F2A]">Dining Tables & QR Codes</h2>
-                <p className="text-xs text-[#050F2A]/60">Generate and print high-resolution QR tent cards for every table</p>
-              </div>
-
-              <div className="flex items-center gap-2.5">
-                <button
-                  onClick={() => setShowBatchPrint(true)}
-                  className="px-4 py-2 rounded-full bg-white hover:bg-[#F2FDFF] border border-[#050F2A]/15 text-[#050F2A] font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm"
-                >
-                  <Printer className="w-4 h-4 text-[#7BBBFF]" />
-                  <span>Batch Print QRs</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setEditingTable(null);
-                    setShowTableModal(true);
-                  }}
-                  className="px-5 py-2 rounded-full bg-[#050F2A] hover:bg-[#0b1739] text-white font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Table</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {tables.map((t) => (
-                <div
-                  key={t.id}
-                  className="p-5 rounded-3xl bg-[#F2FDFF]/50 border border-[#050F2A]/10 flex flex-col justify-between space-y-4 shadow-sm"
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <span className="text-lg font-black text-[#050F2A] block">{t.number}</span>
-                      <span className="text-[11px] text-[#050F2A]/60">
-                        {t.capacity ? `Seats ${t.capacity} guests` : "Standard Dining Table"}
-                      </span>
-                    </div>
-
-                    <div className="p-2 bg-white rounded-2xl border border-[#050F2A]/10 shadow-sm">
-                      <QrCode className="w-8 h-8 text-[#050F2A]" />
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-[#050F2A]/10 flex items-center justify-between">
-                    <button
-                      onClick={() => copyTableLink(t.token)}
-                      className="text-xs font-bold text-[#050F2A] hover:text-[#7BBBFF] flex items-center gap-1.5"
-                    >
-                      {copiedToken === t.token ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copiedToken === t.token ? "Copied Link" : "Copy URL"}</span>
-                    </button>
-
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => setSinglePrintTable(t)}
-                        className="p-2 rounded-full bg-white hover:bg-[#F2FDFF] border border-[#050F2A]/15 text-[#050F2A]"
-                        title="Print Tent Card"
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setEditingTable(t);
-                          setShowTableModal(true);
-                        }}
-                        className="p-2 rounded-full bg-white hover:bg-[#F2FDFF] border border-[#050F2A]/15 text-[#050F2A]"
-                        title="Edit Table"
-                      >
-                        <Edit className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 6: SETTINGS & INDEPENDENT BUSINESS BRANDING */}
-        {activeTab === "settings" && (
-          <div className="bg-white border border-[#050F2A]/10 rounded-3xl p-6 sm:p-8 space-y-8 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#050F2A]/10 pb-4">
-              <div>
-                <h2 className="text-xl font-bold tracking-tight text-[#050F2A]">
-                  Restaurant Settings & Branding
-                </h2>
-                <p className="text-xs text-[#050F2A]/60">
-                  Customise your café profile, logo, palette, and links. Scoped strictly to your business.
-                </p>
-              </div>
-
-              {settingsSuccess && (
-                <div className="px-4 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-1.5 animate-fadeIn">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Changes Saved Successfully!</span>
-                </div>
-              )}
-            </div>
-
-            <form onSubmit={handleSaveSettings} className="space-y-8">
-              {/* SECTION 1: BUSINESS PROFILE */}
-              <div className="space-y-4">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[#050F2A] border-b border-[#050F2A]/10 pb-2">
-                  1. Business Profile & Contact
-                </h3>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-[#050F2A]/70 mb-1">
-                      Business Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={settingsForm.name}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, name: e.target.value })}
-                      className="w-full bg-[#F2FDFF]/50 border border-[#050F2A]/15 rounded-2xl px-4 py-2.5 text-[#050F2A] text-sm focus:outline-none focus:border-[#7BBBFF]"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-[#050F2A]/70 mb-1">
-                      Phone Number
-                    </label>
-                    <input
-                      type="text"
-                      value={settingsForm.phone}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, phone: e.target.value })}
-                      className="w-full bg-[#F2FDFF]/50 border border-[#050F2A]/15 rounded-2xl px-4 py-2.5 text-[#050F2A] text-sm focus:outline-none focus:border-[#7BBBFF]"
-                      placeholder="0771234567"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-[#050F2A]/70 mb-1">
-                      WhatsApp Number (for customer queries)
-                    </label>
-                    <input
-                      type="text"
-                      value={settingsForm.whatsapp}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, whatsapp: e.target.value })}
-                      className="w-full bg-[#F2FDFF]/50 border border-[#050F2A]/15 rounded-2xl px-4 py-2.5 text-[#050F2A] text-sm focus:outline-none focus:border-[#7BBBFF]"
-                      placeholder="0771234567"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-[#050F2A]/70 mb-1">
-                      Physical Address
-                    </label>
-                    <input
-                      type="text"
-                      value={settingsForm.address}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, address: e.target.value })}
-                      className="w-full bg-[#F2FDFF]/50 border border-[#050F2A]/15 rounded-2xl px-4 py-2.5 text-[#050F2A] text-sm focus:outline-none focus:border-[#7BBBFF]"
-                      placeholder="e.g. 2nd Cross Street, Vavuniya"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION 2: BRANDING & PALETTE (Independent Per-Business) */}
-              <div className="space-y-6 pt-2">
-                <div className="flex items-center justify-between border-b border-[#050F2A]/10 pb-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-[#050F2A]">
-                    2. Branding, Logo & Colors
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={handleResetBranding}
-                    className="text-xs font-bold text-[#050F2A] hover:text-rose-600 flex items-center gap-1 transition-colors"
-                    title="Reset to default theme"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Reset to Default Theme</span>
-                  </button>
-                </div>
-
-                {/* Logo Uploader / URL */}
-                <div className="p-5 bg-[#F2FDFF]/60 rounded-3xl border border-[#050F2A]/10 space-y-4">
-                  <span className="block text-xs font-bold text-[#050F2A]">
-                    Restaurant Logo
-                  </span>
-                  <div className="flex flex-col sm:flex-row items-center gap-4">
-                    {settingsForm.logoUrl ? (
-                      <div className="relative group">
-                        <img
-                          src={settingsForm.logoUrl}
-                          alt="Logo Preview"
-                          className="w-16 h-16 rounded-2xl object-cover border border-[#050F2A]/15 bg-white shadow-sm"
-                        />
-                      </div>
-                    ) : (
-                      <div className="w-16 h-16 rounded-2xl bg-white border border-dashed border-[#050F2A]/20 flex items-center justify-center font-bold text-lg text-[#050F2A]/40">
-                        {settingsForm.name.charAt(0) || "B"}
-                      </div>
-                    )}
-
-                    <div className="flex-1 w-full space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <label className="cursor-pointer px-4 py-2 rounded-full bg-white hover:bg-[#F2FDFF] border border-[#050F2A]/15 text-xs font-bold text-[#050F2A] flex items-center gap-1.5 shadow-sm transition-all">
-                          <Upload className="w-3.5 h-3.5 text-[#7BBBFF]" />
-                          <span>Upload Image File</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handleLogoFileUpload}
-                            className="hidden"
-                          />
-                        </label>
-
-                        {settingsForm.logoUrl && (
-                          <button
-                            type="button"
-                            onClick={() => setSettingsForm({ ...settingsForm, logoUrl: "" })}
-                            className="px-4 py-2 rounded-full bg-white hover:bg-rose-50 border border-rose-200 text-xs font-bold text-rose-600 transition-all shadow-sm"
-                          >
-                            Remove Logo
-                          </button>
-                        )}
-                      </div>
-
-                      <input
-                        type="text"
-                        value={settingsForm.logoUrl}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, logoUrl: e.target.value })}
-                        className="w-full bg-white border border-[#050F2A]/15 rounded-2xl px-4 py-2 text-xs text-[#050F2A] placeholder-[#050F2A]/40 focus:outline-none focus:border-[#7BBBFF]"
-                        placeholder="Or enter image URL: https://..."
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* 6 Theme Color Inputs */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {/* Primary Color */}
-                  <div className="p-4 bg-[#F2FDFF]/50 border border-[#050F2A]/10 rounded-2xl space-y-1.5">
-                    <label className="block text-xs font-bold text-[#050F2A]/80">Primary Color</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={settingsForm.primaryColor}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, primaryColor: e.target.value })}
-                        className="w-9 h-9 rounded-xl bg-transparent border-0 cursor-pointer"
-                      />
-                      <input
-                        type="text"
-                        value={settingsForm.primaryColor}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, primaryColor: e.target.value })}
-                        className="flex-1 bg-white border border-[#050F2A]/15 rounded-xl px-3 py-1.5 text-[#050F2A] text-xs font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Accent Color */}
-                  <div className="p-4 bg-[#F2FDFF]/50 border border-[#050F2A]/10 rounded-2xl space-y-1.5">
-                    <label className="block text-xs font-bold text-[#050F2A]/80">Accent Color</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={settingsForm.accentColor}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, accentColor: e.target.value })}
-                        className="w-9 h-9 rounded-xl bg-transparent border-0 cursor-pointer"
-                      />
-                      <input
-                        type="text"
-                        value={settingsForm.accentColor}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, accentColor: e.target.value })}
-                        className="flex-1 bg-white border border-[#050F2A]/15 rounded-xl px-3 py-1.5 text-[#050F2A] text-xs font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Background Color */}
-                  <div className="p-4 bg-[#F2FDFF]/50 border border-[#050F2A]/10 rounded-2xl space-y-1.5">
-                    <label className="block text-xs font-bold text-[#050F2A]/80">Page Background</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={settingsForm.backgroundColor}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, backgroundColor: e.target.value })}
-                        className="w-9 h-9 rounded-xl bg-transparent border-0 cursor-pointer"
-                      />
-                      <input
-                        type="text"
-                        value={settingsForm.backgroundColor}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, backgroundColor: e.target.value })}
-                        className="flex-1 bg-white border border-[#050F2A]/15 rounded-xl px-3 py-1.5 text-[#050F2A] text-xs font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Text Color */}
-                  <div className="p-4 bg-[#F2FDFF]/50 border border-[#050F2A]/10 rounded-2xl space-y-1.5">
-                    <label className="block text-xs font-bold text-[#050F2A]/80">Text Color</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={settingsForm.textColor}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, textColor: e.target.value })}
-                        className="w-9 h-9 rounded-xl bg-transparent border-0 cursor-pointer"
-                      />
-                      <input
-                        type="text"
-                        value={settingsForm.textColor}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, textColor: e.target.value })}
-                        className="flex-1 bg-white border border-[#050F2A]/15 rounded-xl px-3 py-1.5 text-[#050F2A] text-xs font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Header Background Color */}
-                  <div className="p-4 bg-[#F2FDFF]/50 border border-[#050F2A]/10 rounded-2xl space-y-1.5">
-                    <label className="block text-xs font-bold text-[#050F2A]/80">Header Background</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={settingsForm.headerBackgroundColor}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, headerBackgroundColor: e.target.value })}
-                        className="w-9 h-9 rounded-xl bg-transparent border-0 cursor-pointer"
-                      />
-                      <input
-                        type="text"
-                        value={settingsForm.headerBackgroundColor}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, headerBackgroundColor: e.target.value })}
-                        className="flex-1 bg-white border border-[#050F2A]/15 rounded-xl px-3 py-1.5 text-[#050F2A] text-xs font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Header Text Color */}
-                  <div className="p-4 bg-[#F2FDFF]/50 border border-[#050F2A]/10 rounded-2xl space-y-1.5">
-                    <label className="block text-xs font-bold text-[#050F2A]/80">Header Text Color</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={settingsForm.headerTextColor}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, headerTextColor: e.target.value })}
-                        className="w-9 h-9 rounded-xl bg-transparent border-0 cursor-pointer"
-                      />
-                      <input
-                        type="text"
-                        value={settingsForm.headerTextColor}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, headerTextColor: e.target.value })}
-                        className="flex-1 bg-white border border-[#050F2A]/15 rounded-xl px-3 py-1.5 text-[#050F2A] text-xs font-mono"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* LIVE INTERACTIVE PREVIEW WITH DESKTOP / MOBILE VIEWPORT TOGGLE */}
-                <div className="p-6 bg-[#F2FDFF]/60 rounded-3xl border border-[#050F2A]/10 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-bold text-[#050F2A] block">
-                        Live Guest Menu Preview
-                      </span>
-                      <span className="text-[11px] text-[#050F2A]/60">
-                        Preview how your branding appears to dining guests
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 bg-white p-1 rounded-full border border-[#050F2A]/10 shadow-sm">
-                      <button
-                        type="button"
-                        onClick={() => setPreviewMode("mobile")}
-                        className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all ${
-                          previewMode === "mobile"
-                            ? "bg-[#050F2A] text-white"
-                            : "text-[#050F2A]/60 hover:text-[#050F2A]"
-                        }`}
-                      >
-                        <Smartphone className="w-3.5 h-3.5" />
-                        <span>Mobile</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPreviewMode("desktop")}
-                        className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all ${
-                          previewMode === "desktop"
-                            ? "bg-[#050F2A] text-white"
-                            : "text-[#050F2A]/60 hover:text-[#050F2A]"
-                        }`}
-                      >
-                        <Monitor className="w-3.5 h-3.5" />
-                        <span>Desktop</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Rendered Preview Container */}
-                  <div className="flex justify-center py-4">
-                    <div
-                      className={`transition-all overflow-hidden rounded-3xl border border-black/10 shadow-lg ${
-                        previewMode === "mobile" ? "w-[340px]" : "w-full"
-                      }`}
-                      style={{
-                        backgroundColor: settingsForm.backgroundColor,
-                        color: settingsForm.textColor,
-                      }}
-                    >
-                      {/* Guest Header */}
-                      <div
-                        className="px-4 py-3 flex items-center justify-between shadow-sm transition-colors"
-                        style={{
-                          backgroundColor: settingsForm.headerBackgroundColor,
-                          color: settingsForm.headerTextColor,
-                        }}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          {settingsForm.logoUrl ? (
-                            <img
-                              src={settingsForm.logoUrl}
-                              alt="Logo"
-                              className="w-7 h-7 rounded-lg object-contain bg-white/20"
-                            />
-                          ) : (
-                            <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center font-bold text-xs">
-                              {settingsForm.name.charAt(0) || "B"}
-                            </div>
-                          )}
-                          <span className="font-extrabold text-sm">{settingsForm.name || "Restaurant Name"}</span>
-                        </div>
-
-                        <div
-                          className="px-3 py-1 rounded-full text-xs font-bold shadow-sm"
-                          style={{
-                            backgroundColor: settingsForm.accentColor,
-                            color: "#050F2A",
-                          }}
-                        >
-                          Table 07
-                        </div>
-                      </div>
-
-                      {/* Guest Content */}
-                      <div className="p-4 space-y-3">
-                        {/* Sample category pill */}
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="px-3 py-1 rounded-full text-xs font-bold shadow-sm"
-                            style={{
-                              backgroundColor: settingsForm.primaryColor,
-                              color: settingsForm.headerTextColor,
-                            }}
-                          >
-                            Popular
-                          </span>
-                          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-black/5">
-                            Drinks
-                          </span>
-                          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-black/5">
-                            Desserts
-                          </span>
-                        </div>
-
-                        {/* Sample Product Card */}
-                        <div className="p-3 rounded-2xl bg-white/90 border border-black/5 shadow-sm flex items-center justify-between gap-3">
-                          <div className="w-12 h-12 rounded-xl bg-black/5 flex items-center justify-center font-bold text-xs text-black/40">
-                            ☕
-                          </div>
-                          <div className="flex-1">
-                            <span className="font-bold text-xs block text-black">House Signature Blend</span>
-                            <span className="text-[10px] text-black/60">Fresh roasted, notes of caramel</span>
-                            <span className="text-xs font-mono font-bold block mt-0.5 text-black">Rs. 650</span>
-                          </div>
-                          <button
-                            type="button"
-                            className="w-7 h-7 rounded-full flex items-center justify-center font-black text-xs shadow-sm"
-                            style={{
-                              backgroundColor: settingsForm.accentColor,
-                              color: "#050F2A",
-                            }}
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION 3: DYNAMIC SOCIAL & GOOGLE REVIEW LINKS */}
-              <div className="space-y-4 pt-2">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#050F2A]/10 pb-2">
-                  <div>
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-[#050F2A] flex items-center gap-2">
-                      <span>3. Social Media & Google Review Prompts</span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                        Real-time
-                      </span>
-                    </h3>
-                    <p className="text-[11px] text-[#050F2A]/60 mt-0.5">
-                      Add, change, or remove Google Reviews, Instagram, Facebook, and WhatsApp links shown on your menu footer.
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleOwnerAddSocialLink("google")}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#050F2A] text-white text-xs font-bold hover:bg-[#0b1739] transition self-start sm:self-auto"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add Link</span>
-                  </button>
-                </div>
-
-                {/* Quick Add Presets Bar */}
-                <div className="bg-[#F2FDFF] rounded-2xl p-3 border border-[#050F2A]/10 space-y-2">
-                  <span className="text-[10px] font-bold text-[#050F2A]/60 uppercase tracking-wider block">
-                    Quick Add Presets:
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {[
-                      { platform: "google" as SocialPlatform, label: "Google Review / Profile", icon: "⭐" },
-                      { platform: "instagram" as SocialPlatform, label: "Instagram", icon: "📸" },
-                      { platform: "facebook" as SocialPlatform, label: "Facebook", icon: "📘" },
-                      { platform: "whatsapp" as SocialPlatform, label: "WhatsApp Chat", icon: "💬" },
-                      { platform: "tiktok" as SocialPlatform, label: "TikTok", icon: "🎵" },
-                      { platform: "website" as SocialPlatform, label: "Website", icon: "🔗" },
-                    ].map((preset) => (
-                      <button
-                        key={preset.platform}
-                        type="button"
-                        onClick={() => handleOwnerAddSocialLink(preset.platform)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-white/80 text-[#050F2A] text-[11px] font-bold border border-[#050F2A]/10 transition shadow-2xs active:scale-95"
-                      >
-                        <span>{preset.icon}</span>
-                        <span>+ {preset.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Social Links List */}
-                <div className="space-y-2.5">
-                  {settingsForm.socialLinks.map((link, idx) => (
-                    <div
-                      key={link.id || idx}
-                      className={`p-3 rounded-2xl border transition-all ${
-                        link.isActive ? "bg-white border-[#050F2A]/10" : "bg-[#F2FDFF]/60 border-[#050F2A]/5 opacity-60"
-                      }`}
-                    >
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                        {/* Platform */}
-                        <div className="w-full sm:w-40 shrink-0">
-                          <label className="block text-[10px] font-bold text-[#050F2A]/60 mb-1">
-                            Platform
-                          </label>
-                          <select
-                            value={link.platform}
-                            onChange={(e) =>
-                              handleOwnerUpdateSocialLink(link.id, {
-                                platform: e.target.value as SocialPlatform,
-                              })
-                            }
-                            className="w-full text-xs px-2.5 py-1.5 rounded-xl border border-[#050F2A]/15 bg-[#F2FDFF]/30 text-[#050F2A] font-bold focus:outline-none focus:border-[#7BBBFF]"
-                          >
-                            <option value="google">🌐 Google Review / Profile</option>
-                            <option value="instagram">📸 Instagram</option>
-                            <option value="facebook">📘 Facebook</option>
-                            <option value="whatsapp">💬 WhatsApp</option>
-                            <option value="tiktok">🎵 TikTok</option>
-                            <option value="youtube">▶️ YouTube</option>
-                            <option value="website">🔗 Website</option>
-                            <option value="other">🌐 Other</option>
-                          </select>
-                        </div>
-
-                        {/* Label */}
-                        <div className="w-full sm:w-44 shrink-0">
-                          <label className="block text-[10px] font-bold text-[#050F2A]/60 mb-1">
-                            Button Label
-                          </label>
-                          <input
-                            type="text"
-                            value={link.label}
-                            onChange={(e) =>
-                              handleOwnerUpdateSocialLink(link.id, { label: e.target.value })
-                            }
-                            placeholder="e.g. Google Reviews"
-                            className="w-full text-xs px-2.5 py-1.5 rounded-xl border border-[#050F2A]/15 bg-[#F2FDFF]/30 text-[#050F2A] font-bold focus:outline-none focus:border-[#7BBBFF]"
-                          />
-                        </div>
-
-                        {/* URL */}
-                        <div className="flex-1 w-full min-w-0">
-                          <label className="block text-[10px] font-bold text-[#050F2A]/60 mb-1">
-                            Target Profile URL
-                          </label>
-                          <input
-                            type="text"
-                            value={link.url}
-                            onChange={(e) =>
-                              handleOwnerUpdateSocialLink(link.id, { url: e.target.value })
-                            }
-                            placeholder="https://..."
-                            className="w-full text-xs px-2.5 py-1.5 rounded-xl border border-[#050F2A]/15 bg-[#F2FDFF]/30 text-[#050F2A] focus:outline-none focus:border-[#7BBBFF] font-mono"
-                          />
-                        </div>
-
-                        {/* Action buttons */}
-                        <div className="flex items-center gap-1.5 self-end sm:self-center mt-2 sm:mt-4 shrink-0">
-                          {link.url && (
-                            <a
-                              href={link.url.startsWith("http") ? link.url : `https://${link.url}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              title="Test link"
-                              className="p-1.5 rounded-lg text-[#050F2A]/60 hover:text-[#050F2A] hover:bg-[#F2FDFF] transition"
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                            </a>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleOwnerUpdateSocialLink(link.id, { isActive: !link.isActive })
-                            }
-                            title={link.isActive ? "Hide on menu" : "Show on menu"}
-                            className={`p-1.5 rounded-lg transition border ${
-                              link.isActive
-                                ? "text-emerald-700 bg-emerald-50 border-emerald-200"
-                                : "text-zinc-400 bg-zinc-100 border-zinc-200"
-                            }`}
-                          >
-                            {link.isActive ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleOwnerDeleteSocialLink(link.id)}
-                            title="Delete this link"
-                            className="p-1.5 rounded-lg text-rose-600 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
-                  {settingsForm.socialLinks.length === 0 && (
-                    <div className="p-6 text-center bg-[#F2FDFF]/50 rounded-2xl border border-dashed border-[#050F2A]/15 space-y-1">
-                      <p className="text-xs font-bold text-[#050F2A]">No social or Google links added yet</p>
-                      <p className="text-[11px] text-[#050F2A]/60">Use the Quick Add buttons above to add Google Reviews, Instagram, or WhatsApp.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* SECTION 4: TABLE QR CARD CUSTOMIZATION & LOGO SIZE */}
-              <div className="space-y-4 pt-2">
-                <div className="border-b border-[#050F2A]/10 pb-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-[#050F2A] flex items-center gap-2">
-                    <QrCode className="w-4 h-4 text-[#7BBBFF]" />
-                    <span>4. Printable Table QR Card Customization</span>
-                  </h3>
-                  <p className="text-[11px] text-[#050F2A]/60 mt-0.5">
-                    Customize the text, slogan, and logo sizing printed on your 4×6" dining table tent cards.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* QR Header Title (Optional) */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#050F2A]/80">
-                      Top Header Banner (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={settingsForm.qrHeaderTitle}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, qrHeaderTitle: e.target.value })}
-                      placeholder="Leave blank for clean logo at top"
-                      className="w-full text-xs px-3 py-2 rounded-xl border border-[#050F2A]/15 bg-white text-[#050F2A] focus:outline-none focus:border-[#7BBBFF]"
-                    />
-                    <span className="text-[10px] text-[#050F2A]/50">Leave empty to display your brand logo prominently at the top.</span>
-                  </div>
-
-                  {/* QR Subtitle */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#050F2A]/80">
-                      Table Subtitle (Under Table Number)
-                    </label>
-                    <input
-                      type="text"
-                      value={settingsForm.qrSubtitle}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, qrSubtitle: e.target.value })}
-                      placeholder="SCAN TO ORDER"
-                      className="w-full text-xs px-3 py-2 rounded-xl border border-[#050F2A]/15 bg-white text-[#050F2A] focus:outline-none focus:border-[#7BBBFF]"
-                    />
-                  </div>
-                </div>
-
-                {/* Footer Slogan / Tagline */}
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#050F2A]/80">
-                    Footer Note / Slogan / Phone
-                  </label>
-                  <input
-                    type="text"
-                    value={
-                      !settingsForm.qrFooterNote || settingsForm.qrFooterNote.includes("Good tea brings people together")
-                        ? "It's time for you!"
-                        : settingsForm.qrFooterNote
-                    }
-                    onChange={(e) => setSettingsForm({ ...settingsForm, qrFooterNote: e.target.value })}
-                    placeholder="e.g. It's time for you! or Enjoy your visit!"
-                    className="w-full text-xs px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:outline-none focus:border-[#C99532]"
-                  />
-                  <div className="flex flex-wrap gap-1.5 mt-1.5">
-                    {["It's time for you!", "Enjoy your visit!", "Need help? Ask our friendly staff"].map((preset, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => setSettingsForm({ ...settingsForm, qrFooterNote: preset })}
-                        className="text-[10px] text-[#8A6A53] hover:text-[#301C10] px-2 py-0.5 rounded bg-white border border-[#DFC9AC]"
-                      >
-                        {preset}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Table QR Logo Size Slider & Presets */}
-                <div className="p-4 bg-[#F2FDFF]/80 rounded-2xl border border-[#050F2A]/10 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-bold text-[#050F2A] block">
-                        Table QR Logo Size (Customizable & Big Logo Option)
-                      </span>
-                      <span className="text-[11px] text-[#050F2A]/60">
-                        Adjust how large and prominent your logo prints on table QR tent cards
-                      </span>
-                    </div>
-                    <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-lg bg-white border border-[#050F2A]/15 text-[#050F2A]">
-                      {getQrLogoHeight(settingsForm.qrLogoSize)}px
+                    {/* Subtle live indicator badge */}
+                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-60" />
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-400 border-2 border-[#050F2A]" />
                     </span>
                   </div>
 
-                  <input
-                    type="range"
-                    min={60}
-                    max={200}
-                    step={4}
-                    value={getQrLogoHeight(settingsForm.qrLogoSize)}
-                    onChange={(e) => setSettingsForm({ ...settingsForm, qrLogoSize: parseInt(e.target.value, 10) })}
-                    className="w-full h-2 bg-[#050F2A]/10 rounded-lg appearance-none cursor-pointer accent-[#7BBBFF]"
-                  />
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-extrabold text-sm sm:text-base tracking-tight text-white flex items-center gap-2">
+                        <span>Subscription Expiring in {daysRemaining} {daysRemaining === 1 ? "Day" : "Days"}</span>
+                      </h4>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                        Action Required
+                      </span>
+                    </div>
+                    <p className="text-xs text-white/70 max-w-2xl leading-relaxed">
+                      Your access ends on <span className="text-white font-semibold">{business.subscription.expiryDateColombo}</span>. Renew your plan to ensure uninterrupted customer QR dining and kitchen orders.
+                    </p>
+                  </div>
+                </div>
 
-                  {/* Preset quick buttons */}
-                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                    <span className="text-[10px] font-bold text-[#050F2A]/60 mr-1 uppercase">Presets:</span>
-                    {[
-                      { label: "Compact (80px)", val: 80 },
-                      { label: "Standard (112px)", val: 112 },
-                      { label: "Big (140px)", val: 140 },
-                      { label: "Extra Big (165px)", val: 165 },
-                      { label: "Huge (195px)", val: 195 },
-                    ].map((btn) => (
-                      <button
-                        key={btn.val}
-                        type="button"
-                        onClick={() => setSettingsForm({ ...settingsForm, qrLogoSize: btn.val })}
-                        className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all ${
-                          getQrLogoHeight(settingsForm.qrLogoSize) === btn.val
-                            ? "bg-[#050F2A] text-white border-[#050F2A] shadow-xs"
-                            : "bg-white text-[#050F2A]/80 border-[#050F2A]/15 hover:bg-[#F2FDFF]"
-                        }`}
-                      >
-                        {btn.label}
-                      </button>
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2.5 self-start md:self-auto shrink-0 pt-1 md:pt-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowUpgradeModal(true)}
+                    className="px-4 sm:px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#7BBBFF] to-[#99CDFF] text-[#050F2A] hover:brightness-105 active:scale-95 text-xs font-black tracking-wide whitespace-nowrap transition-all shadow-md shadow-[#7BBBFF]/20 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Renew / Upgrade</span>
+                  </button>
+                  <a
+                    href={`https://wa.me/94764847081?text=Hi%20Menyo,%20I'd%20like%20to%20renew%20the%20subscription%20for%20${encodeURIComponent(
+                      business.name
+                    )}.`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 border border-white/20 text-white text-xs font-bold whitespace-nowrap transition-all backdrop-blur-sm"
+                  >
+                    WhatsApp Support
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700 text-sm">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* TAB: PLAN & PAYMENT */}
+          {activeTab === "plan" && (
+            <div className="space-y-6">
+              <div className="p-6 sm:p-8 rounded-3xl bg-[#FFFFFF] border border-[#E2E8F0] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                <div className="space-y-2">
+                  <span className="inline-flex items-center px-3 py-1 rounded-full bg-[#0071E3]/10 text-[#0071E3] text-[11px] font-bold uppercase tracking-wider">
+                    Current Subscription
+                  </span>
+                  <h3 className="text-2xl font-black text-[#050F2A]">
+                    {business?.packageName || (business?.isTrial ? "2-Day Free Trial" : business?.packageId || "Free Trial")}
+                  </h3>
+                  <p className="text-xs text-[#64748B]">
+                    Status:{" "}
+                    <span className="font-bold text-[#050F2A]">
+                      {business?.effectiveStatus || "ACTIVE"}
+                    </span>
+                    {business?.expiresAt ? ` • Expires on ${new Date(business.expiresAt).toLocaleDateString()}` : ""}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowUpgradeModal(true)}
+                  className="px-6 py-3 rounded-2xl bg-[#0071E3] hover:bg-[#0077ED] text-white text-xs font-bold shadow-sm transition active:scale-[0.98]"
+                >
+                  Upgrade / Switch Plan
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: MEMORY STUDIO */}
+          {activeTab === "memory" && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                <div className="p-6 rounded-3xl bg-[#FFFFFF] border border-[#E2E8F0] shadow-sm space-y-5">
+                  <div>
+                    <h3 className="text-lg font-extrabold text-[#050F2A]">Memory Studio</h3>
+                    <p className="text-xs text-[#64748B] mt-0.5">
+                      Customize how your shop logo appears on customer 1080×1350 memory photos.
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                    <span className="text-xs font-bold text-[#64748B] block mb-1">
+                      Total Photos Captured by Customers
+                    </span>
+                    <span className="text-3xl font-black text-[#050F2A]">
+                      {typeof window !== "undefined"
+                        ? localStorage.getItem(`menyo_memory_count_${business?.id || "teatime"}`) || "0"
+                        : "0"}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-[#050F2A] block">
+                      Overlay Logo (PNG / SVG / Image)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <label className="px-3.5 py-2 rounded-xl bg-[#050F2A] hover:bg-[#0B1736] text-white text-xs font-semibold cursor-pointer transition">
+                        Upload Logo
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                              const res = String(reader.result || "");
+                              setMemoryLogoUrl(res);
+                              localStorage.setItem(
+                                `menyo_memory_logo_url_${business?.id || "teatime"}`,
+                                res
+                              );
+                            };
+                            reader.readAsDataURL(file);
+                          }}
+                        />
+                      </label>
+                      {(memoryLogoUrl || (typeof window !== "undefined" && localStorage.getItem(`menyo_memory_logo_url_${business?.id || "teatime"}`))) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMemoryLogoUrl("");
+                            localStorage.removeItem(`menyo_memory_logo_url_${business?.id || "teatime"}`);
+                          }}
+                          className="px-3 py-2 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 text-xs font-semibold hover:bg-rose-100 transition"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-[#050F2A] block">
+                      Logo Overlay Position (1080×1350)
+                    </label>
+                    <select
+                      value={
+                        typeof window !== "undefined"
+                          ? localStorage.getItem(`menyo_memory_logo_pos_${business?.id || "teatime"}`) || memoryLogoPos
+                          : memoryLogoPos
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setMemoryLogoPos(val);
+                        localStorage.setItem(
+                          `menyo_memory_logo_pos_${business?.id || "teatime"}`,
+                          val
+                        );
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] text-xs font-semibold text-[#050F2A] focus:outline-none"
+                    >
+                      <option value="bottom-right">Bottom Right</option>
+                      <option value="bottom-left">Bottom Left</option>
+                      <option value="bottom-center">Bottom Center</option>
+                      <option value="top-right">Top Right</option>
+                      <option value="top-left">Top Left</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Live 4:5 (1080x1350) Preview */}
+                <div className="p-6 rounded-3xl bg-[#FFFFFF] border border-[#E2E8F0] shadow-sm flex flex-col items-center gap-3">
+                  <span className="text-xs font-bold text-[#64748B]">
+                    Live 1080×1350 Overlay Preview
+                  </span>
+                  <div className="relative w-56 aspect-[4/5] rounded-2xl overflow-hidden bg-gradient-to-br from-[#1D1D1F] via-[#2C2C2E] to-[#050F2A] border border-[#E2E8F0] shadow-md flex items-center justify-center">
+                    <span className="text-[11px] text-white/40 font-medium">Customer Photo</span>
+                    {(() => {
+                      const pos =
+                        typeof window !== "undefined"
+                          ? localStorage.getItem(`menyo_memory_logo_pos_${business?.id || "teatime"}`) || memoryLogoPos
+                          : memoryLogoPos;
+                      const posClass =
+                        pos === "top-left"
+                          ? "top-3 left-3"
+                          : pos === "top-right"
+                          ? "top-3 right-3"
+                          : pos === "bottom-left"
+                          ? "bottom-3 left-3"
+                          : pos === "bottom-center"
+                          ? "bottom-3 left-1/2 -translate-x-1/2"
+                          : "bottom-3 right-3";
+                      const activeOverlayLogo =
+                        memoryLogoUrl ||
+                        (typeof window !== "undefined"
+                          ? localStorage.getItem(`menyo_memory_logo_url_${business?.id || "teatime"}`)
+                          : null) ||
+                        settingsForm.logoUrl;
+                      return (
+                        <div className={`absolute ${posClass} pointer-events-none`}>
+                          {activeOverlayLogo ? (
+                            <img
+                              src={activeOverlayLogo}
+                              alt="Overlay Logo"
+                              className="max-w-[56px] max-h-[56px] object-contain drop-shadow-md"
+                            />
+                          ) : (
+                            <span className="px-2 py-1 rounded bg-white/90 text-[9px] font-black text-[#050F2A]">
+                              LOGO
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 1: OVERVIEW */}
+          {activeTab === "overview" && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="p-6 rounded-3xl bg-[#FFFFFF] border border-[#E2E8F0] shadow-sm">
+                  <span className="text-xs font-bold text-[#64748B] block mb-1">Total Products</span>
+                  <span className="text-3xl font-black text-[#050F2A]">{products.length}</span>
+                </div>
+                <div className="p-6 rounded-3xl bg-[#FFFFFF] border border-[#E2E8F0] shadow-sm">
+                  <span className="text-xs font-bold text-[#64748B] block mb-1">Categories</span>
+                  <span className="text-3xl font-black text-[#050F2A]">{categories.length}</span>
+                </div>
+                <div className="p-6 rounded-3xl bg-[#FFFFFF] border border-[#E2E8F0] shadow-sm">
+                  <span className="text-xs font-bold text-[#64748B] block mb-1">Active Dining Tables</span>
+                  <span className="text-3xl font-black text-[#050F2A]">{tables.length}</span>
+                </div>
+                <div className="p-6 rounded-3xl bg-[#FFFFFF] border border-[#E2E8F0] shadow-sm">
+                  <span className="text-xs font-bold text-[#64748B] block mb-1">Pending Orders</span>
+                  <span className="text-3xl font-black text-[#7BBBFF]">
+                    {orders.filter((o) => o.status === "PENDING").length}
+                  </span>
+                </div>
+              </div>
+
+              {/* Recent Orders in Overview */}
+              <div className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 space-y-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-bold text-[#050F2A]">Recent Dining Orders</h2>
+                    <p className="text-xs text-[#64748B]">Real-time table orders feed</p>
+                  </div>
+                  <button
+                    onClick={() => setActiveTab("orders")}
+                    className="text-xs font-bold text-[#050F2A] hover:text-[#7BBBFF] transition-colors"
+                  >
+                    View All Orders &rarr;
+                  </button>
+                </div>
+
+                <div className="divide-y divide-[#E2E8F0]/60 border border-[#E2E8F0] rounded-2xl overflow-hidden">
+                  {orders.slice(0, 5).map((order) => (
+                    <div key={order.id} className="p-4 bg-[#FFFFFF] hover:bg-[#F8F9FA] flex items-center justify-between text-xs transition">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-[#050F2A]">
+                            {order.orderNumberDisplay || order.orderNumber}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-[#050F2A] text-[#FFFFFF] font-bold text-[10px]">
+                            {order.tableNumber}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-[#64748B] mt-1">
+                          {order.items?.length || 0} items &bull; Rs. {(order.totalRupees || (order.totalMinor / 100)).toLocaleString()}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${order.status === "PENDING" ? "bg-amber-100 text-amber-900 border border-amber-300" :
+                            order.status === "PREPARING" ? "bg-[#7BBBFF]/20 text-[#050F2A] border border-[#7BBBFF]/40" :
+                              order.status === "SERVED" ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-[#F8F9FA] text-[#64748B] border border-[#E2E8F0]"
+                          }`}>
+                          {order.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  {orders.length === 0 && (
+                    <div className="p-8 text-center text-[#64748B]/60 text-xs">
+                      No orders placed yet. Scan a table QR code to test your customer flow.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: LIVE ORDERS FEED - EXACT 3-COLUMN MODERN LIVE KITCHEN KANBAN MATCHING UI */}
+          {activeTab === "orders" && (() => {
+            const newOrdersList = orders.filter((o) => o.status === "PENDING" || o.status === "new" || (o.status as string) === "pending");
+            const preparingOrdersList = orders.filter((o) => o.status === "PREPARING" || (o.status as string) === "preparing");
+            const completedOrdersList = orders.filter(
+              (o) => !billedOrderIds.includes(o.id) && (o.status === "SERVED" || o.status === "COMPLETED" || (o.status as string) === "served" || (o.status as string) === "completed")
+            );
+
+            const handlePrintReceipt = (order: Order) => {
+              const printWin = window.open("", "_blank", "width=380,height=600");
+              if (!printWin) return;
+              const itemsHtml = (order.items || [])
+                .map(
+                  (item) => `
+              <div style="display: flex; justify-content: space-between; font-size: 13px; margin: 6px 0;">
+                <span>${item.quantity} × ${item.name}</span>
+                <span style="font-weight: 700;">Rs. ${(item.subtotalRupees || (item.subtotalMinor / 100) || 0).toLocaleString()}</span>
+              </div>
+            `
+                )
+                .join("");
+
+              printWin.document.write(`
+              <!DOCTYPE html>
+              <html>
+                <head>
+                  <title>Bill #${order.orderNumberDisplay || order.orderNumber}</title>
+                  <style>
+                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; color: #111; max-width: 320px; margin: 0 auto; }
+                    .center { text-align: center; }
+                    .dashed { border-top: 1px dashed #bbb; margin: 12px 0; }
+                    .total { font-size: 16px; font-weight: 800; display: flex; justify-content: space-between; margin-top: 10px; }
+                    @media print { button { display: none; } }
+                  </style>
+                </head>
+                <body>
+                  <div class="center">
+                    <h2 style="margin: 0; font-size: 18px; text-transform: uppercase;">${business?.name || "RESTAURANT"}</h2>
+                    <p style="margin: 3px 0 0; font-size: 11px; color: #666;">Guest Table Order Bill</p>
+                  </div>
+                  <div class="dashed"></div>
+                  <div style="display: flex; justify-content: space-between; font-size: 12px; color: #555;">
+                    <span>Order: #${order.orderNumberDisplay || order.orderNumber}</span>
+                    <span style="font-weight: 700; color: #000;">${order.tableNumber}</span>
+                  </div>
+                  <div class="dashed"></div>
+                  <div>${itemsHtml}</div>
+                  <div class="dashed"></div>
+                  <div class="total">
+                    <span>TOTAL:</span>
+                    <span>Rs. ${(order.totalRupees || (order.totalMinor / 100) || 0).toLocaleString()}</span>
+                  </div>
+                  ${order.specialInstructions ? `<p style="font-size: 11px; color: #666; margin-top: 10px;">Note: ${order.specialInstructions}</p>` : ""}
+                  <div class="dashed"></div>
+                  <div class="center" style="font-size: 10px; color: #888; margin-top: 15px;">
+                    Thank you! Powered by menyo.org
+                  </div>
+                  <script>
+                    window.onload = function() { window.print(); };
+                  </script>
+                </body>
+              </html>
+            `);
+              printWin.document.close();
+            };
+
+            return (
+              <div className="space-y-6">
+                {/* Header Title Section */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <h1 className="text-3xl font-black tracking-tight text-[#050F2A]">
+                        Live Kitchen
+                      </h1>
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-extrabold">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>Live</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-[#64748B] mt-1 font-medium">
+                      Every order. One clear view.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2.5 self-start sm:self-auto">
+                    <button
+                      onClick={() => setActiveTab("overview")}
+                      className="px-4 py-2 rounded-xl bg-white hover:bg-zinc-50 border border-[#E2E8F0] text-xs font-bold text-[#050F2A] flex items-center gap-2 shadow-xs transition"
+                    >
+                      <Clock className="w-3.5 h-3.5 text-[#64748B]" />
+                      <span>Order History</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3-COLUMN KANBAN BOARD */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-start">
+                  {/* COLUMN 1: NEW ORDERS */}
+                  <div className="bg-[#F8F9FA]/80 rounded-2xl p-4 border border-[#E2E8F0] space-y-3">
+                    <div className="flex items-center gap-2 pb-1">
+                      <span className="w-1.5 h-5 rounded-full bg-[#2563EB]" />
+                      <h3 className="font-extrabold text-base text-[#050F2A]">
+                        New Orders ({newOrdersList.length})
+                      </h3>
+                    </div>
+
+                    <div className="space-y-3 min-h-[140px]">
+                      {newOrdersList.length === 0 ? (
+                        <div className="bg-white rounded-xl border border-dashed border-[#CBD5E1] p-8 text-center text-xs text-[#64748B]">
+                          No new orders right now
+                        </div>
+                      ) : (
+                        newOrdersList.map((order) => (
+                          <div
+                            key={order.id}
+                            className="bg-white rounded-2xl border border-[#E2E8F0] p-4 shadow-sm hover:shadow-md transition-all space-y-3"
+                          >
+                            {/* Card Header: #Number | Table | Time */}
+                            <div className="flex items-center justify-between text-xs pb-2 border-b border-[#F1F5F9]">
+                              <div className="flex items-center gap-2">
+                                <span className="font-black text-sm text-[#050F2A]">
+                                  #{order.orderNumberDisplay || order.orderNumber}
+                                </span>
+                                <span className="text-[#64748B]">|</span>
+                                <span className="font-bold text-[#050F2A] flex items-center gap-1">
+                                  <span>🪑</span>
+                                  <span>{order.tableNumber}</span>
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-[#64748B] font-medium">
+                                {formatTimeAgo(order.createdAt)}
+                              </span>
+                            </div>
+
+                            {/* Order Items */}
+                            <div className="space-y-1">
+                              {order.items?.map((item, idx) => (
+                                <div key={idx} className="font-extrabold text-sm text-[#050F2A]">
+                                  {item.quantity} × {item.name}
+                                </div>
+                              ))}
+                            </div>
+
+                            {(order as any).rewardPointsClaimed > 0 && (
+                              <div className="px-2.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold flex items-center justify-between gap-2">
+                                <span>🎁 Reward Claimed ({(order as any).rewardPointsClaimed} pts)</span>
+                                <span>- Rs. {(order as any).rewardDiscountRupees || 0}</span>
+                              </div>
+                            )}
+
+                            {/* Pill Tag: New order */}
+                            <div>
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                <span>New order</span>
+                              </span>
+                            </div>
+
+                            {/* Primary CTA: Accept Order */}
+                            <button
+                              type="button"
+                              onClick={() => handleOrderStatusUpdate(order.id, "PREPARING")}
+                              className="w-full py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-extrabold text-xs shadow-sm shadow-blue-500/20 transition active:scale-98 flex items-center justify-center cursor-pointer"
+                            >
+                              <span>Accept Order</span>
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* COLUMN 2: PREPARING */}
+                  <div className="bg-[#F8F9FA]/80 rounded-2xl p-4 border border-[#E2E8F0] space-y-3">
+                    <div className="flex items-center gap-2 pb-1">
+                      <span className="w-1.5 h-5 rounded-full bg-[#EA580C]" />
+                      <h3 className="font-extrabold text-base text-[#050F2A]">
+                        Preparing ({preparingOrdersList.length})
+                      </h3>
+                    </div>
+
+                    <div className="space-y-3 min-h-[140px]">
+                      {preparingOrdersList.length === 0 ? (
+                        <div className="bg-white rounded-xl border border-dashed border-[#CBD5E1] p-8 text-center text-xs text-[#64748B]">
+                          No orders in preparation
+                        </div>
+                      ) : (
+                        preparingOrdersList.map((order) => (
+                          <div
+                            key={order.id}
+                            className="bg-white rounded-2xl border border-[#E2E8F0] p-4 shadow-sm hover:shadow-md transition-all space-y-3"
+                          >
+                            {/* Card Header: #Number | Table | Time */}
+                            <div className="flex items-center justify-between text-xs pb-2 border-b border-[#F1F5F9]">
+                              <div className="flex items-center gap-2">
+                                <span className="font-black text-sm text-[#050F2A]">
+                                  #{order.orderNumberDisplay || order.orderNumber}
+                                </span>
+                                <span className="text-[#64748B]">|</span>
+                                <span className="font-bold text-[#050F2A] flex items-center gap-1">
+                                  <span>🪑</span>
+                                  <span>{order.tableNumber}</span>
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-[#64748B] font-medium">
+                                {formatTimeAgo(order.createdAt)}
+                              </span>
+                            </div>
+
+                            {/* Order Items */}
+                            <div className="space-y-1">
+                              {order.items?.map((item, idx) => (
+                                <div key={idx} className="font-extrabold text-sm text-[#050F2A]">
+                                  {item.quantity} × {item.name}
+                                </div>
+                              ))}
+                            </div>
+
+                            {(order as any).rewardPointsClaimed > 0 && (
+                              <div className="px-2.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold flex items-center justify-between gap-2">
+                                <span>🎁 Reward Claimed ({(order as any).rewardPointsClaimed} pts)</span>
+                                <span>- Rs. {(order as any).rewardDiscountRupees || 0}</span>
+                              </div>
+                            )}
+
+                            {/* Pill Tag: Preparing */}
+                            <div>
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-orange-50 border border-orange-200 text-orange-800 text-[11px] font-bold">
+                                <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-spin" />
+                                <span>Preparing</span>
+                              </span>
+                            </div>
+
+                            {/* Primary CTA: Mark Completed */}
+                            <button
+                              type="button"
+                              onClick={() => handleOrderStatusUpdate(order.id, "COMPLETED")}
+                              className="w-full py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-extrabold text-xs shadow-sm shadow-blue-500/20 transition active:scale-98 flex items-center justify-center cursor-pointer"
+                            >
+                              <span>Mark Completed</span>
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* COLUMN 3: COMPLETED */}
+                  <div className="bg-[#F8F9FA]/80 rounded-2xl p-4 border border-[#E2E8F0] space-y-3">
+                    <div className="flex items-center gap-2 pb-1">
+                      <span className="w-1.5 h-5 rounded-full bg-[#16A34A]" />
+                      <h3 className="font-extrabold text-base text-[#050F2A]">
+                        Completed ({completedOrdersList.length})
+                      </h3>
+                    </div>
+
+                    <div className="space-y-3 min-h-[140px]">
+                      {completedOrdersList.length === 0 ? (
+                        <div className="bg-white rounded-xl border border-dashed border-[#CBD5E1] p-8 text-center text-xs text-[#64748B]">
+                          No completed orders
+                        </div>
+                      ) : (
+                        completedOrdersList.slice(0, 10).map((order) => (
+                          <div
+                            key={order.id}
+                            className="bg-white rounded-2xl border border-[#E2E8F0] p-4 shadow-sm hover:shadow-md transition-all space-y-3"
+                          >
+                            {/* Card Header: #Number | Table | Time */}
+                            <div className="flex items-center justify-between text-xs pb-2 border-b border-[#F1F5F9]">
+                              <div className="flex items-center gap-2">
+                                <span className="font-black text-sm text-[#050F2A]">
+                                  #{order.orderNumberDisplay || order.orderNumber}
+                                </span>
+                                <span className="text-[#64748B]">|</span>
+                                <span className="font-bold text-[#050F2A] flex items-center gap-1">
+                                  <span>🪑</span>
+                                  <span>{order.tableNumber}</span>
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-[#64748B] font-medium">
+                                {formatTimeAgo(order.createdAt)}
+                              </span>
+                            </div>
+
+                            {/* Order Items */}
+                            <div className="space-y-1">
+                              {order.items?.map((item, idx) => (
+                                <div key={idx} className="font-extrabold text-sm text-[#050F2A]">
+                                  {item.quantity} × {item.name}
+                                </div>
+                              ))}
+                            </div>
+
+                            {(order as any).rewardPointsClaimed > 0 && (
+                              <div className="px-2.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold flex items-center justify-between gap-2">
+                                <span>🎁 Reward Claimed ({(order as any).rewardPointsClaimed} pts)</span>
+                                <span>- Rs. {(order as any).rewardDiscountRupees || 0}</span>
+                              </div>
+                            )}
+
+                            {/* Pill Tag: Completed */}
+                            <div>
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold">
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                <span>Completed</span>
+                              </span>
+                            </div>
+
+                            {/* Secondary CTA: Print Bill */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const mapped = (order.items || []).map((it: any) => ({
+                                  productId: it.productId || it.id || String(it.name),
+                                  name: it.name || "Item",
+                                  price: Math.round((it.unitPriceMinor ?? it.priceMinor ?? 0) / 100),
+                                  qty: it.quantity || 1,
+                                }));
+                                setBilledOrderIds((prev) => {
+                                  const next = prev.includes(order.id) ? prev : [...prev, order.id];
+                                  localStorage.setItem("menyo_billed_orders", JSON.stringify(next));
+                                  return next;
+                                });
+                                setBillingPreloadItems(mapped);
+                                setBillingPreloadPhone(localStorage.getItem(`menyo_order_phone_${order.id}`) || null);
+                                setActiveTab("billing");
+                              }}
+                              className="w-full py-2.5 rounded-xl bg-white hover:bg-zinc-50 border border-[#2563EB] text-[#2563EB] font-extrabold text-xs transition active:scale-98 flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                            >
+                              <Printer className="w-3.5 h-3.5 text-[#2563EB]" />
+                              <span>Print Bill</span>
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* TAB 3: MENU PRODUCTS */}
+          {activeTab === "menu" && (
+            <div className="bg-white border border-[#050F2A]/10 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
+              {/* Today's Special Toggle & Selector */}
+              <div className="bg-[#F8FAFC] rounded-2xl border border-[#050F2A]/10 p-3.5 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = { ...todaySpecial, enabled: !todaySpecial.enabled };
+                      setTodaySpecial(next);
+                      if (business?.id) localStorage.setItem(`menyo_today_special_${business.id}`, JSON.stringify(next));
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                      todaySpecial.enabled ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-700"
+                    }`}
+                  >
+                    {todaySpecial.enabled ? "Today's Special: ON" : "Today's Special: OFF"}
+                  </button>
+                  <input
+                    type="text"
+                    value={todaySpecial.title}
+                    onChange={(e) => {
+                      const next = { ...todaySpecial, productId: todaySpecial.productId || `special_${Date.now()}`, title: e.target.value };
+                      setTodaySpecial(next);
+                      if (business?.id) localStorage.setItem(`menyo_today_special_${business.id}`, JSON.stringify(next));
+                    }}
+                    placeholder="Special Title (e.g. Today's Combo)"
+                    className="rounded-xl border border-[#050F2A]/15 bg-white px-3 py-1.5 text-xs font-semibold text-[#050F2A]"
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    value={todaySpecial.priceRupees || ""}
+                    onChange={(e) => {
+                      const next = { ...todaySpecial, productId: todaySpecial.productId || `special_${Date.now()}`, priceRupees: Number(e.target.value) || 0 };
+                      setTodaySpecial(next);
+                      if (business?.id) localStorage.setItem(`menyo_today_special_${business.id}`, JSON.stringify(next));
+                    }}
+                    placeholder="Price (Rs.)"
+                    className="w-24 rounded-xl border border-[#050F2A]/15 bg-white px-3 py-1.5 text-xs font-semibold text-[#050F2A]"
+                  />
+                  <input
+                    type="url"
+                    value={todaySpecial.imageUrl}
+                    onChange={(e) => {
+                      const next = { ...todaySpecial, productId: todaySpecial.productId || `special_${Date.now()}`, imageUrl: e.target.value };
+                      setTodaySpecial(next);
+                      if (business?.id) localStorage.setItem(`menyo_today_special_${business.id}`, JSON.stringify(next));
+                    }}
+                    placeholder="Banner Image URL (1080×1350)"
+                    className="w-48 rounded-xl border border-[#050F2A]/15 bg-white px-3 py-1.5 text-xs text-[#050F2A]"
+                  />
+                </div>
+                <span className="text-[11px] text-[#050F2A]/55">
+                  Instagram-size (1:1) Today&apos;s Special banner on customer menu
+                </span>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight text-[#050F2A]">Menu Products</h2>
+                  <p className="text-xs text-[#050F2A]/60">Manage dishes, drinks, prices, and availability</p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="relative">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#050F2A]/40" />
+                    <input
+                      type="text"
+                      value={productSearch}
+                      onChange={(e) => setProductSearch(e.target.value)}
+                      placeholder="Search product..."
+                      className="bg-[#F2FDFF] border border-[#050F2A]/15 rounded-full pl-9 pr-4 py-2 text-xs text-[#050F2A] placeholder-[#050F2A]/40 focus:outline-none focus:border-[#7BBBFF] w-44"
+                    />
+                  </div>
+
+                  <select
+                    value={selectedCategoryFilter}
+                    onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                    className="bg-[#F2FDFF] border border-[#050F2A]/15 rounded-full px-4 py-2 text-xs text-[#050F2A] focus:outline-none focus:border-[#7BBBFF]"
+                  >
+                    <option value="ALL">All Categories</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
                     ))}
+                  </select>
+
+                  <button
+                    onClick={() => {
+                      setEditingProduct(null);
+                      setShowProductModal(true);
+                    }}
+                    className="px-5 py-2 rounded-full bg-[#050F2A] hover:bg-[#0b1739] text-white font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Item</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Products Table */}
+              <div className="overflow-x-auto border border-[#050F2A]/10 rounded-2xl">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#F2FDFF] text-[#050F2A]/70 border-b border-[#050F2A]/10 uppercase tracking-wider text-[10px] font-bold">
+                    <tr>
+                      <th className="px-4 py-3.5">Product</th>
+                      <th className="px-4 py-3.5">Category</th>
+                      <th className="px-4 py-3.5">Price (LKR)</th>
+                      <th className="px-4 py-3.5">Status</th>
+                      <th className="px-4 py-3.5 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#050F2A]/10 text-[#050F2A]">
+                    {filteredProducts.map((p) => {
+                      const price =
+                        typeof p.priceRupees === "number"
+                          ? p.priceRupees
+                          : typeof p.priceMinor === "number"
+                            ? p.priceMinor / 100
+                            : (p as any).price || 0;
+
+                      const catName =
+                        categories.find((c) => c.id === p.categoryId)?.name ||
+                        (p as any).category ||
+                        "General";
+
+                      return (
+                        <tr key={p.id} className="hover:bg-[#F2FDFF]/50 transition-colors">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              {p.imageUrl ? (
+                                <img
+                                  src={p.imageUrl}
+                                  alt={p.name}
+                                  className="w-10 h-10 rounded-xl object-contain bg-white border border-[#050F2A]/10"
+                                  onError={(e) => ((e.target as any).style.display = "none")}
+                                />
+                              ) : null}
+                              <div>
+                                <span className="font-bold text-[#050F2A] block">{p.name}</span>
+                                {p.description && (
+                                  <span className="text-[11px] text-[#050F2A]/60 line-clamp-1 max-w-xs">
+                                    {p.description}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <span className="px-2.5 py-1 rounded-full bg-[#F2FDFF] border border-[#050F2A]/10 text-[10px] font-bold text-[#050F2A]">
+                              {catName}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-3 font-mono font-bold text-[#050F2A]">
+                            Rs. {price.toLocaleString()}
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${p.isAvailable !== false
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-zinc-200 text-zinc-600"
+                                }`}
+                            >
+                              {p.isAvailable !== false ? "Active" : "Hidden"}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setEditingProduct(p);
+                                  setShowProductModal(true);
+                                }}
+                                className="p-1.5 rounded-full bg-white hover:bg-[#F2FDFF] border border-[#050F2A]/15 text-[#050F2A]/70 hover:text-[#050F2A]"
+                                title="Edit item"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {filteredProducts.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-[#050F2A]/40">
+                          No products found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: CATEGORIES */}
+          {activeTab === "categories" && (
+            <div className="bg-white border border-[#050F2A]/10 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight text-[#050F2A]">Menu Categories</h2>
+                  <p className="text-xs text-[#050F2A]/60">Organize items into guest browse tabs</p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setActiveTab("settings")}
+                    className="px-4 py-2 rounded-full border border-[#050F2A]/15 hover:bg-[#F2FDFF] text-[#050F2A] font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm"
+                    title="Configure 'All Categories' Tab Icon"
+                  >
+                    <Layers className="w-3.5 h-3.5 text-[#7BBBFF]" />
+                    <span>"All" Icon Settings</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingCategory(null);
+                      setShowCategoryModal(true);
+                    }}
+                    className="px-5 py-2 rounded-full bg-[#050F2A] hover:bg-[#0b1739] text-white font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Category</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {categories.map((c) => (
+                  <div
+                    key={c.id}
+                    className="p-4 rounded-3xl bg-[#F2FDFF]/50 border border-[#050F2A]/10 flex items-center justify-between shadow-sm"
+                  >
+                    <div className="flex items-center gap-3">
+                      {c.iconUrl ? (
+                        <img src={c.iconUrl} alt={c.name} className="w-8 h-8 rounded-full object-contain" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-[#7BBBFF]/20 flex items-center justify-center font-bold text-xs text-[#050F2A]">
+                          {c.name.charAt(0)}
+                        </div>
+                      )}
+                      <div>
+                        <span className="font-bold text-sm text-[#050F2A] block">{c.name}</span>
+                        <span className="text-[10px] text-[#050F2A]/50 font-mono">
+                          {products.filter((p) => p.categoryId === c.id || (p as any).category === c.name).length} items
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          setEditingCategory(c);
+                          setShowCategoryModal(true);
+                        }}
+                        className="p-1.5 rounded-full bg-white hover:bg-[#F2FDFF] border border-[#050F2A]/15 text-[#050F2A]/70 hover:text-[#050F2A]"
+                        title="Edit Category"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setArchivingCategory(c)}
+                        className="p-1.5 rounded-full bg-white hover:bg-rose-50 border border-[#050F2A]/15 text-rose-600"
+                        title="Archive Category"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: TABLES & QR CODES */}
+          {activeTab === "tables" && (
+            <div className="bg-white border border-[#050F2A]/10 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight text-[#050F2A]">Dining Tables & QR Codes</h2>
+                  <p className="text-xs text-[#050F2A]/60">Generate and print high-resolution QR tent cards for every table</p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleAutoGenerate15Tables}
+                    disabled={generatingTables}
+                    className="px-4 py-2 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-extrabold text-xs flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                    title="Generate Table 01 to Table 15 automatically"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                    <span>{generatingTables ? "Generating 15 QRs..." : "⚡ Auto-Generate 15 Tables"}</span>
+                  </button>
+
+                  <button
+                    onClick={() => setShowBatchPrint(true)}
+                    className="px-4 py-2 rounded-full bg-white hover:bg-[#F2FDFF] border border-[#050F2A]/15 text-[#050F2A] font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm"
+                  >
+                    <Printer className="w-4 h-4 text-[#7BBBFF]" />
+                    <span>Batch Print QRs</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setEditingTable(null);
+                      setShowTableModal(true);
+                    }}
+                    className="px-5 py-2 rounded-full bg-[#050F2A] hover:bg-[#0b1739] text-white font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Table</span>
+                  </button>
+                </div>
+              </div>
+
+              {tables.length === 0 ? (
+                <div className="p-12 text-center bg-[#F8F9FA] rounded-3xl border border-dashed border-[#CBD5E1] space-y-4">
+                  <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center mx-auto">
+                    <QrCode className="w-7 h-7" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="font-extrabold text-base text-[#050F2A]">No Dining Tables Created Yet</h3>
+                    <p className="text-xs text-[#64748B] max-w-sm mx-auto">
+                      Click the button below to generate 15 tables automatically, or add single tables one by one.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAutoGenerate15Tables}
+                    disabled={generatingTables}
+                    className="px-6 py-2.5 rounded-full bg-[#050F2A] text-white font-extrabold text-xs shadow-md hover:bg-[#0A1840] transition active:scale-95 flex items-center gap-2 mx-auto"
+                  >
+                    <Sparkles className="w-4 h-4 text-[#7BBBFF]" />
+                    <span>Auto-Create 15 Dining Tables Now</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {tables.map((t) => (
+                    <div
+                      key={t.id}
+                      className={`p-5 rounded-3xl border flex flex-col justify-between space-y-4 shadow-sm transition-all ${t.active !== false
+                          ? "bg-[#FFFFFF] border-[#E2E8F0]"
+                          : "bg-zinc-100/80 border-zinc-300 opacity-60"
+                        }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg font-black text-[#050F2A] block">{t.number}</span>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${t.active !== false
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : "bg-zinc-200 text-zinc-600 border border-zinc-300"
+                                }`}
+                            >
+                              {t.active !== false ? "Active" : "Disabled"}
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-[#050F2A]/60">
+                            {t.capacity ? `Seats ${t.capacity} guests` : "Standard Dining Table"}
+                          </span>
+                        </div>
+
+                        <div className="p-2 bg-white rounded-2xl border border-[#050F2A]/10 shadow-sm">
+                          <QrCode className="w-8 h-8 text-[#050F2A]" />
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-[#050F2A]/10 flex items-center justify-between">
+                        <button
+                          onClick={() => copyTableLink(t.token)}
+                          className="text-xs font-bold text-[#050F2A] hover:text-[#7BBBFF] flex items-center gap-1.5"
+                        >
+                          {copiedToken === t.token ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedToken === t.token ? "Copied Link" : "Copy URL"}</span>
+                        </button>
+
+                        <div className="flex items-center gap-1.5">
+                          {/* Enable / Disable Table QR Toggle */}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleTableActive(t)}
+                            className={`p-2 rounded-full border transition ${t.active !== false
+                                ? "bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700"
+                                : "bg-zinc-200 hover:bg-zinc-300 border-zinc-300 text-zinc-700"
+                              }`}
+                            title={t.active !== false ? "Disable this table QR (Disable ordering)" : "Enable this table QR (Activate ordering)"}
+                          >
+                            <Power className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            onClick={() => setSinglePrintTable(t)}
+                            className="p-2 rounded-full bg-white hover:bg-[#F2FDFF] border border-[#050F2A]/15 text-[#050F2A]"
+                            title="Print Tent Card"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingTable(t);
+                              setShowTableModal(true);
+                            }}
+                            className="p-2 rounded-full bg-white hover:bg-[#F2FDFF] border border-[#050F2A]/15 text-[#050F2A]"
+                            title="Edit Table"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 6: SETTINGS & INDEPENDENT BUSINESS BRANDING (Minimal & User-Friendly matching /admin style) */}
+          {/* REWARD POINTS & LOYALTY CUSTOMERS TAB */}
+          {activeTab === "billing" && business && (
+            <BillingSystemTab
+              businessId={business.id}
+              businessName={business.name}
+              logoUrl={effectiveLiveBranding.logoUrl}
+              existingMenuProducts={products}
+              initialItems={billingPreloadItems}
+              initialCustomerPhone={billingPreloadPhone}
+              onInitialItemsConsumed={() => {
+                setBillingPreloadItems(null);
+                setBillingPreloadPhone(null);
+              }}
+            />
+          )}
+
+          {activeTab === "rewards" && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-black tracking-tight text-[#050F2A] flex items-center gap-2">
+                    <Gift className="w-6 h-6 text-[#7BBBFF]" />
+                    <span>Customer Reward Points</span>
+                  </h2>
+                  <p className="text-xs text-[#050F2A]/60 mt-1">
+                    Customers who join after ordering earn 20 points per Rs. 1,000 spent (1 pt = Rs. {rewardPointValue} discount on next visit).
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="bg-white border border-[#050F2A]/10 rounded-2xl px-4 py-2 text-xs font-bold text-[#050F2A] shadow-sm">
+                    Total VIPs: <span className="text-[#7BBBFF] font-black">{customers.length}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-4 flex items-center justify-end gap-3 border-t border-[#050F2A]/10">
-                <button
-                  type="submit"
-                  disabled={savingSettings}
-                  className="px-8 py-3 rounded-full bg-[#050F2A] hover:bg-[#0b1739] active:scale-95 disabled:opacity-50 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center gap-2"
-                >
-                  {savingSettings ? "Saving Settings..." : "Save Branding & Settings"}
-                </button>
+              {/* Point Value Configuration Card */}
+              <div className="bg-white border border-[#050F2A]/10 rounded-3xl p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-extrabold text-[#050F2A]">
+                    1 Reward Point Value (Rs.)
+                  </h3>
+                  <p className="text-xs text-[#050F2A]/60 mt-0.5">
+                    Choose how much discount 1 reward point gives your customers when they claim it.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {[1, 2, 5, 10].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setRewardPointValue(val)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border ${rewardPointValue === val
+                          ? "bg-[#050F2A] text-white border-[#050F2A]"
+                          : "bg-[#F2FDFF] text-[#050F2A] border-[#050F2A]/15 hover:border-[#7BBBFF]"
+                        }`}
+                    >
+                      Rs. {val}
+                    </button>
+                  ))}
+                  <div className="flex items-center gap-1.5 ml-1">
+                    <span className="text-xs font-bold text-[#050F2A]/60">Custom:</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={1000}
+                      value={rewardPointValue}
+                      onChange={(e) => setRewardPointValue(Math.max(1, Number(e.target.value) || 1))}
+                      className="w-20 px-2.5 py-1.5 rounded-xl border border-[#050F2A]/20 text-xs font-bold text-[#050F2A] focus:outline-none focus:border-[#7BBBFF]"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={savingRewardRate}
+                    onClick={async () => {
+                      if (!business?.id) return;
+                      setSavingRewardRate(true);
+                      setRewardRateSaved(false);
+                      try {
+                        await setDoc(
+                          storeDoc(db, "businesses", business.id),
+                          { rewardPointValueRupees: rewardPointValue },
+                          { merge: true }
+                        );
+                        if (typeof window !== "undefined") {
+                          localStorage.setItem(
+                            `menyo_reward_rate_${business.slug || business.id}`,
+                            String(rewardPointValue)
+                          );
+                          localStorage.setItem(`menyo_reward_rate_${business.id}`, String(rewardPointValue));
+                        }
+                        setRewardRateSaved(true);
+                        setTimeout(() => setRewardRateSaved(false), 2500);
+                      } catch (err) {
+                        console.warn("Failed to save reward rate:", err);
+                      } finally {
+                        setSavingRewardRate(false);
+                      }
+                    }}
+                    className="px-4 py-1.5 rounded-xl bg-[#7BBBFF] hover:bg-[#68aaff] text-[#050F2A] text-xs font-extrabold transition shadow-sm disabled:opacity-50"
+                  >
+                    {savingRewardRate ? "Saving..." : rewardRateSaved ? "Saved ✓" : "Save Rate"}
+                  </button>
+                  <div className="flex items-center gap-1.5 bg-[#F8FAFC] border border-[#050F2A]/15 rounded-xl px-2.5 py-1.5">
+                    <span className="text-[11px] font-semibold text-[#050F2A]/70">Rs. 100 =</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={rewardPointsPer100}
+                      onChange={(e) => {
+                        const val = Math.max(1, Number(e.target.value) || 1);
+                        setRewardPointsPer100(val);
+                        if (business?.id) {
+                          localStorage.setItem(`menyo_reward_earn_rate_${business.id}`, String(val));
+                        }
+                      }}
+                      className="w-12 bg-white border border-[#050F2A]/15 rounded-lg px-1.5 py-0.5 text-xs font-bold text-[#050F2A] text-center"
+                    />
+                    <span className="text-[11px] font-semibold text-[#050F2A]/70">pts</span>
+                  </div>
+                </div>
               </div>
-            </form>
-          </div>
-        )}
-      </main>
+
+              <div className="bg-white border border-[#050F2A]/10 rounded-3xl overflow-hidden shadow-sm">
+                <div className="overflow-x-auto">
+                  <div className="p-4 border-b border-[#050F2A]/10 flex flex-wrap items-center justify-between gap-3 bg-[#F8FAFC]">
+                    <div className="relative w-full max-w-sm">
+                      <Search className="w-4 h-4 text-[#050F2A]/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={rewardSearchQuery}
+                        onChange={(e) => setRewardSearchQuery(e.target.value)}
+                        placeholder="Search by mobile number or name..."
+                        className="w-full rounded-xl border border-[#050F2A]/15 bg-white pl-9 pr-3.5 py-2 text-xs text-[#050F2A] focus:border-[#050F2A] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-[#F2FDFF] text-[#050F2A]/70 border-b border-[#050F2A]/10 uppercase tracking-wider text-[10px] font-bold">
+                      <tr>
+                        <th className="px-5 py-3.5">Customer Name</th>
+                        <th className="px-5 py-3.5">Mobile Number</th>
+                        <th className="px-5 py-3.5">Total Orders</th>
+                        <th className="px-5 py-3.5">Claimed Orders</th>
+                        <th className="px-5 py-3.5">Total Spent</th>
+                        <th className="px-5 py-3.5">Reward Points</th>
+                        <th className="px-5 py-3.5">Last Visit</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#050F2A]/10 text-[#050F2A]">
+                      {customers.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-5 py-12 text-center text-[#050F2A]/50">
+                            No loyalty customers yet. When guests enter their name & mobile number after ordering, they will appear here automatically.
+                          </td>
+                        </tr>
+                      ) : (
+                        customers
+                          .filter(
+                            (c) =>
+                              !rewardSearchQuery.trim() ||
+                              c.phone.toLowerCase().includes(rewardSearchQuery.trim().toLowerCase()) ||
+                              (c.name || "").toLowerCase().includes(rewardSearchQuery.trim().toLowerCase())
+                          )
+                          .map((c) => (
+                          <tr key={c.phone} className="hover:bg-[#F2FDFF]/50 transition-colors">
+                            <td className="px-5 py-3.5 font-bold text-[#050F2A]">{c.name}</td>
+                            <td className="px-5 py-3.5 font-mono text-[11px] text-[#050F2A]/80">{c.phone}</td>
+                            <td className="px-5 py-3.5 font-semibold">{c.totalOrders || 1}</td>
+                            <td className="px-5 py-3.5 font-semibold">
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 text-[11px] font-bold">
+                                {c.claimedOrdersCount || 0} claimed
+                              </span>
+                            </td>
+                            <td className="px-5 py-3.5 font-semibold">Rs. {(c.totalSpentRupees || 0).toLocaleString()}</td>
+                            <td className="px-5 py-3.5">
+                              <span className="px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-800 font-black text-[11px]">
+                                {c.points} pts (Rs. {c.points * rewardPointValue})
+                              </span>
+                            </td>
+                            <td className="px-5 py-3.5 text-[#050F2A]/60 text-[11px]">
+                              {c.lastOrderAtMs ? new Date(c.lastOrderAtMs).toLocaleDateString() : "—"}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "settings" && (
+            <div className="space-y-6">
+              <CafeSettingsView businessId={business?.id} businessSlug={business?.slug} />
+            </div>
+          )}
+        </main>
       </div>
 
       {/* Modals */}
@@ -2172,7 +2487,35 @@ export const BusinessDashboardPage: React.FC = () => {
             setShowProductModal(false);
             setEditingProduct(null);
           }}
-          onSuccess={() => {
+          onSuccess={(savedProduct) => {
+            if (savedProduct && savedProduct.id) {
+              setProducts((prev) => {
+                const exists = prev.some((p) => p.id === savedProduct.id);
+                if (exists) {
+                  return prev.map((p) => (p.id === savedProduct.id ? { ...p, ...savedProduct } : p));
+                }
+                return [...prev, savedProduct];
+              });
+              if (savedProduct.categoryId && savedProduct.category) {
+                setCategories((prev) => {
+                  const catExists = prev.some(
+                    (c) => c.id === savedProduct.categoryId || c.name.toLowerCase() === savedProduct.category.toLowerCase()
+                  );
+                  if (catExists) return prev;
+                  return [
+                    ...prev,
+                    {
+                      id: savedProduct.categoryId,
+                      name: savedProduct.category,
+                      slug: savedProduct.category.toLowerCase().replace(/\s+/g, "-"),
+                      displayOrder: prev.length,
+                      sortOrder: prev.length,
+                      active: true,
+                    } as Category,
+                  ];
+                });
+              }
+            }
             setShowProductModal(false);
             setEditingProduct(null);
           }}
@@ -2187,7 +2530,16 @@ export const BusinessDashboardPage: React.FC = () => {
             setShowCategoryModal(false);
             setEditingCategory(null);
           }}
-          onSuccess={() => {
+          onSuccess={(savedCat) => {
+            if (savedCat && savedCat.id) {
+              setCategories((prev) => {
+                const exists = prev.some((c) => c.id === savedCat.id);
+                if (exists) {
+                  return prev.map((c) => (c.id === savedCat.id ? { ...c, ...savedCat } : c));
+                }
+                return [...prev, savedCat];
+              });
+            }
             setShowCategoryModal(false);
             setEditingCategory(null);
           }}
@@ -2225,15 +2577,17 @@ export const BusinessDashboardPage: React.FC = () => {
           table={singlePrintTable}
           businessSlug={business.slug}
           businessName={business.name}
-          primaryColor={business.branding?.primaryColor || (business.slug === "teatime" ? "#24140E" : "#050F2A")}
-          accentColor={business.branding?.accentColor || (business.slug === "teatime" ? "#E8B64F" : "#7BBBFF")}
-          headerBackgroundColor={business.branding?.headerBackgroundColor || (business.slug === "teatime" ? "#24140E" : "#050F2A")}
-          headerTextColor={business.branding?.headerTextColor || (business.slug === "teatime" ? "#FAF7F0" : "#F2FDFF")}
-          logoUrl={business.branding?.logoUrl || null}
-          qrHeaderTitle={business.branding?.qrHeaderTitle ?? ""}
-          qrSubtitle={business.branding?.qrSubtitle || "SCAN TO ORDER"}
-          qrFooterNote={business.branding?.qrFooterNote || (business.slug === "teatime" ? "☕ Good tea brings people together." : "Enjoy your visit!")}
-          qrLogoSize={business.branding?.qrLogoSize || settingsForm.qrLogoSize || 140}
+          primaryColor={effectiveLiveBranding.primaryColor}
+          accentColor={effectiveLiveBranding.accentColor}
+          headerBackgroundColor={effectiveLiveBranding.headerBackgroundColor}
+          headerTextColor={effectiveLiveBranding.headerTextColor}
+          logoUrl={effectiveLiveBranding.logoUrl}
+          qrHeaderTitle={effectiveLiveBranding.qrHeaderTitle}
+          qrSubtitle={effectiveLiveBranding.qrSubtitle}
+          qrFooterNote={effectiveLiveBranding.qrFooterNote}
+          qrLogoSize={effectiveLiveBranding.qrLogoSize}
+          cardBgColor={effectiveLiveBranding.cardBgColor}
+          cardTextColor={effectiveLiveBranding.cardTextColor}
           onClose={() => setSinglePrintTable(null)}
         />
       )}
@@ -2243,16 +2597,30 @@ export const BusinessDashboardPage: React.FC = () => {
           tables={tables}
           businessSlug={business.slug}
           businessName={business.name}
-          primaryColor={business.branding?.primaryColor || (business.slug === "teatime" ? "#24140E" : "#050F2A")}
-          accentColor={business.branding?.accentColor || (business.slug === "teatime" ? "#E8B64F" : "#7BBBFF")}
-          headerBackgroundColor={business.branding?.headerBackgroundColor || (business.slug === "teatime" ? "#24140E" : "#050F2A")}
-          headerTextColor={business.branding?.headerTextColor || (business.slug === "teatime" ? "#FAF7F0" : "#F2FDFF")}
-          logoUrl={business.branding?.logoUrl || null}
-          qrHeaderTitle={business.branding?.qrHeaderTitle ?? ""}
-          qrSubtitle={business.branding?.qrSubtitle || "SCAN TO ORDER"}
-          qrFooterNote={business.branding?.qrFooterNote || (business.slug === "teatime" ? "☕ Good tea brings people together." : "Enjoy your visit!")}
-          qrLogoSize={business.branding?.qrLogoSize || settingsForm.qrLogoSize || 140}
+          primaryColor={effectiveLiveBranding.primaryColor}
+          accentColor={effectiveLiveBranding.accentColor}
+          headerBackgroundColor={effectiveLiveBranding.headerBackgroundColor}
+          headerTextColor={effectiveLiveBranding.headerTextColor}
+          logoUrl={effectiveLiveBranding.logoUrl}
+          qrHeaderTitle={effectiveLiveBranding.qrHeaderTitle}
+          qrSubtitle={effectiveLiveBranding.qrSubtitle}
+          qrFooterNote={effectiveLiveBranding.qrFooterNote}
+          qrLogoSize={effectiveLiveBranding.qrLogoSize}
+          cardBgColor={effectiveLiveBranding.cardBgColor}
+          cardTextColor={effectiveLiveBranding.cardTextColor}
           onClose={() => setShowBatchPrint(false)}
+        />
+      )}
+
+      {showUpgradeModal && business && (
+        <SubscriptionUpgradeModal
+          isOpen={showUpgradeModal}
+          onClose={() => setShowUpgradeModal(false)}
+          businessName={business.name}
+          businessSlug={business.slug}
+          ownerEmail={currentUser?.email || business.ownerEmail}
+          currentDaysRemaining={daysRemaining}
+          isExpired={subStatus === "EXPIRED"}
         />
       )}
 
@@ -2264,6 +2632,323 @@ export const BusinessDashboardPage: React.FC = () => {
           }}
           onLogout={handleLogout}
         />
+      )}
+
+      {showBusinessSetupModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-[#050F2A]/80 backdrop-blur-xl p-4 sm:p-6">
+          <div className="relative my-auto w-full max-w-[440px] rounded-[28px] bg-[#0B1736]/95 p-7 sm:p-8 shadow-[0_32px_80px_-12px_rgba(0,0,0,0.65)] ring-1 ring-white/15">
+            {/* Subtle Apple-style ambient top glow */}
+            <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-72 -translate-x-1/2 rounded-full bg-[#7BBBFF]/20 blur-3xl" />
+
+            <div className="relative mb-6 text-center">
+              <div className="mx-auto mb-4 flex items-center justify-center brightness-0 invert">
+                <MenyoWordmark />
+              </div>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#7BBBFF]/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-[#7BBBFF] ring-1 ring-[#7BBBFF]/25">
+                Menyo Studio Setup
+              </span>
+              <h2 className="mt-3 text-2xl font-semibold tracking-tight text-white">
+                Create Your Business
+              </h2>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-slate-300/80">
+                Enter your business name and mobile number to launch your custom Menyo storefront.
+              </p>
+            </div>
+
+            {setupError && (
+              <div className="relative mb-5 rounded-2xl bg-rose-500/10 border border-rose-400/25 px-4 py-3 text-xs font-medium text-rose-200">
+                {setupError}
+              </div>
+            )}
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const cleanName = setupBusinessName.trim();
+                const cleanPhone = setupPhone.trim();
+                if (!cleanName || cleanName.length < 2) {
+                  setSetupError("Please enter a valid business name.");
+                  return;
+                }
+                if (!setupCountry) {
+                  setSetupError("Please select your country.");
+                  return;
+                }
+                if (!cleanPhone || cleanPhone.length < 6) {
+                  setSetupError("Please enter a valid mobile number.");
+                  return;
+                }
+                const fullPhone = `${setupCountryCode} ${cleanPhone}`;
+                setSetupSaving(true);
+                setSetupError(null);
+                try {
+                  let newSlug = cleanName
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, "-")
+                    .replace(/^-+|-+$/g, "");
+                  if (!newSlug || newSlug.length < 3) {
+                    newSlug = `${newSlug || "shop"}-${Math.random().toString(36).substring(2, 6)}`;
+                  }
+
+                  // Auto-resolve unique slug if collision occurs (e.g. thascafe -> thascafe-2 or thascafe-xyz)
+                  let finalSlug = newSlug;
+                  let collisionCount = 1;
+                  while (true) {
+                    const existingSlugSnap = await getDocs(
+                      query(collection(db, "businesses"), where("slug", "==", finalSlug))
+                    ).catch(() => null);
+                    const conflictDoc = existingSlugSnap?.docs.find((d) => d.id !== business.id);
+                    if (!conflictDoc) {
+                      break; // Available!
+                    }
+                    collisionCount++;
+                    finalSlug = `${newSlug}-${collisionCount}`;
+                    if (collisionCount > 5) {
+                      finalSlug = `${newSlug}-${Math.random().toString(36).substring(2, 6)}`;
+                      break;
+                    }
+                  }
+                  newSlug = finalSlug;
+
+                  const { data: updatedRows, error: bizUpdateErr } = await getSupabase()
+                    .from("businesses")
+                    .update({
+                      name: cleanName,
+                      slug: newSlug,
+                      branding: {
+                        ...(business.branding || {}),
+                        phone: fullPhone,
+                        country: setupCountry,
+                      },
+                    })
+                    .eq("id", business.id)
+                    .select("id");
+                  if (bizUpdateErr) throw bizUpdateErr;
+
+                  if (!updatedRows || updatedRows.length === 0) {
+                    const { error: bizInsertErr } = await getSupabase()
+                      .from("businesses")
+                      .insert({
+                        id: business.id,
+                        name: cleanName,
+                        slug: newSlug,
+                        owner_uid: currentUser?.uid || null,
+                        branding: {
+                          ...(business.branding || {}),
+                          phone: fullPhone,
+                          country: setupCountry,
+                        },
+                      });
+                    if (bizInsertErr) throw bizInsertErr;
+                  }
+
+                  await setDoc(
+                    storeDoc(db, "businessSlugs", newSlug),
+                    {
+                      slug: newSlug,
+                      businessId: business.id,
+                      canonicalSlug: newSlug,
+                    },
+                    { merge: true }
+                  ).catch(() => {});
+
+                  localStorage.setItem(`menyo_setup_done_${business.id}`, "1");
+                  localStorage.setItem("menyo_auth_businessId", business.id);
+
+                  setBusiness((prev: any) => (prev ? { ...prev, name: cleanName, country: setupCountry, phone: fullPhone, slug: newSlug } : prev));
+                  setSettingsForm((prev) => ({ ...prev, name: cleanName, phone: fullPhone }));
+                  setShowBusinessSetupModal(false);
+                  navigate(`/${newSlug}/admin`, { replace: true });
+                } catch (err: any) {
+                  const rawMsg = err?.message || String(err || "");
+                  if (rawMsg.toLowerCase().includes("row-level security")) {
+                    setSetupError(
+                      "Permission denied (RLS): Your account does not have permission to update this business row in Supabase. Please ensure your user is the owner of this business or check Supabase RLS policies."
+                    );
+                  } else if (rawMsg.toLowerCase().includes("duplicate") || rawMsg.toLowerCase().includes("unique")) {
+                    setSetupError(
+                      "This shop URL is already taken by another business. Please choose a different Business Name."
+                    );
+                  } else {
+                    setSetupError(rawMsg || "Failed to save business details. Please try again.");
+                  }
+                } finally {
+                  setSetupSaving(false);
+                }
+              }}
+              className="relative space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-medium uppercase tracking-wider text-slate-300/90 mb-2">
+                  Business Name <span className="text-[#7BBBFF]">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={setupBusinessName}
+                  onChange={(e) => setSetupBusinessName(e.target.value)}
+                  placeholder="e.g. Example Cafe"
+                  className="w-full rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm text-white placeholder-slate-400/60 transition focus:border-[#7BBBFF]/60 focus:bg-white/[0.09] focus:outline-none focus:ring-4 focus:ring-[#7BBBFF]/15"
+                />
+                {setupBusinessName.trim() && (
+                  <div className="mt-2.5 flex items-center justify-between rounded-xl bg-white/[0.04] px-3.5 py-2 ring-1 ring-white/10">
+                    <span className="text-[11px] font-medium text-slate-400">Live URL</span>
+                    <span className="font-mono text-xs font-medium text-[#7BBBFF]">
+                      menyo.org/
+                      {setupBusinessName
+                        .trim()
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]+/g, "-")
+                        .replace(/^-+|-+$/g, "") || "your-shop"}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="relative">
+                <label className="block text-xs font-medium uppercase tracking-wider text-slate-300/90 mb-2">
+                  Country <span className="text-[#7BBBFF]">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCountryDropdownOpen((o) => !o);
+                    setCodeDropdownOpen(false);
+                  }}
+                  className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-left text-sm text-white transition hover:bg-white/[0.09] focus:border-[#7BBBFF]/60 focus:outline-none focus:ring-4 focus:ring-[#7BBBFF]/15"
+                >
+                  <span className={setupCountry ? "text-white" : "text-slate-400/70"}>
+                    {setupCountry
+                      ? `${WORLD_COUNTRIES.find((c) => c.name === setupCountry)?.flag || ""} ${setupCountry}`
+                      : "Select your country"}
+                  </span>
+                  <ChevronDown className="h-4 w-4 text-slate-400" />
+                </button>
+                {countryDropdownOpen && (
+                  <div className="absolute left-0 right-0 z-30 mt-2 overflow-hidden rounded-2xl border border-white/15 bg-[#0E1E45] shadow-2xl">
+                    <div className="border-b border-white/10 p-2">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={countrySearch}
+                        onChange={(e) => setCountrySearch(e.target.value)}
+                        placeholder="Search country..."
+                        className="w-full rounded-xl bg-white/[0.07] px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#7BBBFF]/40"
+                      />
+                    </div>
+                    <div className="max-h-48 overflow-y-auto p-1">
+                      {WORLD_COUNTRIES.filter(
+                        (c) =>
+                          c.name.toLowerCase().includes(countrySearch.toLowerCase()) ||
+                          c.code.includes(countrySearch)
+                      ).map((c) => (
+                        <button
+                          key={c.name}
+                          type="button"
+                          onClick={() => {
+                            setSetupCountry(c.name);
+                            setSetupCountryCode(c.code);
+                            setCountryDropdownOpen(false);
+                            setCountrySearch("");
+                          }}
+                          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs transition ${
+                            setupCountry === c.name
+                              ? "bg-[#7BBBFF]/20 text-[#7BBBFF] font-semibold"
+                              : "text-slate-200 hover:bg-white/[0.08]"
+                          }`}
+                        >
+                          <span>
+                            {c.flag} {c.name}
+                          </span>
+                          <span className="font-mono text-[11px] text-slate-400">{c.code}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium uppercase tracking-wider text-slate-300/90 mb-2">
+                  Mobile Number <span className="text-[#7BBBFF]">*</span>
+                </label>
+                <div className="relative flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCodeDropdownOpen((o) => !o);
+                      setCountryDropdownOpen(false);
+                    }}
+                    className="flex w-[112px] shrink-0 items-center justify-between rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-3 text-sm font-medium text-white transition hover:bg-white/[0.09] focus:border-[#7BBBFF]/60 focus:outline-none focus:ring-4 focus:ring-[#7BBBFF]/15"
+                  >
+                    <span>
+                      {WORLD_COUNTRIES.find((c) => c.code === setupCountryCode)?.flag || "🌐"}{" "}
+                      {setupCountryCode}
+                    </span>
+                    <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                  </button>
+                  {codeDropdownOpen && (
+                    <div className="absolute left-0 top-full z-30 mt-2 w-64 overflow-hidden rounded-2xl border border-white/15 bg-[#0E1E45] shadow-2xl">
+                      <div className="border-b border-white/10 p-2">
+                        <input
+                          type="text"
+                          autoFocus
+                          value={codeSearch}
+                          onChange={(e) => setCodeSearch(e.target.value)}
+                          placeholder="Search country or +code..."
+                          className="w-full rounded-xl bg-white/[0.07] px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#7BBBFF]/40"
+                        />
+                      </div>
+                      <div className="max-h-48 overflow-y-auto p-1">
+                        {WORLD_COUNTRIES.filter(
+                          (c) =>
+                            c.name.toLowerCase().includes(codeSearch.toLowerCase()) ||
+                            c.code.includes(codeSearch)
+                        ).map((c) => (
+                          <button
+                            key={`code-${c.name}`}
+                            type="button"
+                            onClick={() => {
+                              setSetupCountryCode(c.code);
+                              setCodeDropdownOpen(false);
+                              setCodeSearch("");
+                            }}
+                            className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs transition ${
+                              setupCountryCode === c.code
+                                ? "bg-[#7BBBFF]/20 text-[#7BBBFF] font-semibold"
+                                : "text-slate-200 hover:bg-white/[0.08]"
+                            }`}
+                          >
+                            <span className="truncate pr-2">
+                              {c.flag} {c.name}
+                            </span>
+                            <span className="font-mono text-[11px] text-slate-400">{c.code}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <input
+                    type="tel"
+                    required
+                    value={setupPhone}
+                    onChange={(e) => setSetupPhone(e.target.value)}
+                    placeholder={getPhonePlaceholder(setupCountryCode)}
+                    className="w-full rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm text-white placeholder-slate-400/60 transition focus:border-[#7BBBFF]/60 focus:bg-white/[0.09] focus:outline-none focus:ring-4 focus:ring-[#7BBBFF]/15"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={setupSaving}
+                className="mt-2 w-full rounded-2xl bg-[#7BBBFF] px-5 py-3.5 text-sm font-semibold text-[#050F2A] shadow-[0_8px_24px_-4px_rgba(123,187,255,0.45)] transition-all hover:bg-[#93C8FF] active:scale-[0.99] disabled:opacity-60"
+              >
+                {setupSaving ? "Creating Your Storefront..." : "Continue & Launch URL"}
+              </button>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

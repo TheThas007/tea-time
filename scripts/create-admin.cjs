@@ -19,7 +19,7 @@ if (!process.env.FIREBASE_AUTH_EMULATOR_HOST && process.env.USE_EMULATOR !== "fa
 }
 
 const app = initializeApp({
-  projectId: process.env.GCLOUD_PROJECT || "teatime-f4005",
+  projectId: process.env.GCLOUD_PROJECT || "menyo-ffcc6",
 });
 
 const auth = getAuth(app);

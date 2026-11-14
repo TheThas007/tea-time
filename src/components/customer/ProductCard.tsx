@@ -120,7 +120,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
         {/* In-cart indicator badge */}
         {cartQuantity > 0 && isAvailable && (
-          <div className="absolute top-2.5 right-2.5 bg-[#E8B64F] text-[#301C10] text-[11px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-warm-md">
+          <div
+            style={{ backgroundColor: "var(--tenant-primary, #E8B64F)", color: "#FFFFFF" }}
+            className="absolute top-2.5 right-2.5 text-[11px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-warm-md"
+          >
             <Check className="w-3 h-3 text-[#301C10] stroke-[3]" />
             <span>{cartQuantity}</span>
           </div>
@@ -175,8 +178,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               }
             }}
             disabled={!isAvailable}
+            style={isAvailable ? { backgroundColor: "var(--tenant-primary, #E8B64F)", color: "#FFFFFF" } : undefined}
             className={`flex items-center justify-center gap-1 px-3 py-1.5 md:px-4 md:py-2 rounded-lg md:rounded-xl text-xs md:text-[13px] font-extrabold transition active:scale-95 shadow-warm shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532] ${isAvailable
-              ? "bg-[#E8B64F] text-[#1A0F08] hover:bg-[#d9a53d]"
+              ? "hover:opacity-90"
               : "bg-[#DFC9AC]/50 text-[#8A6A53] cursor-not-allowed"
               }`}
           >

@@ -28,24 +28,24 @@ export const AdminHeader: React.FC = () => {
   };
 
   return (
-    <header className="bg-[#0A0A0A] text-[#FFFCF6] border-b border-white/10 px-4 sm:px-6 py-2.5 flex items-center justify-between sticky top-0 z-30 shadow-warm-md">
+    <header className="bg-[#050F2A] text-white border-b border-white/10 px-4 sm:px-6 py-2.5 flex items-center justify-between sticky top-0 z-30 shadow-md">
       {/* Left: Brand Logo + / Admin */}
       <div className="flex items-center gap-2.5">
         <Logo size="md" theme="dark" />
         <span className="text-white/40 font-bold text-sm select-none translate-y-0.5">/</span>
-        <span className="text-[#DFC9AC] font-bold text-sm tracking-wide translate-y-0.5">
+        <span className="text-[#7BBBFF] font-bold text-sm tracking-wide translate-y-0.5">
           Admin
         </span>
       </div>
 
       {/* Center: Live indicator & Real-time clock */}
       <div className="hidden md:flex items-center gap-4 text-xs">
-        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#1A1A1A] border border-[#E8B64F]/40 text-[#E8B64F] font-semibold shadow-warm">
-          <span className="w-2 h-2 rounded-full bg-[#E8B64F] animate-ping" />
+        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0b1739] border border-[#7BBBFF]/40 text-[#7BBBFF] font-semibold shadow-xs">
+          <span className="w-2 h-2 rounded-full bg-[#7BBBFF] animate-ping" />
           <span>Live Orders Active</span>
         </div>
 
-        <span className="text-[#DFC9AC] font-medium">
+        <span className="text-white/70 font-medium">
           {currentTime}
         </span>
       </div>
@@ -56,10 +56,10 @@ export const AdminHeader: React.FC = () => {
         <button
           onClick={handleToggleSound}
           title={isMuted ? "Unmute order chime" : "Mute order chime"}
-          className={`p-2 px-2.5 rounded-xl transition flex items-center gap-1.5 text-xs font-extrabold focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532] ${
+          className={`p-2 px-2.5 rounded-xl transition flex items-center gap-1.5 text-xs font-extrabold focus:outline-none ${
             isMuted
-              ? "bg-[#1A1A1A] text-[#DFC9AC] hover:bg-[#2A2A2A] border border-white/10"
-              : "bg-[#E8B64F] text-[#1A0F08] hover:bg-[#d9a53d] shadow-warm"
+              ? "bg-[#0b1739] text-white/60 hover:bg-[#122354] border border-white/10"
+              : "bg-[#7BBBFF] text-[#050F2A] hover:bg-[#68aaff] shadow-sm"
           }`}
         >
           {isMuted ? (
@@ -79,22 +79,22 @@ export const AdminHeader: React.FC = () => {
         <div className="relative">
           <button
             onClick={() => setShowDropdown(!showDropdown)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#1A1A1A] hover:bg-[#2A2A2A] border border-white/15 text-[#FFFCF6] text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0b1739] hover:bg-[#122354] border border-white/15 text-white text-xs font-semibold transition"
           >
-            <div className="w-6 h-6 rounded-full bg-[#0A0A0A] flex items-center justify-center text-[#E8B64F]">
+            <div className="w-6 h-6 rounded-full bg-[#050F2A] flex items-center justify-center text-[#7BBBFF]">
               <User className="w-3.5 h-3.5" />
             </div>
             <span className="hidden sm:inline">
-              {user?.email?.split("@")[0] || (typeof window !== "undefined" && localStorage.getItem("menyo_auth_email")?.split("@")[0]) || "teatime"}
+              {user?.email?.split("@")[0] || (typeof window !== "undefined" && localStorage.getItem("menyo_auth_email")?.split("@")[0]) || "admin"}
             </span>
-            <ChevronDown className="w-3.5 h-3.5 text-[#DFC9AC]" />
+            <ChevronDown className="w-3.5 h-3.5 text-white/60" />
           </button>
 
           {showDropdown && (
-            <div className="absolute right-0 mt-2 w-48 bg-[#FFFCF6] border border-[#DFC9AC] rounded-xl shadow-warm-xl py-1 text-xs text-[#301C10] z-50">
-              <div className="px-3 py-2 border-b border-[#DFC9AC]">
-                <p className="text-[11px] text-[#8A6A53]">Signed in as</p>
-                <p className="font-bold truncate text-[#301C10]">
+            <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-xl py-1 text-xs text-[#050F2A] z-50">
+              <div className="px-3 py-2 border-b border-gray-100">
+                <p className="text-[11px] text-gray-500">Signed in as</p>
+                <p className="font-bold truncate text-[#050F2A]">
                   {user?.email || (typeof window !== "undefined" && localStorage.getItem("menyo_auth_email")) || "admin@teatime.lk"}
                 </p>
               </div>

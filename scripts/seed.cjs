@@ -13,7 +13,7 @@ if (!process.env.FIRESTORE_EMULATOR_HOST && process.env.USE_EMULATOR !== "false"
 }
 
 const app = initializeApp({
-  projectId: process.env.GCLOUD_PROJECT || "teatime-f4005",
+  projectId: process.env.GCLOUD_PROJECT || "menyo-ffcc6",
 });
 
 const db = getFirestore(app);

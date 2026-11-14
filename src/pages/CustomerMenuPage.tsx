@@ -1,8 +1,17 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useSearchParams, useParams, Link } from "react-router-dom";
-import { collection, query, where, getDoc, getDocs, onSnapshot, doc } from "firebase/firestore";
-import { Search, AlertTriangle, Globe, Star } from "lucide-react";
-import { db } from "../lib/firebase";
+import { Search, AlertTriangle, Globe, Star, Wallet } from "lucide-react";
+import { getCustomerRewardByPhone, CustomerRewardRecord } from "../lib/rewards";
+import {
+  db,
+  collection,
+  query,
+  where,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  doc,
+} from "../lib/supabaseStore";
 import { MenuItem, Category, TableItem, CafeSettings, SocialLinkItem } from "../types";
 import { useCart } from "../context/CartContext";
 import { CustomerHeader } from "../components/customer/CustomerHeader";
@@ -51,6 +60,28 @@ export const CustomerMenuPage: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>(() => (isTeaTime ? INITIAL_CATEGORIES : []));
   const [menuItems, setMenuItems] = useState<MenuItem[]>(() => (isTeaTime ? INITIAL_MENU_ITEMS : []));
   const [activeCategory, setActiveCategory] = useState<string>("All");
+  const [showWalletCheck, setShowWalletCheck] = useState(false);
+  const [walletPhone, setWalletPhone] = useState(() =>
+    typeof window !== "undefined" ? localStorage.getItem("menyo_customer_phone") || "" : ""
+  );
+  const [walletRecord, setWalletRecord] = useState<CustomerRewardRecord | null>(null);
+  const [walletChecked, setWalletChecked] = useState(false);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [showTodaySpecialModal, setShowTodaySpecialModal] = useState(false);
+
+  const todaySpecialData = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const bId = tenantBusiness?.id || businessSlug;
+    if (!bId) return null;
+    try {
+      const raw = localStorage.getItem(`menyo_today_special_${bId}`);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed?.enabled && parsed?.productId ? parsed : null;
+    } catch {
+      return null;
+    }
+  }, [tenantBusiness?.id, businessSlug]);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [tableLoading, setTableLoading] = useState<boolean>(true);
   const [tableError, setTableError] = useState<string | null>(null);
@@ -83,24 +114,54 @@ export const CustomerMenuPage: React.FC = () => {
       );
       return () => unsub();
     } else {
-      const targetBId = tenantBusiness?.id || businessSlug;
-      const unsub = onSnapshot(
-        doc(db, "businesses", targetBId),
-        (snap) => {
-          if (snap.exists()) {
-            const data = { id: snap.id, ...snap.data() } as any;
-            setTenantBusiness((prev: any) => ({
-              ...prev,
-              ...data,
-              isAvailable: data.status === "ACTIVE" && !data.isOrderingPaused,
-            }));
+      let isSubActive = true;
+      let innerUnsub: (() => void) | null = null;
+
+      const setupTenantListener = async () => {
+        let bId = tenantBusiness?.id;
+        if (!bId && businessSlug) {
+          try {
+            const slugSnap = await getDoc(doc(db, "businessSlugs", businessSlug.toLowerCase().trim()));
+            if (slugSnap.exists()) {
+              bId = slugSnap.data()?.businessId;
+            }
+          } catch { }
+          if (!bId) {
+            const qSlug = query(collection(db, "businesses"), where("slug", "==", businessSlug.toLowerCase().trim()));
+            const sSlug = await getDocs(qSlug).catch(() => null);
+            if (sSlug && !sSlug.empty) {
+              bId = sSlug.docs[0].id;
+            }
           }
-        },
-        (err) => {
-          console.warn("Tenant business listener fallback:", err);
+          if (!bId) bId = businessSlug;
         }
-      );
-      return () => unsub();
+
+        if (!isSubActive || !bId) return;
+
+        innerUnsub = onSnapshot(
+          doc(db, "businesses", bId),
+          (snap) => {
+            if (snap.exists()) {
+              const data = { id: snap.id, ...snap.data() } as any;
+              setTenantBusiness((prev: any) => ({
+                ...prev,
+                ...data,
+                isAvailable: data.status === "ACTIVE" && !data.isOrderingPaused,
+              }));
+            }
+          },
+          (err) => {
+            console.warn("Tenant business listener fallback:", err);
+          }
+        );
+      };
+
+      setupTenantListener();
+
+      return () => {
+        isSubActive = false;
+        if (innerUnsub) innerUnsub();
+      };
     }
   }, [isTeaTime, businessSlug, tenantBusiness?.id]);
 
@@ -108,12 +169,13 @@ export const CustomerMenuPage: React.FC = () => {
   const [activeTrackerOrderId, setActiveTrackerOrderId] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<MenuItem | null>(null);
 
-  // Welcome screen state: shown once per browser tab session
+  // Welcome screen state: shown once per browser tab session only when NOT in direct demo mode
   const [showWelcome, setShowWelcome] = useState<boolean>(() => {
+    if (isDemoMode) return false;
     try {
       return sessionStorage.getItem("teatime_welcome_dismissed") !== "true";
     } catch {
-      return true;
+      return false;
     }
   });
 
@@ -152,7 +214,8 @@ export const CustomerMenuPage: React.FC = () => {
 
         if (res.business) {
           setTenantBusiness(res.business);
-          if (!res.business.isAvailable) {
+          // If in demo mode, or Tea Time, always keep menu accessible for testing
+          if (!res.business.isAvailable && !isDemoMode && !isTeaTime) {
             setIsTenantUnavailable(true);
             return;
           } else {
@@ -161,8 +224,49 @@ export const CustomerMenuPage: React.FC = () => {
         }
 
         if (!isTeaTime) {
-          setCategories(res.categories || []);
-          setMenuItems(res.products || []);
+          const bId = res.business?.id || businessSlug;
+          let localCats: any[] = [];
+          let localProds: any[] = [];
+          if (bId) {
+            try {
+              const rawCats = localStorage.getItem(`menyo_categories_${bId}`);
+              if (rawCats) localCats = JSON.parse(rawCats);
+              const rawProds = localStorage.getItem(`menyo_products_${bId}`);
+              if (rawProds) localProds = JSON.parse(rawProds);
+            } catch { }
+          }
+          const catMap = new Map<string, any>();
+          for (const c of (res.categories || [])) {
+            if (c && c.id) catMap.set(c.id, c);
+          }
+          for (const c of localCats) {
+            if (c && c.id) {
+              const existing = catMap.get(c.id);
+              if (!existing || (c.updatedAtMs || 0) >= (existing.updatedAtMs || 0)) {
+                catMap.set(c.id, c);
+              }
+            }
+          }
+          const mergedCats = Array.from(catMap.values())
+            .filter((c: any) => !c.isArchived)
+            .sort((a: any, b: any) => (a.sortOrder ?? a.displayOrder ?? 0) - (b.sortOrder ?? b.displayOrder ?? 0));
+
+          const prodMap = new Map<string, any>();
+          for (const p of (res.products || [])) {
+            if (p && p.id) prodMap.set(p.id, p);
+          }
+          for (const p of localProds) {
+            if (p && p.id) {
+              const existing = prodMap.get(p.id);
+              if (!existing || (p.updatedAtMs || 0) >= (existing.updatedAtMs || 0)) {
+                prodMap.set(p.id, p);
+              }
+            }
+          }
+          const mergedProds = Array.from(prodMap.values()).filter((p: any) => !p.isArchived);
+
+          setCategories(mergedCats);
+          setMenuItems(mergedProds);
         } else {
           if (res.categories && res.categories.length > 0) {
             setCategories(res.categories);
@@ -320,48 +424,93 @@ export const CustomerMenuPage: React.FC = () => {
   // Real-time listener for Menu Items
   useEffect(() => {
     if (!isTeaTime) {
-      const bId = tenantBusiness?.id || businessSlug;
-      if (!bId) {
-        setMenuItems([]);
-        return;
-      }
-      const prodColl = collection(db, "businesses", bId, "products");
-      const unsub = onSnapshot(
-        prodColl,
-        (snap) => {
-          const items = snap.docs
-            .map((d) => {
-              const data = d.data();
-              const pRupees =
-                data.priceRupees || (data.priceMinor ? Math.round(data.priceMinor / 100) : 0);
-              return {
-                id: d.id,
-                name: data.name || "Product",
-                category: data.category || data.categoryId || "General",
-                categoryId: data.categoryId || data.category || "cat_general",
-                priceMinor: data.priceMinor || pRupees * 100,
-                priceRupees: pRupees,
-                price: pRupees,
-                priceDisplay: `Rs. ${pRupees}`,
-                description: data.description || "",
-                imageUrl: data.imageUrl || data.image || null,
-                image: data.imageUrl || data.image || null,
-                isAvailable: data.isAvailable !== false,
-                available: data.isAvailable !== false,
-                displayOrder: data.displayOrder ?? data.sortOrder ?? 0,
-                isArchived: !!data.archived || !!data.isArchived,
-                sugarSelection: data.sugarSelection,
-              } as unknown as MenuItem;
-            })
-            .filter((i: any) => !i.isArchived && !i.archived);
-          setMenuItems(items);
-        },
-        (err) => {
-          console.warn("Tenant products listener notice:", err);
-          setMenuItems([]);
+      let isSubActive = true;
+      let innerUnsub: (() => void) | null = null;
+
+      const setupItemsListener = async () => {
+        let bId = tenantBusiness?.id;
+        if (!bId && businessSlug) {
+          try {
+            const slugSnap = await getDoc(doc(db, "businessSlugs", businessSlug.toLowerCase().trim()));
+            if (slugSnap.exists()) {
+              bId = slugSnap.data()?.businessId;
+            }
+          } catch { }
+          if (!bId) {
+            const qSlug = query(collection(db, "businesses"), where("slug", "==", businessSlug.toLowerCase().trim()));
+            const sSlug = await getDocs(qSlug).catch(() => null);
+            if (sSlug && !sSlug.empty) {
+              bId = sSlug.docs[0].id;
+            }
+          }
+          if (!bId) bId = businessSlug;
         }
-      );
-      return () => unsub();
+
+        if (!isSubActive || !bId) return;
+
+        const prodColl = collection(db, "businesses", bId, "products");
+        innerUnsub = onSnapshot(
+          prodColl,
+          (snap) => {
+            const items = snap.docs
+              .map((d) => {
+                const data = d.data();
+                const pRupees =
+                  data.priceRupees || (data.priceMinor ? Math.round(data.priceMinor / 100) : 0);
+                return {
+                  id: d.id,
+                  name: data.name || "Product",
+                  category: data.category || data.categoryId || "General",
+                  categoryId: data.categoryId || data.category || "cat_general",
+                  priceMinor: data.priceMinor || pRupees * 100,
+                  priceRupees: pRupees,
+                  price: pRupees,
+                  priceDisplay: `Rs. ${pRupees}`,
+                  description: data.description || "",
+                  imageUrl: data.imageUrl || data.image || null,
+                  image: data.imageUrl || data.image || null,
+                  isAvailable: data.isAvailable !== false,
+                  available: data.isAvailable !== false,
+                  displayOrder: data.displayOrder ?? data.sortOrder ?? 0,
+                  isArchived: !!data.archived || !!data.isArchived,
+                  sugarSelection: data.sugarSelection,
+                } as unknown as MenuItem;
+              })
+              .filter((i: any) => !i.isArchived && !i.archived);
+            if (typeof window !== "undefined") {
+              try {
+                const localProds: any[] = JSON.parse(localStorage.getItem(`menyo_products_${bId}`) || "[]");
+                const mergedMap = new Map<string, any>();
+                items.forEach((p) => mergedMap.set(p.id, p));
+                localProds.forEach((lp) => {
+                  const remote = mergedMap.get(lp.id);
+                  if (!remote || (lp.updatedAtMs || 0) > ((remote as any).updatedAtMs || 0)) {
+                    mergedMap.set(lp.id, lp);
+                  }
+                });
+                const merged = Array.from(mergedMap.values()).filter((i: any) => !i.isArchived && !i.archived);
+                if (merged.length > 0 || menuItems.length === 0) {
+                  setMenuItems(merged);
+                }
+                return;
+              } catch { }
+            }
+            if (items.length > 0 || menuItems.length === 0) {
+              setMenuItems(items);
+            }
+          },
+          (err) => {
+            console.warn("Tenant products listener notice:", err);
+          }
+        );
+      };
+
+      setupItemsListener();
+
+      return () => {
+        isSubActive = false;
+        if (innerUnsub) innerUnsub();
+      };
     }
 
     if (isTeaTime) {
@@ -383,34 +532,81 @@ export const CustomerMenuPage: React.FC = () => {
   // Real-time listener for Categories
   useEffect(() => {
     if (!isTeaTime) {
-      const bId = tenantBusiness?.id || businessSlug;
-      if (!bId) {
-        setCategories([]);
-        return;
-      }
-      const catColl = collection(db, "businesses", bId, "categories");
-      const unsub = onSnapshot(
-        catColl,
-        (snap) => {
-          const cats = snap.docs
-            .map((d) => {
-              const data = d.data();
-              return {
-                id: d.id,
-                name: data.name || "Category",
-                sortOrder: data.sortOrder ?? data.displayOrder ?? 0,
-                icon: data.icon || "🍽️",
-              } as Category;
-            })
-            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-          setCategories(cats);
-        },
-        (err) => {
-          console.warn("Tenant categories listener notice:", err);
-          setCategories([]);
+      let isSubActive = true;
+      let innerUnsub: (() => void) | null = null;
+
+      const setupCatListener = async () => {
+        let bId = tenantBusiness?.id;
+        if (!bId && businessSlug) {
+          try {
+            const slugSnap = await getDoc(doc(db, "businessSlugs", businessSlug.toLowerCase().trim()));
+            if (slugSnap.exists()) {
+              bId = slugSnap.data()?.businessId;
+            }
+          } catch { }
+          if (!bId) {
+            const qSlug = query(collection(db, "businesses"), where("slug", "==", businessSlug.toLowerCase().trim()));
+            const sSlug = await getDocs(qSlug).catch(() => null);
+            if (sSlug && !sSlug.empty) {
+              bId = sSlug.docs[0].id;
+            }
+          }
+          if (!bId) bId = businessSlug;
         }
-      );
-      return () => unsub();
+
+        if (!isSubActive || !bId) return;
+
+        const catColl = collection(db, "businesses", bId, "categories");
+        innerUnsub = onSnapshot(
+          catColl,
+          (snap) => {
+            const cats = snap.docs
+              .map((d) => {
+                const data = d.data();
+                return {
+                  id: d.id,
+                  name: data.name || "Category",
+                  sortOrder: data.sortOrder ?? data.displayOrder ?? 0,
+                  icon: data.icon || "🍽️",
+                } as Category;
+              })
+              .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+            if (typeof window !== "undefined") {
+              try {
+                const localCats: any[] = JSON.parse(localStorage.getItem(`menyo_categories_${bId}`) || "[]");
+                const mergedMap = new Map<string, any>();
+                cats.forEach((c) => mergedMap.set(c.id, c));
+                localCats.forEach((lc) => {
+                  const remote = mergedMap.get(lc.id);
+                  if (!remote || (lc.updatedAtMs || 0) > ((remote as any).updatedAtMs || 0)) {
+                    mergedMap.set(lc.id, lc);
+                  }
+                });
+                const merged = Array.from(mergedMap.values()).sort(
+                  (a, b) => (a.sortOrder ?? a.displayOrder ?? 0) - (b.sortOrder ?? b.displayOrder ?? 0)
+                );
+                if (merged.length > 0 || categories.length === 0) {
+                  setCategories(merged);
+                }
+                return;
+              } catch { }
+            }
+            if (cats.length > 0 || categories.length === 0) {
+              setCategories(cats);
+            }
+          },
+          (err) => {
+            console.warn("Tenant categories listener notice:", err);
+          }
+        );
+      };
+
+      setupCatListener();
+
+      return () => {
+        isSubActive = false;
+        if (innerUnsub) innerUnsub();
+      };
     }
 
     if (isTeaTime) {
@@ -428,6 +624,18 @@ export const CustomerMenuPage: React.FC = () => {
       return () => unsub();
     }
   }, [isTeaTime, tenantBusiness?.id, businessSlug]);
+
+  // Read locally saved settings for this business if present (instant fallback)
+  const localSavedTheme = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const bKey = businessSlug ? `menyo_settings_${businessSlug}` : null;
+      const bKeyId = tenantBusiness?.id ? `menyo_settings_${tenantBusiness.id}` : null;
+      const raw = (bKey && localStorage.getItem(bKey)) || (bKeyId && localStorage.getItem(bKeyId));
+      if (raw) return JSON.parse(raw);
+    } catch { }
+    return null;
+  }, [businessSlug, tenantBusiness?.id]);
 
   // Filtered & deduplicated menu items based on category and case-insensitive search
   const filteredProducts = useMemo(() => {
@@ -466,7 +674,14 @@ export const CustomerMenuPage: React.FC = () => {
 
   const categoryTabItems = useMemo(() => {
     const iconMap = new Map<string, string>();
-    if (isTeaTime) {
+    const customAllIcon =
+      localSavedTheme?.allCategoryIcon ||
+      (tenantBusiness?.branding as any)?.allCategoryIcon ||
+      (cafeSettings as any)?.allCategoryIcon;
+
+    if (customAllIcon) {
+      iconMap.set("all", customAllIcon);
+    } else if (isTeaTime) {
       iconMap.set("all", "/assets/favicon.png");
     } else if (tenantBusiness?.branding?.logoUrl) {
       iconMap.set("all", tenantBusiness.branding.logoUrl);
@@ -514,7 +729,7 @@ export const CustomerMenuPage: React.FC = () => {
       name,
       iconUrl: iconMap.get(name.toLowerCase()),
     }));
-  }, [categories, menuItems]);
+  }, [categories, menuItems, localSavedTheme, tenantBusiness, cafeSettings, isTeaTime]);
 
   if (isTenantUnavailable) {
     return (
@@ -533,40 +748,64 @@ export const CustomerMenuPage: React.FC = () => {
   }
 
   const tenantTheme = {
-    primary: isTeaTime
-      ? "#2C190E"
-      : (tenantBusiness?.branding?.primaryColor || "#7BBBFF"),
-    accent: isTeaTime
-      ? "#E8B64F"
-      : (tenantBusiness?.branding?.accentColor || "#B8A9FF"),
-    bg: isTeaTime
-      ? "#FAF7F0"
-      : (tenantBusiness?.branding?.backgroundColor || "#F2FDFF"),
-    text: isTeaTime
-      ? "#301C10"
-      : (tenantBusiness?.branding?.textColor || "#050F2A"),
-    headerBg: isTeaTime
-      ? "#0A0A0A"
-      : (tenantBusiness?.branding?.headerBackgroundColor || tenantBusiness?.branding?.primaryColor || "#050F2A"),
-    headerText: isTeaTime
-      ? "#FFFCF6"
-      : (tenantBusiness?.branding?.headerTextColor || "#F2FDFF"),
-    logoUrl: isTeaTime
-      ? null
-      : (tenantBusiness?.branding?.logoUrl || null),
+    primary:
+      localSavedTheme?.primaryColor ||
+      tenantBusiness?.branding?.primaryColor ||
+      tenantBusiness?.primaryColor ||
+      cafeSettings?.primaryColor ||
+      (isTeaTime ? "#2C190E" : "#7BBBFF"),
+    accent:
+      localSavedTheme?.accentColor ||
+      tenantBusiness?.branding?.accentColor ||
+      tenantBusiness?.accentColor ||
+      cafeSettings?.accentColor ||
+      (isTeaTime ? "#E8B64F" : "#7BBBFF"),
+    bg:
+      localSavedTheme?.backgroundColor ||
+      tenantBusiness?.branding?.backgroundColor ||
+      tenantBusiness?.backgroundColor ||
+      cafeSettings?.backgroundColor ||
+      (isTeaTime ? "#FAF7F0" : "#F8F9FA"),
+    text:
+      localSavedTheme?.textColor ||
+      tenantBusiness?.branding?.textColor ||
+      tenantBusiness?.textColor ||
+      cafeSettings?.textColor ||
+      (isTeaTime ? "#301C10" : "#050F2A"),
+    headerBg:
+      localSavedTheme?.headerBackgroundColor ||
+      tenantBusiness?.branding?.headerBackgroundColor ||
+      tenantBusiness?.headerBackgroundColor ||
+      localSavedTheme?.primaryColor ||
+      tenantBusiness?.branding?.primaryColor ||
+      cafeSettings?.headerBackgroundColor ||
+      cafeSettings?.primaryColor ||
+      (isTeaTime ? "#0A0A0A" : "#050F2A"),
+    headerText:
+      localSavedTheme?.headerTextColor ||
+      tenantBusiness?.branding?.headerTextColor ||
+      tenantBusiness?.headerTextColor ||
+      cafeSettings?.headerTextColor ||
+      (isTeaTime ? "#FFFCF6" : "#F2FDFF"),
+    logoUrl:
+      localSavedTheme?.logoUrl ||
+      tenantBusiness?.branding?.logoUrl ||
+      tenantBusiness?.logoUrl ||
+      cafeSettings?.logoUrl ||
+      null,
   };
 
   // Active social & Google review links in real-time
   const socialLinksList = useMemo(() => {
     // 1. From real-time cafeSettings (Tea Time or custom settings)
-    if (Array.isArray(cafeSettings?.socialLinks) && cafeSettings.socialLinks.length > 0) {
+    if (Array.isArray(cafeSettings?.socialLinks)) {
       return (cafeSettings.socialLinks as SocialLinkItem[]).filter(
         (l) => l.isActive !== false && l.url && l.url.trim().length > 0
       );
     }
     // 2. From tenantBusiness if multi-tenant
     const tenantItems = (tenantBusiness as any)?.socialLinkItems || (tenantBusiness?.socialLinks as any)?.items;
-    if (Array.isArray(tenantItems) && tenantItems.length > 0) {
+    if (Array.isArray(tenantItems)) {
       return tenantItems.filter((l: SocialLinkItem) => l.isActive !== false && l.url && l.url.trim().length > 0);
     }
     // 3. Fallback: synthesize from googleReviewUrl / instagramUrl / facebookUrl / whatsapp
@@ -609,10 +848,10 @@ export const CustomerMenuPage: React.FC = () => {
   const renderSocialIcon = (platform: string) => {
     switch (platform) {
       case "google":
-        return <Star className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0" />;
+        return <Star className="w-3.5 h-3.5 shrink-0" style={{ color: tenantTheme.primary, fill: tenantTheme.primary }} />;
       case "instagram":
         return (
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-[#E8B64F] shrink-0">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 shrink-0" style={{ color: tenantTheme.primary }}>
             <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
             <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
             <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
@@ -620,13 +859,13 @@ export const CustomerMenuPage: React.FC = () => {
         );
       case "facebook":
         return (
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-[#E8B64F] shrink-0">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 shrink-0" style={{ color: tenantTheme.primary }}>
             <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
           </svg>
         );
       case "whatsapp":
         return (
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-[#E8B64F] shrink-0">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 shrink-0" style={{ color: tenantTheme.primary }}>
             <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
           </svg>
         );
@@ -654,7 +893,7 @@ export const CustomerMenuPage: React.FC = () => {
       } as React.CSSProperties}
     >
       {/* Interactive Demo Mode Top Banner */}
-      {isDemoMode && (
+      {false && isDemoMode && (
         <div className="bg-[#050F2A] text-white px-4 py-2.5 text-xs font-semibold flex items-center justify-between sticky top-0 z-50 shadow-md">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -670,7 +909,7 @@ export const CustomerMenuPage: React.FC = () => {
       )}
 
       {/* Welcome Screen (shown once per browser tab session only for Tea Time until "Explore Our Menu" is clicked) */}
-      {showWelcome && isTeaTime && (
+      {showWelcome && isTeaTime && !isDemoMode && (
         <WelcomeScreen
           onExplore={handleDismissWelcome}
           tableNumber={welcomeTableLabel}
@@ -698,6 +937,7 @@ export const CustomerMenuPage: React.FC = () => {
       <CustomerHeader
         brandName={isTeaTime ? (cafeSettings?.cafeName || "TEA TIME") : (tenantBusiness?.name || "Menu")}
         logoUrl={tenantTheme.logoUrl}
+        logoHeight={localSavedTheme?.navbarLogoHeight || (tenantBusiness?.branding as any)?.navbarLogoHeight || (cafeSettings as any)?.navbarLogoHeight}
         primaryColor={tenantTheme.headerBg}
         accentColor={tenantTheme.accent}
         tableNumber={currentTable?.number || (tableLoading ? "Loading..." : "Table ---")}
@@ -748,6 +988,25 @@ export const CustomerMenuPage: React.FC = () => {
         </div>
 
         {/* Category Tabs */}
+        {todaySpecialData && (
+          <div className="px-4 pt-3 pb-1 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setShowTodaySpecialModal(true)}
+              style={{
+                backgroundColor: tenantTheme.primary,
+                color: "#FFFFFF",
+              }}
+              className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-xs font-semibold shadow-md transition hover:opacity-95 active:scale-[0.98]"
+            >
+              <span>Today&apos;s Special</span>
+              <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] text-white">
+                {todaySpecialData.title}
+              </span>
+            </button>
+          </div>
+        )}
+
         <CategoryTabs
           categories={categoryTabItems}
           activeCategory={activeCategory}
@@ -795,45 +1054,83 @@ export const CustomerMenuPage: React.FC = () => {
       {/* Bottom Connect With Us Footer */}
       <footer className="relative z-10 max-w-md md:max-w-3xl lg:max-w-6xl xl:max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-8 pb-4">
         <div className="bg-[#FFFCF6]/95 backdrop-blur-sm rounded-2xl border border-[#DFC9AC] p-4 md:p-5 shadow-warm flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="text-center sm:text-left">
-            <span className="block text-[11px] font-extrabold uppercase tracking-[0.16em] text-[#8A6A53]">
-              Connect with us
-            </span>
-            <p className="text-xs font-semibold text-[#301C10] mt-0.5">
-              {isTeaTime
-                ? "Follow TEA TIME for daily specials & updates"
-                : `Follow ${tenantBusiness?.name || "us"} for daily specials & updates`}
-            </p>
-          </div>
+          <div className="flex flex-col items-center gap-3 py-1 w-full">
 
-          {/* Dynamic Real-time Social Media & Google Profile links */}
-          <div className="flex items-center justify-center gap-2.5 w-full flex-wrap">
-            {socialLinksList.map((link) => (
-              <a
-                key={link.id}
-                href={formatSocialUrl(link.url, link.platform)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#0A0A0A] hover:bg-[#23140B] text-[#FFFCF6] border text-xs font-extrabold shadow-warm transition active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
+            {/* Uniform Grid Apple-style Social + Reward Wallet Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 w-full max-w-md">
+              <button
+                type="button"
+                onClick={() => setShowWalletCheck((s) => !s)}
                 style={{
-                  borderColor: isTeaTime ? "#E8B64F66" : `${tenantTheme.accent}66`,
+                  backgroundColor: tenantTheme.primary,
+                  color: "#FFFFFF",
                 }}
+                className="flex flex-col items-center justify-center gap-1 rounded-xl px-2.5 py-2 h-14 text-[11px] font-medium ring-1 ring-black/10 transition hover:opacity-95 active:scale-[0.97]"
               >
-                {renderSocialIcon(link.platform)}
-                <span>{link.label}</span>
-              </a>
-            ))}
+                <Wallet className="w-3.5 h-3.5 shrink-0" style={{ color: tenantTheme.accent }} />
+                <span className="truncate max-w-full">Reward Wallet</span>
+              </button>
+              {socialLinksList.map((link) => (
+                <a
+                  key={link.id}
+                  href={formatSocialUrl(link.url, link.platform)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex flex-col items-center justify-center gap-1 rounded-xl bg-[#050F2A]/[0.05] px-2.5 py-2 h-14 text-[11px] font-medium text-[#050F2A]/85 ring-1 ring-[#050F2A]/[0.08] transition hover:bg-[#050F2A]/[0.1] hover:text-[#050F2A] active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#050F2A]/30"
+                >
+                  {renderSocialIcon(link.platform)}
+                  <span className="truncate max-w-full">{link.label}</span>
+                </a>
+              ))}
+            </div>
+
+            {showWalletCheck && (
+              <div className="w-full max-w-xs mt-1 rounded-2xl bg-[#050F2A]/[0.03] p-3 ring-1 ring-[#050F2A]/10 space-y-2">
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!walletPhone.trim()) return;
+                    setWalletLoading(true);
+                    try {
+                      const rec = await getCustomerRewardByPhone(
+                        tenantBusiness?.id || businessSlug || "teatime",
+                        walletPhone.trim()
+                      );
+                      setWalletRecord(rec);
+                      setWalletChecked(true);
+                    } finally {
+                      setWalletLoading(false);
+                    }
+                  }}
+                  className="flex gap-1.5"
+                >
+                  <input
+                    type="tel"
+                    value={walletPhone}
+                    onChange={(e) => setWalletPhone(e.target.value)}
+                    placeholder="Enter mobile number..."
+                    className="flex-1 rounded-xl border border-[#050F2A]/15 bg-white px-3 py-1.5 text-xs text-[#050F2A] focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={walletLoading}
+                    style={{ backgroundColor: tenantTheme.primary, color: "#FFFFFF" }}
+                    className="rounded-xl px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                  >
+                    {walletLoading ? "..." : "Check"}
+                  </button>
+                </form>
+                {walletChecked && (
+                  <p className="text-[11px] font-medium text-center text-[#050F2A]">
+                    {walletRecord
+                      ? `${walletRecord.name}: ${walletRecord.points} pts available`
+                      : "No reward points found for this number yet."}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Kitchen & Staff Access */}
-          <div className="pt-4 border-t border-[#DFC9AC]/30 text-center">
-            <Link
-              to={isTeaTime ? "/admin" : `/${tenantBusiness?.slug || businessSlug}/admin`}
-              className="text-[11px] text-[#8A6A53] hover:text-[#301C10] font-semibold transition"
-            >
-              Kitchen & Staff Portal &bull; Live Orders
-            </Link>
-          </div>
         </div>
       </footer>
 
@@ -859,11 +1156,75 @@ export const CustomerMenuPage: React.FC = () => {
         onClick={() => setIsCartOpen(true)}
       />
 
+      {showTodaySpecialModal && todaySpecialData && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4"
+          onClick={() => setShowTodaySpecialModal(false)}
+        >
+          <div
+            className="relative w-full max-w-sm aspect-[4/5] rounded-3xl overflow-hidden bg-[#050F2A] shadow-2xl ring-1 ring-white/20 flex flex-col justify-end"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {todaySpecialData.imageUrl && (
+              <img
+                src={todaySpecialData.imageUrl}
+                alt={todaySpecialData.title}
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
+            <button
+              type="button"
+              onClick={() => setShowTodaySpecialModal(false)}
+              className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center text-sm font-bold hover:bg-black/75"
+            >
+              ✕
+            </button>
+            <div className="relative p-5 text-white space-y-2">
+              {todaySpecialData.title && (
+                <h3 className="text-xl font-bold leading-tight">{todaySpecialData.title}</h3>
+              )}
+              {Number(todaySpecialData.priceRupees) > 0 && (
+                <p className="text-sm font-semibold text-[#7BBBFF]">
+                  Rs. {Number(todaySpecialData.priceRupees).toLocaleString()}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  const existingProd = menuItems.find((m) => m.id === todaySpecialData.productId);
+                  const itemToAdd: MenuItem = existingProd || ({
+                    id: todaySpecialData.productId || `special_${Date.now()}`,
+                    businessId: tenantBusiness?.id || businessSlug || "teatime",
+                    name: todaySpecialData.title || "Today's Special",
+                    description: "Today's Special",
+                    priceMinor: Math.round((Number(todaySpecialData.priceRupees) || 0) * 100),
+                    categoryId: "special",
+                    category: "Special",
+                    imageUrl: todaySpecialData.imageUrl || "",
+                    isAvailable: true,
+                    isPopular: true,
+                  } as MenuItem);
+                  addItem(itemToAdd, 1);
+                  setShowTodaySpecialModal(false);
+                }}
+                className="mt-2 w-full rounded-2xl bg-[#7BBBFF] py-3 text-sm font-bold text-[#050F2A] shadow-lg hover:bg-[#93C8FF] transition active:scale-[0.98]"
+              >
+                {Number(todaySpecialData.priceRupees) > 0
+                  ? `Buy • Rs. ${Number(todaySpecialData.priceRupees).toLocaleString()}`
+                  : "Buy"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Cart Review Sheet */}
       <CartDrawer
         isOpen={isCartOpen}
         onClose={() => setIsCartOpen(false)}
         businessSlug={businessSlug}
+        businessId={tenantBusiness?.id}
         isDemo={isDemoMode}
         onOrderPlaced={(orderInfo) => {
           setActiveTrackerOrderId(orderInfo.orderId);

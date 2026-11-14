@@ -52,8 +52,16 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
           >
             {/* Round Category Icon */}
             <div
+              style={
+                isActive
+                  ? {
+                      backgroundColor: "var(--tenant-primary, #E8B64F)",
+                      boxShadow: "0 0 0 2px var(--tenant-primary, #E8B64F)",
+                    }
+                  : undefined
+              }
               className={`w-[68px] h-[68px] sm:w-[74px] sm:h-[74px] md:w-[82px] md:h-[82px] lg:w-[88px] lg:h-[88px] rounded-full p-0.5 transition-all duration-200 flex items-center justify-center overflow-hidden shadow-warm ${isActive
-                ? "bg-[#E8B64F] ring-2 ring-[#E8B64F] scale-105 shadow-warm-md"
+                ? "scale-105 shadow-warm-md"
                 : "bg-[#FFFCF6] border border-[#DFC9AC] group-hover:border-[#C99532]"
                 }`}
             >
@@ -76,8 +84,17 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
 
             {/* Category Name Label */}
             <span
+              style={
+                isActive
+                  ? {
+                      backgroundColor: "var(--tenant-primary, #E8B64F)",
+                      color: "#FFFFFF",
+                      borderColor: "var(--tenant-primary, #E8B64F)",
+                    }
+                  : undefined
+              }
               className={`px-3.5 py-1 md:px-4 md:py-1.5 rounded-full text-xs md:text-[13px] font-bold whitespace-nowrap transition-all duration-200 shadow-warm ${isActive
-                ? "bg-[#E8B64F] text-[#1A0F08] border border-[#E8B64F]"
+                ? "border"
                 : "bg-[#FFFCF6] text-[#301C10] border border-[#DFC9AC] group-hover:bg-[#E8B64F]/25 group-hover:border-[#C99532]"
                 }`}
             >

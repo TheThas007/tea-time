@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import {
+  db,
   doc,
   getDoc,
   setDoc,
   serverTimestamp,
   writeBatch,
-  onSnapshot
-} from "firebase/firestore";
+} from "../../lib/supabaseStore";
+import { storage, ref, uploadBytes, getDownloadURL } from "../../lib/supabase";
 import {
   Save,
   PauseCircle,
@@ -37,11 +38,12 @@ import {
   Trash2,
   Plus,
   Phone,
-  MessageCircle
+  MessageCircle,
+  Layers
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { db } from "../../lib/firebase";
 import { CafeSettings, SocialLinkItem, SocialPlatform } from "../../types";
+import { platformApi } from "../../lib/apiClient";
 import {
   INITIAL_SETTINGS,
   INITIAL_CATEGORIES,
@@ -49,7 +51,12 @@ import {
   INITIAL_TABLES
 } from "../../data/seedData";
 import { Logo } from "../common/Logo";
-import { getQrLogoHeight } from "./PrintableTableCard";
+import {
+  getQrLogoHeight,
+  QrCornerBrackets,
+  QrActionGuide,
+  formatTableBadgeText,
+} from "./PrintableTableCard";
 
 export interface ThemePreset {
   id: string;
@@ -70,12 +77,12 @@ export const THEME_PRESETS: ThemePreset[] = [
     name: "Espresso Gold",
     description: "Classic Ceylon tea & warm coffee lounge",
     emoji: "☕",
-    headerBackgroundColor: "#2C190E",
-    headerTextColor: "#FAF7F0",
-    primaryColor: "#2C190E",
-    accentColor: "#E8B64F",
-    backgroundColor: "#FAF7F0",
-    textColor: "#301C10",
+    headerBackgroundColor: "#050F2A",
+    headerTextColor: "#F8F9FA",
+    primaryColor: "#050F2A",
+    accentColor: "#7BBBFF",
+    backgroundColor: "#F8F9FA",
+    textColor: "#050F2A",
   },
   {
     id: "modern-navy",
@@ -160,7 +167,16 @@ export const SAMPLE_LOGOS = [
 
 type SettingsSection = "branding" | "colors" | "logo" | "qr" | "social" | "store" | "system";
 
-export const CafeSettingsView: React.FC = () => {
+interface CafeSettingsViewProps {
+  businessId?: string;
+  businessSlug?: string;
+}
+
+export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
+  businessId,
+  businessSlug,
+}) => {
+  const activeBizId = businessId || (typeof window !== "undefined" ? localStorage.getItem("menyo_auth_businessId") : null) || "teatime";
   const [settings, setSettings] = useState<CafeSettings>(INITIAL_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -175,14 +191,47 @@ export const CafeSettingsView: React.FC = () => {
   // Live preview mode in the right mockup column
   const [previewMode, setPreviewMode] = useState<"mobile" | "qr">("mobile");
 
-  // Fetch settings from Firestore
+  // Fetch settings from Firestore/Business doc
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const docRef = doc(db, "settings", "cafe");
-        const snap = await getDoc(docRef);
-        if (snap.exists()) {
-          setSettings({ ...INITIAL_SETTINGS, ...snap.data() } as CafeSettings);
+        let loaded = false;
+        // 1. Try business doc first if specific business
+        if (activeBizId && activeBizId !== "teatime") {
+          const bizSnap = await getDoc(doc(db, "businesses", activeBizId));
+          if (bizSnap.exists()) {
+            const b = bizSnap.data();
+            const br = b.branding || {};
+            setSettings({
+              ...INITIAL_SETTINGS,
+              cafeName: b.name || INITIAL_SETTINGS.cafeName,
+              tagline: b.tagline || INITIAL_SETTINGS.tagline,
+              phone: b.phone || INITIAL_SETTINGS.phone,
+              whatsapp: b.whatsapp || INITIAL_SETTINGS.whatsapp,
+              address: b.address || INITIAL_SETTINGS.address,
+              openingHours: b.openingHours || INITIAL_SETTINGS.openingHours,
+              currencySymbol: b.currencySymbol || INITIAL_SETTINGS.currencySymbol,
+              isOrderingPaused: Boolean(b.isOrderingPaused),
+              pauseMessage: b.pauseMessage || INITIAL_SETTINGS.pauseMessage,
+              socialLinks: b.socialLinks || INITIAL_SETTINGS.socialLinks,
+              logoUrl: br.logoUrl || b.logoUrl || null,
+              primaryColor: br.primaryColor || b.primaryColor || INITIAL_SETTINGS.primaryColor,
+              accentColor: br.accentColor || b.accentColor || INITIAL_SETTINGS.accentColor,
+              backgroundColor: br.backgroundColor || b.backgroundColor || INITIAL_SETTINGS.backgroundColor,
+              textColor: br.textColor || b.textColor || INITIAL_SETTINGS.textColor,
+              headerBackgroundColor: br.headerBackgroundColor || b.headerBackgroundColor || br.primaryColor || INITIAL_SETTINGS.headerBackgroundColor,
+              headerTextColor: br.headerTextColor || b.headerTextColor || INITIAL_SETTINGS.headerTextColor,
+            } as CafeSettings);
+            loaded = true;
+          }
+        }
+
+        if (!loaded) {
+          const docRef = doc(db, "settings", "cafe");
+          const snap = await getDoc(docRef);
+          if (snap.exists()) {
+            setSettings({ ...INITIAL_SETTINGS, ...snap.data() } as CafeSettings);
+          }
         }
       } catch (err) {
         console.warn("Settings fetch fallback:", err);
@@ -191,7 +240,7 @@ export const CafeSettingsView: React.FC = () => {
       }
     };
     fetchSettings();
-  }, []);
+  }, [activeBizId]);
 
   const handleApplyPreset = (preset: ThemePreset) => {
     setSettings((prev) => ({
@@ -205,25 +254,81 @@ export const CafeSettingsView: React.FC = () => {
     }));
   };
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-      alert("Logo image size must be under 2MB.");
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Logo image size must be under 5MB.");
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        setSettings((prev) => ({
-          ...prev,
-          logoUrl: reader.result as string,
-        }));
-      }
-    };
-    reader.readAsDataURL(file);
+    setUploadingLogo(true);
+    try {
+      const ext = file.name.split(".").pop() || "png";
+      const fileName = `logos/teatime/${Date.now()}_logo.${ext}`;
+      const storageRef = ref(storage, fileName);
+      await uploadBytes(storageRef, file);
+      const downloadUrl = await getDownloadURL(storageRef);
+      setSettings((prev) => ({
+        ...prev,
+        logoUrl: downloadUrl,
+      }));
+    } catch (err: any) {
+      console.warn("Direct upload fallback to base64:", err);
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          setSettings((prev) => ({
+            ...prev,
+            logoUrl: reader.result as string,
+          }));
+        }
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const [uploadingAllIcon, setUploadingAllIcon] = useState(false);
+  const handleAllCategoryIconUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Icon image size must be under 5MB.");
+      return;
+    }
+
+    setUploadingAllIcon(true);
+    try {
+      const ext = file.name.split(".").pop() || "png";
+      const fileName = `categories/${activeBizId || "teatime"}/${Date.now()}_all_icon.${ext}`;
+      const storageRef = ref(storage, fileName);
+      await uploadBytes(storageRef, file);
+      const downloadUrl = await getDownloadURL(storageRef);
+      setSettings((prev) => ({
+        ...prev,
+        allCategoryIcon: downloadUrl,
+      }));
+    } catch (err: any) {
+      console.warn("Direct upload fallback to base64:", err);
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          setSettings((prev) => ({
+            ...prev,
+            allCategoryIcon: reader.result as string,
+          }));
+        }
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setUploadingAllIcon(false);
+    }
   };
 
   // Current active social and Google links
@@ -298,20 +403,58 @@ export const CafeSettingsView: React.FC = () => {
       const igLink = currentSocialLinks.find((l) => l.platform === "instagram" && l.isActive);
       const fbLink = currentSocialLinks.find((l) => l.platform === "facebook" && l.isActive);
 
-      // 1. Save to primary cafe settings document
-      const docRef = doc(db, "settings", "cafe");
-      await setDoc(docRef, {
-        ...settings,
-        socialLinks: currentSocialLinks,
-        googleReviewUrl: gLink?.url || settings.googleReviewUrl || "",
-        instagramUrl: igLink?.url || settings.instagramUrl || "",
-        facebookUrl: fbLink?.url || settings.facebookUrl || "",
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
+      const activeBizId = typeof window !== "undefined"
+        ? localStorage.getItem("menyo_auth_businessId") || "teatime"
+        : "teatime";
 
-      // 2. Also sync to businesses/teatime so customer menu reads it seamlessly
+      const targetId = activeBizId || businessSlug || "teatime";
+
+      // 1. Primary Save via platformApi RPC (Bypasses table RLS restrictions safely using server-side business scope)
       try {
-        const bizRef = doc(db, "businesses", "teatime");
+        await platformApi.ownerUpdateSettings({
+          businessId: targetId,
+          name: settings.cafeName,
+          tagline: settings.tagline,
+          phone: settings.phone,
+          whatsapp: settings.whatsapp,
+          address: settings.address,
+          openingHours: settings.openingHours,
+          isOrderingPaused: settings.isOrderingPaused,
+          pauseMessage: settings.pauseMessage,
+          logoUrl: settings.logoUrl || null,
+          primaryColor: settings.primaryColor || "#050F2A",
+          accentColor: settings.accentColor || "#7BBBFF",
+          backgroundColor: settings.backgroundColor || "#F8F9FA",
+          textColor: settings.textColor || "#050F2A",
+          headerBackgroundColor: settings.headerBackgroundColor || settings.primaryColor || "#050F2A",
+          headerTextColor: settings.headerTextColor || "#F8F9FA",
+          googleReviewUrl: gLink?.url || settings.googleReviewUrl || "",
+          instagramUrl: igLink?.url || settings.instagramUrl || "",
+          facebookUrl: fbLink?.url || settings.facebookUrl || "",
+          socialLinks: currentSocialLinks,
+        });
+      } catch (rpcErr) {
+        console.warn("RPC update settings fallback:", rpcErr);
+      }
+
+      // 2. Local/Client fallback write to settings doc (if permitted)
+      try {
+        const docRef = doc(db, "settings", "cafe");
+        await setDoc(docRef, {
+          ...settings,
+          socialLinks: currentSocialLinks,
+          googleReviewUrl: gLink?.url || settings.googleReviewUrl || "",
+          instagramUrl: igLink?.url || settings.instagramUrl || "",
+          facebookUrl: fbLink?.url || settings.facebookUrl || "",
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      } catch (docErr) {
+        console.warn("Direct settings/cafe write prevented by RLS (Handled safely via business update):", docErr);
+      }
+
+      // 3. Sync to business doc in Firestore/Supabase
+      try {
+        const bizRef = doc(db, "businesses", targetId);
         await setDoc(bizRef, {
           name: settings.cafeName,
           tagline: settings.tagline,
@@ -329,24 +472,48 @@ export const CafeSettingsView: React.FC = () => {
           facebookUrl: fbLink?.url || settings.facebookUrl || "",
           branding: {
             logoUrl: settings.logoUrl || null,
-            primaryColor: settings.primaryColor || "#2C190E",
-            accentColor: settings.accentColor || "#E8B64F",
-            backgroundColor: settings.backgroundColor || "#FAF7F0",
-            textColor: settings.textColor || "#301C10",
-            headerBackgroundColor: settings.headerBackgroundColor || settings.primaryColor || "#2C190E",
-            headerTextColor: settings.headerTextColor || "#FAF7F0",
+            primaryColor: settings.primaryColor || "#050F2A",
+            accentColor: settings.accentColor || "#7BBBFF",
+            backgroundColor: settings.backgroundColor || "#F8F9FA",
+            textColor: settings.textColor || "#050F2A",
+            headerBackgroundColor: settings.headerBackgroundColor || settings.primaryColor || "#050F2A",
+            headerTextColor: settings.headerTextColor || "#F8F9FA",
           },
           updatedAt: serverTimestamp(),
         }, { merge: true });
+
+        // If this business has a slug, also sync if different
+        if (businessSlug && businessSlug !== targetId) {
+          const slugRef = doc(db, "businesses", businessSlug);
+          await setDoc(slugRef, {
+            name: settings.cafeName,
+            branding: {
+              logoUrl: settings.logoUrl || null,
+              primaryColor: settings.primaryColor || "#050F2A",
+              accentColor: settings.accentColor || "#7BBBFF",
+              backgroundColor: settings.backgroundColor || "#F8F9FA",
+              textColor: settings.textColor || "#050F2A",
+              headerBackgroundColor: settings.headerBackgroundColor || settings.primaryColor || "#050F2A",
+              headerTextColor: settings.headerTextColor || "#F8F9FA",
+            },
+            updatedAt: serverTimestamp(),
+          }, { merge: true }).catch(() => {});
+        }
       } catch (bizErr) {
-        console.warn("Could not sync to businesses/teatime:", bizErr);
+        console.warn("Could not sync to businesses:", bizErr);
+      }
+
+      // Also persist to localStorage for instant UI persistence on the current browser
+      localStorage.setItem(`menyo_settings_${targetId}`, JSON.stringify(settings));
+      if (businessSlug) {
+        localStorage.setItem(`menyo_settings_${businessSlug}`, JSON.stringify(settings));
       }
 
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3500);
     } catch (err: any) {
       console.error("Save settings error:", err);
-      setErrorMessage("Failed to save settings: " + (err?.message || "Please check Firestore connection."));
+      setErrorMessage("Failed to save settings: " + (err?.message || "Please check connection."));
     } finally {
       setSaving(false);
     }
@@ -408,29 +575,24 @@ export const CafeSettingsView: React.FC = () => {
 
   // Resolved dynamic colors for preview
   const previewColors = {
-    headerBg: settings.headerBackgroundColor || settings.primaryColor || "#2C190E",
-    headerText: settings.headerTextColor || "#FAF7F0",
-    primary: settings.primaryColor || "#2C190E",
-    accent: settings.accentColor || "#E8B64F",
-    bg: settings.backgroundColor || "#FAF7F0",
-    text: settings.textColor || "#301C10",
+    headerBg: settings.headerBackgroundColor || settings.primaryColor || "#050F2A",
+    headerText: settings.headerTextColor || "#F8F9FA",
+    primary: settings.primaryColor || "#050F2A",
+    accent: settings.accentColor || "#7BBBFF",
+    bg: settings.backgroundColor || "#F8F9FA",
+    text: settings.textColor || "#050F2A",
   };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       {/* View Header with Save Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#DFC9AC] pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="p-1.5 rounded-lg bg-[#E8B64F]/20 text-[#2C190E]">
-              <Palette className="w-5 h-5 text-[#E8B64F]" />
-            </span>
-            <h1 className="text-2xl font-black text-[#301C10] tracking-tight">
-              Restaurant Branding & Café Settings
-            </h1>
-          </div>
-          <p className="text-xs text-[#8A6A53] font-medium mt-1">
-            Customize your customer menu theme, navbar colors, brand logo, table QR cards, and operating hours.
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#050F2A] tracking-tight">
+            Settings & Branding
+          </h1>
+          <p className="text-xs sm:text-sm text-[#64748B] font-normal mt-0.5">
+            Configure your digital menu appearance, brand colors, QR codes, and restaurant profile.
           </p>
         </div>
 
@@ -439,17 +601,17 @@ export const CafeSettingsView: React.FC = () => {
             type="button"
             onClick={() => handleSaveSettings()}
             disabled={saving}
-            className="bg-[#E8B64F] hover:bg-[#d9a53d] text-[#1A0F08] font-black px-5 py-2.5 rounded-xl text-xs shadow-warm flex items-center gap-2 transition active:scale-95 focus:outline-none focus:ring-2 focus:ring-[#C99532]"
+            className="bg-[#050F2A] hover:bg-[#050F2A]/90 text-white font-bold px-5 py-2.5 rounded-full text-xs shadow-sm flex items-center gap-2 transition active:scale-95 focus:outline-none cursor-pointer"
           >
             {saving ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin text-[#1A0F08]" />
-                <span>Saving Changes...</span>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                <span>Saving...</span>
               </>
             ) : (
               <>
-                <Save className="w-4 h-4 text-[#1A0F08]" />
-                <span>Save All Changes</span>
+                <Check className="w-3.5 h-3.5 text-[#7BBBFF] stroke-[3]" />
+                <span>Save Changes</span>
               </>
             )}
           </button>
@@ -483,29 +645,28 @@ export const CafeSettingsView: React.FC = () => {
         </div>
       )}
 
-      {/* Quick Navigation Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-[#DFC9AC]/60">
+      {/* Quick Navigation Tabs - Apple Minimalist Segmented Pill Control */}
+      <div className="bg-[#EAEAEA]/80 p-1 rounded-2xl flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full">
         {[
-          { id: "branding", label: "Theme Templates", icon: Sparkles },
-          { id: "colors", label: "App & Navbar Colors", icon: Palette },
-          { id: "logo", label: "Logo & Icon", icon: ImageIcon },
-          { id: "qr", label: "Table QR Cards", icon: QrCode },
-          { id: "social", label: "Social & Google Profile", icon: Globe },
-          { id: "store", label: "Store & Hours", icon: Store },
-          { id: "system", label: "Data Utilities", icon: Database },
+          { id: "branding", label: "Themes" },
+          { id: "colors", label: "Colors" },
+          { id: "logo", label: "Brand Logo" },
+          { id: "qr", label: "Table QR Card" },
+          { id: "social", label: "Social Links" },
+          { id: "store", label: "Store & Hours" },
+          { id: "system", label: "Data Utilities" },
         ].map((tab) => {
-          const Icon = tab.icon;
           const isActive = activeSection === tab.id;
           return (
             <button
               key={tab.id}
               onClick={() => setActiveSection(tab.id as SettingsSection)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition whitespace-nowrap ${isActive
-                  ? "bg-[#2C190E] text-[#FFFCF6] shadow-warm"
-                  : "bg-[#FFFCF6] text-[#8A6A53] hover:text-[#301C10] hover:bg-[#DFC9AC]/30 border border-[#DFC9AC]"
-                }`}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold tracking-tight transition-all duration-200 whitespace-nowrap cursor-pointer ${
+                isActive
+                  ? "bg-white text-[#050F2A] shadow-sm font-bold scale-[1.02]"
+                  : "text-[#64748B] hover:text-[#050F2A] hover:bg-white/40"
+              }`}
             >
-              <Icon className={`w-3.5 h-3.5 ${isActive ? "text-[#E8B64F]" : "text-[#8A6A53]"}`} />
               <span>{tab.label}</span>
             </button>
           );
@@ -519,20 +680,19 @@ export const CafeSettingsView: React.FC = () => {
 
           {/* SECTION 1: THEME TEMPLATES */}
           {(activeSection === "branding" || activeSection === "colors") && (
-            <div className="bg-[#FFFCF6] rounded-2xl border border-[#DFC9AC] p-5 shadow-warm space-y-4">
-              <div className="flex items-center justify-between border-b border-[#DFC9AC]/70 pb-3">
+            <div className="bg-[#FFFFFF] rounded-2xl border border-[#E2E8F0] p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-[#E2E8F0]/70 pb-3">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-[#E8B64F]" />
-                  <h3 className="font-extrabold text-sm text-[#301C10]">
+                  <h3 className="font-extrabold text-sm text-[#050F2A]">
                     1-Click Theme Templates
                   </h3>
                 </div>
-                <span className="text-[11px] text-[#8A6A53] font-semibold">
+                <span className="text-[11px] text-[#64748B] font-semibold">
                   Click to instant-apply
                 </span>
               </div>
 
-              <p className="text-xs text-[#8A6A53] leading-relaxed">
+              <p className="text-xs text-[#64748B] leading-relaxed">
                 Choose a pre-designed harmonious color palette tailored for dining, beverage, and café brands.
                 You can fine-tune any individual color below.
               </p>
@@ -550,25 +710,25 @@ export const CafeSettingsView: React.FC = () => {
                       type="button"
                       onClick={() => handleApplyPreset(preset)}
                       className={`text-left p-3.5 rounded-xl border transition-all flex flex-col justify-between gap-3 relative ${isCurrent
-                          ? "border-[#E8B64F] bg-[#FAF7F0] ring-2 ring-[#E8B64F]/40 shadow-warm"
-                          : "border-[#DFC9AC] bg-white hover:border-[#8A6A53] hover:shadow-sm"
+                          ? "border-[#7BBBFF] bg-[#F8F9FA] ring-2 ring-[#7BBBFF]/40 shadow-sm"
+                          : "border-[#E2E8F0] bg-white hover:border-[#64748B] hover:shadow-sm"
                         }`}
                     >
                       <div className="flex items-start justify-between w-full">
                         <div className="flex items-center gap-2">
                           <span className="text-xl">{preset.emoji}</span>
                           <div>
-                            <span className="font-black text-xs text-[#301C10] block">
+                            <span className="font-black text-xs text-[#050F2A] block">
                               {preset.name}
                             </span>
-                            <span className="text-[10px] text-[#8A6A53] line-clamp-1">
+                            <span className="text-[10px] text-[#64748B] line-clamp-1">
                               {preset.description}
                             </span>
                           </div>
                         </div>
 
                         {isCurrent && (
-                          <span className="w-5 h-5 rounded-full bg-[#E8B64F] text-[#1A0F08] flex items-center justify-center shrink-0">
+                          <span className="w-5 h-5 rounded-full bg-[#7BBBFF] text-[#1A0F08] flex items-center justify-center shrink-0">
                             <Check className="w-3 h-3 stroke-[3]" />
                           </span>
                         )}
@@ -596,7 +756,7 @@ export const CafeSettingsView: React.FC = () => {
                           style={{ backgroundColor: preset.textColor }}
                           title={`Text: ${preset.textColor}`}
                         />
-                        <span className="text-[10px] font-mono text-[#8A6A53] ml-auto">
+                        <span className="text-[10px] font-mono text-[#64748B] ml-auto">
                           {preset.accentColor}
                         </span>
                       </div>
@@ -609,18 +769,18 @@ export const CafeSettingsView: React.FC = () => {
 
           {/* SECTION 2: 6 APP & NAVBAR COLOR PICKERS */}
           {(activeSection === "colors" || activeSection === "branding") && (
-            <div className="bg-[#FFFCF6] rounded-2xl border border-[#DFC9AC] p-5 shadow-warm space-y-4">
-              <div className="flex items-center justify-between border-b border-[#DFC9AC]/70 pb-3">
+            <div className="bg-[#FFFFFF] rounded-2xl border border-[#E2E8F0] p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-[#E2E8F0]/70 pb-3">
                 <div className="flex items-center gap-2">
-                  <Palette className="w-4 h-4 text-[#E8B64F]" />
-                  <h3 className="font-extrabold text-sm text-[#301C10]">
+                  <Palette className="w-4 h-4 text-[#7BBBFF]" />
+                  <h3 className="font-extrabold text-sm text-[#050F2A]">
                     Individual Color Customization (6 Palette Controls)
                   </h3>
                 </div>
                 <button
                   type="button"
                   onClick={() => handleApplyPreset(THEME_PRESETS[0])}
-                  className="text-[11px] text-[#8A6A53] hover:text-[#301C10] flex items-center gap-1 font-semibold"
+                  className="text-[11px] text-[#64748B] hover:text-[#050F2A] flex items-center gap-1 font-semibold"
                 >
                   <RotateCcw className="w-3 h-3" />
                   <span>Reset Default</span>
@@ -629,169 +789,169 @@ export const CafeSettingsView: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* 1. Navbar / Header Background */}
-                <div className="p-3.5 bg-white border border-[#DFC9AC] rounded-xl space-y-2 shadow-xs">
+                <div className="p-3.5 bg-white border border-[#E2E8F0] rounded-xl space-y-2 shadow-xs">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-[#301C10]">
+                    <label className="text-xs font-bold text-[#050F2A]">
                       Navbar Background
                     </label>
-                    <span className="text-[10px] text-[#8A6A53]">Top Header</span>
+                    <span className="text-[10px] text-[#64748B]">Top Header</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
-                      value={settings.headerBackgroundColor || "#2C190E"}
+                      value={settings.headerBackgroundColor || "#050F2A"}
                       onChange={(e) =>
                         setSettings({ ...settings, headerBackgroundColor: e.target.value })
                       }
-                      className="w-9 h-9 rounded-lg border border-[#DFC9AC] cursor-pointer p-0.5 bg-white shrink-0"
+                      className="w-9 h-9 rounded-lg border border-[#E2E8F0] cursor-pointer p-0.5 bg-white shrink-0"
                     />
                     <input
                       type="text"
-                      value={settings.headerBackgroundColor || "#2C190E"}
+                      value={settings.headerBackgroundColor || "#050F2A"}
                       onChange={(e) =>
                         setSettings({ ...settings, headerBackgroundColor: e.target.value })
                       }
-                      className="flex-1 px-3 py-1.5 rounded-lg border border-[#DFC9AC] bg-[#FAF7F0] font-mono text-xs text-[#301C10] uppercase focus:border-[#C99532] outline-none"
+                      className="flex-1 px-3 py-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8F9FA] font-mono text-xs text-[#050F2A] uppercase focus:border-[#7BBBFF] outline-none"
                     />
                   </div>
                 </div>
 
                 {/* 2. Navbar / Header Text Color */}
-                <div className="p-3.5 bg-white border border-[#DFC9AC] rounded-xl space-y-2 shadow-xs">
+                <div className="p-3.5 bg-white border border-[#E2E8F0] rounded-xl space-y-2 shadow-xs">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-[#301C10]">
+                    <label className="text-xs font-bold text-[#050F2A]">
                       Navbar Text & Icons
                     </label>
-                    <span className="text-[10px] text-[#8A6A53]">Header Title</span>
+                    <span className="text-[10px] text-[#64748B]">Header Title</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
-                      value={settings.headerTextColor || "#FAF7F0"}
+                      value={settings.headerTextColor || "#F8F9FA"}
                       onChange={(e) =>
                         setSettings({ ...settings, headerTextColor: e.target.value })
                       }
-                      className="w-9 h-9 rounded-lg border border-[#DFC9AC] cursor-pointer p-0.5 bg-white shrink-0"
+                      className="w-9 h-9 rounded-lg border border-[#E2E8F0] cursor-pointer p-0.5 bg-white shrink-0"
                     />
                     <input
                       type="text"
-                      value={settings.headerTextColor || "#FAF7F0"}
+                      value={settings.headerTextColor || "#F8F9FA"}
                       onChange={(e) =>
                         setSettings({ ...settings, headerTextColor: e.target.value })
                       }
-                      className="flex-1 px-3 py-1.5 rounded-lg border border-[#DFC9AC] bg-[#FAF7F0] font-mono text-xs text-[#301C10] uppercase focus:border-[#C99532] outline-none"
+                      className="flex-1 px-3 py-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8F9FA] font-mono text-xs text-[#050F2A] uppercase focus:border-[#7BBBFF] outline-none"
                     />
                   </div>
                 </div>
 
                 {/* 3. Primary Brand Color */}
-                <div className="p-3.5 bg-white border border-[#DFC9AC] rounded-xl space-y-2 shadow-xs">
+                <div className="p-3.5 bg-white border border-[#E2E8F0] rounded-xl space-y-2 shadow-xs">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-[#301C10]">
+                    <label className="text-xs font-bold text-[#050F2A]">
                       Primary Brand Color
                     </label>
-                    <span className="text-[10px] text-[#8A6A53]">Cart & Buttons</span>
+                    <span className="text-[10px] text-[#64748B]">Cart & Buttons</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
-                      value={settings.primaryColor || "#2C190E"}
+                      value={settings.primaryColor || "#050F2A"}
                       onChange={(e) =>
                         setSettings({ ...settings, primaryColor: e.target.value })
                       }
-                      className="w-9 h-9 rounded-lg border border-[#DFC9AC] cursor-pointer p-0.5 bg-white shrink-0"
+                      className="w-9 h-9 rounded-lg border border-[#E2E8F0] cursor-pointer p-0.5 bg-white shrink-0"
                     />
                     <input
                       type="text"
-                      value={settings.primaryColor || "#2C190E"}
+                      value={settings.primaryColor || "#050F2A"}
                       onChange={(e) =>
                         setSettings({ ...settings, primaryColor: e.target.value })
                       }
-                      className="flex-1 px-3 py-1.5 rounded-lg border border-[#DFC9AC] bg-[#FAF7F0] font-mono text-xs text-[#301C10] uppercase focus:border-[#C99532] outline-none"
+                      className="flex-1 px-3 py-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8F9FA] font-mono text-xs text-[#050F2A] uppercase focus:border-[#7BBBFF] outline-none"
                     />
                   </div>
                 </div>
 
                 {/* 4. Accent Highlight Color */}
-                <div className="p-3.5 bg-white border border-[#DFC9AC] rounded-xl space-y-2 shadow-xs">
+                <div className="p-3.5 bg-white border border-[#E2E8F0] rounded-xl space-y-2 shadow-xs">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-[#301C10]">
+                    <label className="text-xs font-bold text-[#050F2A]">
                       Accent Highlight Color
                     </label>
-                    <span className="text-[10px] text-[#8A6A53]">Tabs & Badges</span>
+                    <span className="text-[10px] text-[#64748B]">Tabs & Badges</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
-                      value={settings.accentColor || "#E8B64F"}
+                      value={settings.accentColor || "#7BBBFF"}
                       onChange={(e) =>
                         setSettings({ ...settings, accentColor: e.target.value })
                       }
-                      className="w-9 h-9 rounded-lg border border-[#DFC9AC] cursor-pointer p-0.5 bg-white shrink-0"
+                      className="w-9 h-9 rounded-lg border border-[#E2E8F0] cursor-pointer p-0.5 bg-white shrink-0"
                     />
                     <input
                       type="text"
-                      value={settings.accentColor || "#E8B64F"}
+                      value={settings.accentColor || "#7BBBFF"}
                       onChange={(e) =>
                         setSettings({ ...settings, accentColor: e.target.value })
                       }
-                      className="flex-1 px-3 py-1.5 rounded-lg border border-[#DFC9AC] bg-[#FAF7F0] font-mono text-xs text-[#301C10] uppercase focus:border-[#C99532] outline-none"
+                      className="flex-1 px-3 py-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8F9FA] font-mono text-xs text-[#050F2A] uppercase focus:border-[#7BBBFF] outline-none"
                     />
                   </div>
                 </div>
 
                 {/* 5. Page Background Color */}
-                <div className="p-3.5 bg-white border border-[#DFC9AC] rounded-xl space-y-2 shadow-xs">
+                <div className="p-3.5 bg-white border border-[#E2E8F0] rounded-xl space-y-2 shadow-xs">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-[#301C10]">
+                    <label className="text-xs font-bold text-[#050F2A]">
                       App Background Color
                     </label>
-                    <span className="text-[10px] text-[#8A6A53]">Menu Page Bg</span>
+                    <span className="text-[10px] text-[#64748B]">Menu Page Bg</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
-                      value={settings.backgroundColor || "#FAF7F0"}
+                      value={settings.backgroundColor || "#F8F9FA"}
                       onChange={(e) =>
                         setSettings({ ...settings, backgroundColor: e.target.value })
                       }
-                      className="w-9 h-9 rounded-lg border border-[#DFC9AC] cursor-pointer p-0.5 bg-white shrink-0"
+                      className="w-9 h-9 rounded-lg border border-[#E2E8F0] cursor-pointer p-0.5 bg-white shrink-0"
                     />
                     <input
                       type="text"
-                      value={settings.backgroundColor || "#FAF7F0"}
+                      value={settings.backgroundColor || "#F8F9FA"}
                       onChange={(e) =>
                         setSettings({ ...settings, backgroundColor: e.target.value })
                       }
-                      className="flex-1 px-3 py-1.5 rounded-lg border border-[#DFC9AC] bg-[#FAF7F0] font-mono text-xs text-[#301C10] uppercase focus:border-[#C99532] outline-none"
+                      className="flex-1 px-3 py-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8F9FA] font-mono text-xs text-[#050F2A] uppercase focus:border-[#7BBBFF] outline-none"
                     />
                   </div>
                 </div>
 
                 {/* 6. Body & Heading Text Color */}
-                <div className="p-3.5 bg-white border border-[#DFC9AC] rounded-xl space-y-2 shadow-xs">
+                <div className="p-3.5 bg-white border border-[#E2E8F0] rounded-xl space-y-2 shadow-xs">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-[#301C10]">
+                    <label className="text-xs font-bold text-[#050F2A]">
                       Body & Title Text Color
                     </label>
-                    <span className="text-[10px] text-[#8A6A53]">Headings & Desc</span>
+                    <span className="text-[10px] text-[#64748B]">Headings & Desc</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
-                      value={settings.textColor || "#301C10"}
+                      value={settings.textColor || "#050F2A"}
                       onChange={(e) =>
                         setSettings({ ...settings, textColor: e.target.value })
                       }
-                      className="w-9 h-9 rounded-lg border border-[#DFC9AC] cursor-pointer p-0.5 bg-white shrink-0"
+                      className="w-9 h-9 rounded-lg border border-[#E2E8F0] cursor-pointer p-0.5 bg-white shrink-0"
                     />
                     <input
                       type="text"
-                      value={settings.textColor || "#301C10"}
+                      value={settings.textColor || "#050F2A"}
                       onChange={(e) =>
                         setSettings({ ...settings, textColor: e.target.value })
                       }
-                      className="flex-1 px-3 py-1.5 rounded-lg border border-[#DFC9AC] bg-[#FAF7F0] font-mono text-xs text-[#301C10] uppercase focus:border-[#C99532] outline-none"
+                      className="flex-1 px-3 py-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8F9FA] font-mono text-xs text-[#050F2A] uppercase focus:border-[#7BBBFF] outline-none"
                     />
                   </div>
                 </div>
@@ -801,11 +961,11 @@ export const CafeSettingsView: React.FC = () => {
 
           {/* SECTION 3: LOGO & ICON */}
           {(activeSection === "logo" || activeSection === "branding") && (
-            <div className="bg-[#FFFCF6] rounded-2xl border border-[#DFC9AC] p-5 shadow-warm space-y-4">
-              <div className="flex items-center justify-between border-b border-[#DFC9AC]/70 pb-3">
+            <div className="bg-[#FFFFFF] rounded-2xl border border-[#E2E8F0] p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-[#E2E8F0]/70 pb-3">
                 <div className="flex items-center gap-2">
-                  <ImageIcon className="w-4 h-4 text-[#E8B64F]" />
-                  <h3 className="font-extrabold text-sm text-[#301C10]">
+                  <ImageIcon className="w-4 h-4 text-[#7BBBFF]" />
+                  <h3 className="font-extrabold text-sm text-[#050F2A]">
                     Restaurant Logo & Branding
                   </h3>
                 </div>
@@ -821,7 +981,7 @@ export const CafeSettingsView: React.FC = () => {
               </div>
 
               <div className="space-y-3">
-                <label className="block text-xs font-bold text-[#301C10]">
+                <label className="block text-xs font-bold text-[#050F2A]">
                   Logo Image URL
                 </label>
                 <div className="flex gap-2">
@@ -830,10 +990,10 @@ export const CafeSettingsView: React.FC = () => {
                     value={settings.logoUrl || ""}
                     onChange={(e) => setSettings({ ...settings, logoUrl: e.target.value })}
                     placeholder="https://... or /assets/logo.png"
-                    className="flex-1 text-xs px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] placeholder-[#8A6A53] focus:border-[#C99532] outline-none"
+                    className="flex-1 text-xs px-3 py-2 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-[#050F2A] placeholder-[#64748B] focus:border-[#7BBBFF] outline-none"
                   />
-                  <label className="bg-[#2C190E] hover:bg-[#4A290F] text-[#FFFCF6] px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0 transition active:scale-95 shadow-warm">
-                    <Upload className="w-3.5 h-3.5 text-[#E8B64F]" />
+                  <label className="bg-[#050F2A] hover:bg-[#050F2A] text-[#FFFFFF] px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0 transition active:scale-95 shadow-sm">
+                    <Upload className="w-3.5 h-3.5 text-[#7BBBFF]" />
                     <span>Upload File</span>
                     <input
                       type="file"
@@ -843,13 +1003,60 @@ export const CafeSettingsView: React.FC = () => {
                     />
                   </label>
                 </div>
-                <p className="text-[11px] text-[#8A6A53]">
+                <p className="text-[11px] text-[#64748B]">
                   PNG or SVG with transparent background works best. Max file size: 2MB.
                 </p>
 
+                {/* Navbar Logo Size (Admin Requested Option) */}
+                <div className="p-3 bg-[#F8F9FA] rounded-xl border border-[#E2E8F0] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-[#050F2A] flex items-center gap-1.5">
+                      <ImageIcon className="w-3.5 h-3.5 text-[#7BBBFF]" />
+                      <span>Menu Navbar Logo Size</span>
+                    </label>
+                    <span className="text-[11px] font-mono font-bold text-[#050F2A] bg-white px-2 py-0.5 rounded border border-[#E2E8F0]">
+                      {settings.navbarLogoHeight || 48}px
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-[#64748B] font-bold">32px</span>
+                    <input
+                      type="range"
+                      min="32"
+                      max="80"
+                      step="2"
+                      value={Number(settings.navbarLogoHeight) || 48}
+                      onChange={(e) => setSettings({ ...settings, navbarLogoHeight: Number(e.target.value) })}
+                      className="flex-1 h-2 bg-[#E2E8F0] rounded-lg appearance-none cursor-pointer accent-[#050F2A]"
+                    />
+                    <span className="text-[10px] text-[#64748B] font-bold">80px</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { label: "Standard (44px)", val: 44 },
+                      { label: "Medium (52px)", val: 52 },
+                      { label: "Large (64px)", val: 64 },
+                      { label: "Extra Big (76px)", val: 76 },
+                    ].map((p) => (
+                      <button
+                        key={p.val}
+                        type="button"
+                        onClick={() => setSettings({ ...settings, navbarLogoHeight: p.val })}
+                        className={`text-[10px] px-2 py-1 rounded-lg border font-bold transition ${
+                          Number(settings.navbarLogoHeight || 48) === p.val
+                            ? "bg-[#050F2A] text-white border-[#050F2A]"
+                            : "bg-white text-[#050F2A] border-[#E2E8F0] hover:bg-gray-100"
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {/* Quick Sample Logos */}
                 <div className="pt-2">
-                  <span className="text-[11px] font-bold text-[#301C10] block mb-2">
+                  <span className="text-[11px] font-bold text-[#050F2A] block mb-2">
                     Quick Sample Logos:
                   </span>
                   <div className="flex flex-wrap gap-2">
@@ -858,7 +1065,7 @@ export const CafeSettingsView: React.FC = () => {
                         key={idx}
                         type="button"
                         onClick={() => setSettings({ ...settings, logoUrl: sample.url })}
-                        className="px-2.5 py-1.5 rounded-lg border border-[#DFC9AC] bg-white hover:bg-[#FAF7F0] text-[11px] font-medium text-[#301C10] flex items-center gap-1.5 transition"
+                        className="px-2.5 py-1.5 rounded-lg border border-[#E2E8F0] bg-white hover:bg-[#F8F9FA] text-[11px] font-medium text-[#050F2A] flex items-center gap-1.5 transition"
                       >
                         <img src={sample.url} alt="" className="w-4 h-4 object-contain" />
                         <span>{sample.label}</span>
@@ -869,10 +1076,10 @@ export const CafeSettingsView: React.FC = () => {
 
                 {/* Live Logo Preview Box */}
                 <div className="pt-3">
-                  <span className="text-xs font-bold text-[#301C10] block mb-1.5">
+                  <span className="text-xs font-bold text-[#050F2A] block mb-1.5">
                     Logo Preview:
                   </span>
-                  <div className="p-4 rounded-xl border border-dashed border-[#DFC9AC] flex items-center justify-center gap-6 bg-white">
+                  <div className="p-4 rounded-xl border border-dashed border-[#E2E8F0] flex items-center justify-center gap-6 bg-white">
                     <div
                       className="p-3 rounded-lg border flex items-center justify-center min-w-[140px] h-16 shadow-xs"
                       style={{ backgroundColor: previewColors.headerBg }}
@@ -890,11 +1097,95 @@ export const CafeSettingsView: React.FC = () => {
                       )}
                     </div>
 
-                    <div className="text-xs text-[#8A6A53] space-y-0.5">
-                      <p className="font-bold text-[#301C10]">Live on Navbar:</p>
+                    <div className="text-xs text-[#64748B] space-y-0.5">
+                      <p className="font-bold text-[#050F2A]">Live on Navbar:</p>
                       <p className="text-[11px]">
                         Rendered on your chosen Navbar Background ({previewColors.headerBg})
                       </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* "All Categories" Tab Icon Customization */}
+                <div className="pt-4 border-t border-[#E2E8F0]/70 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-[#050F2A] flex items-center gap-1.5">
+                        <Layers className="w-3.5 h-3.5 text-[#7BBBFF]" />
+                        <span>"All Categories" Menu Tab Image Icon</span>
+                      </h4>
+                      <p className="text-[11px] text-[#64748B] mt-0.5">
+                        Set a custom icon image for the first "All" circular category pill on customer menu.
+                      </p>
+                    </div>
+                    {settings.allCategoryIcon && (
+                      <button
+                        type="button"
+                        onClick={() => setSettings({ ...settings, allCategoryIcon: "" })}
+                        className="text-[11px] text-rose-600 hover:text-rose-700 font-semibold"
+                      >
+                        Reset to Default
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="w-14 h-14 rounded-full border-2 border-[#E2E8F0] p-0.5 bg-[#FAF7F0] flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                      {settings.allCategoryIcon ? (
+                        <img
+                          src={settings.allCategoryIcon}
+                          alt="All Tab Icon"
+                          className="w-full h-full object-cover rounded-full"
+                        />
+                      ) : settings.logoUrl ? (
+                        <img
+                          src={settings.logoUrl}
+                          alt="All Tab Icon"
+                          className="w-full h-full object-cover rounded-full"
+                        />
+                      ) : (
+                        <span className="text-xs font-extrabold text-[#050F2A]">All</span>
+                      )}
+                    </div>
+
+                    <div className="flex-1 space-y-2">
+                      <div className="flex gap-2">
+                        <input
+                          type="url"
+                          value={settings.allCategoryIcon || ""}
+                          onChange={(e) => setSettings({ ...settings, allCategoryIcon: e.target.value })}
+                          placeholder="Icon Image URL (https://... or upload)"
+                          className="flex-1 text-xs px-3 py-2 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-[#050F2A] placeholder-[#64748B] focus:border-[#7BBBFF] outline-none"
+                        />
+                        <label className="bg-[#050F2A] hover:bg-[#050F2A] text-[#FFFFFF] px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0 transition active:scale-95 shadow-sm">
+                          <Upload className="w-3.5 h-3.5 text-[#7BBBFF]" />
+                          <span>{uploadingAllIcon ? "Uploading..." : "Upload Icon"}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleAllCategoryIconUpload}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 items-center">
+                        <span className="text-[10px] text-[#64748B] font-bold">Quick Presets:</span>
+                        {[
+                          { label: "Use Store Logo", url: settings.logoUrl || "" },
+                          { label: "Ceylon Tea Cup", url: "/assets/favicon.png" },
+                          { label: "Food Plate", url: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=150&auto=format&fit=crop&q=80" },
+                          { label: "Burger & Drinks", url: "https://images.unsplash.com/photo-1550547660-d9450f859349?w=150&auto=format&fit=crop&q=80" },
+                        ].filter(p => p.url).map((preset, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setSettings({ ...settings, allCategoryIcon: preset.url })}
+                            className="text-[10px] px-2 py-0.5 rounded-md border border-[#E2E8F0] bg-white hover:bg-gray-100 text-[#050F2A] font-semibold"
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -904,52 +1195,52 @@ export const CafeSettingsView: React.FC = () => {
 
           {/* SECTION 4: TABLE QR CODE CARD DESIGN */}
           {(activeSection === "qr" || activeSection === "branding") && (
-            <div className="bg-[#FFFCF6] rounded-2xl border border-[#DFC9AC] p-5 shadow-warm space-y-4">
-              <div className="flex items-center justify-between border-b border-[#DFC9AC]/70 pb-3">
+            <div className="bg-[#FFFFFF] rounded-2xl border border-[#E2E8F0] p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-[#E2E8F0]/70 pb-3">
                 <div className="flex items-center gap-2">
-                  <QrCode className="w-4 h-4 text-[#E8B64F]" />
-                  <h3 className="font-extrabold text-sm text-[#301C10]">
+                  <QrCode className="w-4 h-4 text-[#7BBBFF]" />
+                  <h3 className="font-extrabold text-sm text-[#050F2A]">
                     Printable Table QR Card Customization
                   </h3>
                 </div>
                 <button
                   type="button"
                   onClick={() => setPreviewMode("qr")}
-                  className="text-[11px] text-[#E8B64F] hover:text-[#C99532] font-black flex items-center gap-1"
+                  className="text-[11px] text-[#7BBBFF] hover:text-[#7BBBFF] font-black flex items-center gap-1"
                 >
                   <Eye className="w-3.5 h-3.5" />
                   <span>View Card Preview</span>
                 </button>
               </div>
 
-              <p className="text-xs text-[#8A6A53] leading-relaxed">
+              <p className="text-xs text-[#64748B] leading-relaxed">
                 Customize the texts printed on tent cards placed on dining tables.
                 Guests scan this code with their smartphone camera to open the menu.
               </p>
 
               <div className="space-y-4">
-                {/* QR Header Title */}
+                {/* QR Headline Message */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-bold text-[#301C10]">
-                      QR Card Header Title
+                    <label className="text-xs font-bold text-[#050F2A]">
+                      Main Headline Message
                     </label>
-                    <span className="text-[10px] text-[#8A6A53]">Top brand line</span>
+                    <span className="text-[10px] text-[#64748B]">Large bold text above QR</span>
                   </div>
                   <input
                     type="text"
                     value={settings.qrHeaderTitle || ""}
                     onChange={(e) => setSettings({ ...settings, qrHeaderTitle: e.target.value })}
-                    placeholder="e.g. Scan to Order • TEA TIME"
-                    className="w-full text-xs px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none"
+                    placeholder="Good food. One scan away."
+                    className="w-full text-xs px-3 py-2 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-[#050F2A] focus:border-[#7BBBFF] outline-none"
                   />
-                  <div className="flex gap-1.5 mt-1.5">
-                    {["SCAN TO ORDER • TEA TIME", "WELCOME TO TEA TIME", "DINE IN & ORDER ONLINE"].map((preset, idx) => (
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {["Good food. One scan away.", "Fresh flavors, one scan away.", "Welcome! Discover our delicious menu"].map((preset, idx) => (
                       <button
                         key={idx}
                         type="button"
                         onClick={() => setSettings({ ...settings, qrHeaderTitle: preset })}
-                        className="text-[10px] text-[#8A6A53] hover:text-[#301C10] px-2 py-0.5 rounded bg-white border border-[#DFC9AC]"
+                        className="text-[10px] text-[#64748B] hover:text-[#050F2A] px-2 py-0.5 rounded bg-white border border-[#E2E8F0]"
                       >
                         {preset}
                       </button>
@@ -960,25 +1251,25 @@ export const CafeSettingsView: React.FC = () => {
                 {/* QR Instruction Subtitle */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-bold text-[#301C10]">
-                      Instruction Subtitle
+                    <label className="text-xs font-bold text-[#050F2A]">
+                      Subtext Instruction
                     </label>
-                    <span className="text-[10px] text-[#8A6A53]">Under table number</span>
+                    <span className="text-[10px] text-[#64748B]">Under headline</span>
                   </div>
                   <input
                     type="text"
                     value={settings.qrSubtitle || ""}
                     onChange={(e) => setSettings({ ...settings, qrSubtitle: e.target.value })}
-                    placeholder="e.g. SCAN TO ORDER"
-                    className="w-full text-xs px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none"
+                    placeholder="Scan to explore our menu"
+                    className="w-full text-xs px-3 py-2 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-[#050F2A] focus:border-[#7BBBFF] outline-none"
                   />
-                  <div className="flex gap-1.5 mt-1.5">
-                    {["SCAN TO ORDER", "Point camera to view menu & order", "Scan QR to place table order"].map((preset, idx) => (
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {["Scan to explore our menu", "Point your phone camera to order", "Scan QR with camera to begin"].map((preset, idx) => (
                       <button
                         key={idx}
                         type="button"
                         onClick={() => setSettings({ ...settings, qrSubtitle: preset })}
-                        className="text-[10px] text-[#8A6A53] hover:text-[#301C10] px-2 py-0.5 rounded bg-white border border-[#DFC9AC]"
+                        className="text-[10px] text-[#64748B] hover:text-[#050F2A] px-2 py-0.5 rounded bg-white border border-[#E2E8F0]"
                       >
                         {preset}
                       </button>
@@ -986,32 +1277,32 @@ export const CafeSettingsView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* QR Footer Slogan / Assistance */}
+                {/* QR Footer Sweet Message / Slogan */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-bold text-[#301C10]">
-                      Footer Note / Slogan / Phone
+                    <label className="text-xs font-bold text-[#050F2A]">
+                      Sweet Message / Greeting / Slogan
                     </label>
-                    <span className="text-[10px] text-[#8A6A53]">Bottom line</span>
+                    <span className="text-[10px] text-[#64748B]">Under table badge</span>
                   </div>
                   <input
                     type="text"
                     value={
                       !settings.qrFooterNote || settings.qrFooterNote.includes("Good tea brings people together")
-                        ? "It's time for you!"
+                        ? "Enjoy your visit!"
                         : settings.qrFooterNote
                     }
                     onChange={(e) => setSettings({ ...settings, qrFooterNote: e.target.value })}
-                    placeholder="e.g. It's time for you!"
-                    className="w-full text-xs px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none"
+                    placeholder="e.g. Enjoy your visit!"
+                    className="w-full text-xs px-3 py-2 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-[#050F2A] focus:border-[#7BBBFF] outline-none"
                   />
                   <div className="flex flex-wrap gap-1.5 mt-1.5">
-                    {["It's time for you!", "Need help? Call: 076 484 1111", "Enjoy your visit!"].map((preset, idx) => (
+                    {["Enjoy your visit!", "Made fresh with love ❤️", "Need anything? Ask our friendly team!"].map((preset, idx) => (
                       <button
                         key={idx}
                         type="button"
                         onClick={() => setSettings({ ...settings, qrFooterNote: preset })}
-                        className="text-[10px] text-[#8A6A53] hover:text-[#301C10] px-2 py-0.5 rounded bg-white border border-[#DFC9AC]"
+                        className="text-[10px] text-[#64748B] hover:text-[#050F2A] px-2 py-0.5 rounded bg-white border border-[#E2E8F0]"
                       >
                         {preset}
                       </button>
@@ -1019,19 +1310,67 @@ export const CafeSettingsView: React.FC = () => {
                   </div>
                 </div>
 
+                {/* QR Card Background & Text Color Customization */}
+                <div className="p-3 bg-[#F8F9FA] rounded-xl border border-[#E2E8F0] space-y-3">
+                  <span className="text-xs font-bold text-[#050F2A] block">
+                    QR Card Color Palette
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] font-bold text-[#050F2A] block mb-1">
+                        Card Background Color
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={settings.qrCardBgColor || "#FFFFFF"}
+                          onChange={(e) => setSettings({ ...settings, qrCardBgColor: e.target.value })}
+                          className="w-8 h-8 rounded-lg border border-[#E2E8F0] cursor-pointer p-0.5 bg-white shrink-0"
+                        />
+                        <input
+                          type="text"
+                          value={settings.qrCardBgColor || "#FFFFFF"}
+                          onChange={(e) => setSettings({ ...settings, qrCardBgColor: e.target.value })}
+                          className="flex-1 px-2.5 py-1.5 rounded-lg border border-[#E2E8F0] bg-white text-xs font-mono text-[#050F2A] uppercase outline-none focus:border-[#7BBBFF]"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-[#050F2A] block mb-1">
+                        Card Text Color
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={settings.qrCardTextColor || "#050F2A"}
+                          onChange={(e) => setSettings({ ...settings, qrCardTextColor: e.target.value })}
+                          className="w-8 h-8 rounded-lg border border-[#E2E8F0] cursor-pointer p-0.5 bg-white shrink-0"
+                        />
+                        <input
+                          type="text"
+                          value={settings.qrCardTextColor || "#050F2A"}
+                          onChange={(e) => setSettings({ ...settings, qrCardTextColor: e.target.value })}
+                          className="flex-1 px-2.5 py-1.5 rounded-lg border border-[#E2E8F0] bg-white text-xs font-mono text-[#050F2A] uppercase outline-none focus:border-[#7BBBFF]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Table QR Logo Size Slider & Presets (Admin requested option) */}
-                <div className="pt-2 border-t border-[#DFC9AC]/60">
+                <div className="pt-2 border-t border-[#E2E8F0]/60">
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-bold text-[#301C10] flex items-center gap-1.5">
-                      <ImageIcon className="w-3.5 h-3.5 text-[#E8B64F]" />
+                    <label className="text-xs font-bold text-[#050F2A] flex items-center gap-1.5">
+                      <ImageIcon className="w-3.5 h-3.5 text-[#7BBBFF]" />
                       <span>Table QR Logo Size</span>
                     </label>
-                    <span className="text-[11px] font-mono font-bold text-[#C99532] bg-[#FAF7F0] px-2 py-0.5 rounded-md border border-[#DFC9AC]">
+                    <span className="text-[11px] font-mono font-bold text-[#7BBBFF] bg-[#F8F9FA] px-2 py-0.5 rounded-md border border-[#E2E8F0]">
                       {getQrLogoHeight(settings.qrLogoSize)}px
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-[10px] text-[#8A6A53] font-bold">60px</span>
+                    <span className="text-[10px] text-[#64748B] font-bold">60px</span>
                     <input
                       type="range"
                       min="60"
@@ -1039,9 +1378,9 @@ export const CafeSettingsView: React.FC = () => {
                       step="4"
                       value={getQrLogoHeight(settings.qrLogoSize)}
                       onChange={(e) => setSettings({ ...settings, qrLogoSize: Number(e.target.value) })}
-                      className="flex-1 h-2 bg-[#DFC9AC]/40 rounded-lg appearance-none cursor-pointer accent-[#C99532]"
+                      className="flex-1 h-2 bg-[#E2E8F0]/40 rounded-lg appearance-none cursor-pointer accent-[#7BBBFF]"
                     />
-                    <span className="text-[10px] text-[#8A6A53] font-bold">200px</span>
+                    <span className="text-[10px] text-[#64748B] font-bold">200px</span>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 mt-2">
                     {[
@@ -1060,8 +1399,8 @@ export const CafeSettingsView: React.FC = () => {
                           onClick={() => setSettings({ ...settings, qrLogoSize: preset.val })}
                           className={`text-[10px] px-2 py-1 rounded-lg border font-bold transition-all text-center ${
                             isSelected
-                              ? "bg-[#2C190E] text-[#FFFCF6] border-[#2C190E] shadow-sm"
-                              : "bg-white text-[#8A6A53] hover:text-[#301C10] border-[#DFC9AC]"
+                              ? "bg-[#050F2A] text-[#FFFFFF] border-[#050F2A] shadow-sm"
+                              : "bg-white text-[#64748B] hover:text-[#050F2A] border-[#E2E8F0]"
                           }`}
                         >
                           {preset.label}
@@ -1069,7 +1408,7 @@ export const CafeSettingsView: React.FC = () => {
                       );
                     })}
                   </div>
-                  <p className="text-[10px] text-[#8A6A53] mt-1.5">
+                  <p className="text-[10px] text-[#64748B] mt-1.5">
                     Make your café logo bigger or smaller on the printed table QR stand cards. Preview updates live on the right.
                   </p>
                 </div>
@@ -1079,29 +1418,29 @@ export const CafeSettingsView: React.FC = () => {
 
           {/* SECTION 5: STORE PROFILE & OPERATIONAL HOURS */}
           {(activeSection === "store" || activeSection === "branding") && (
-            <div className="bg-[#FFFCF6] rounded-2xl border border-[#DFC9AC] p-5 shadow-warm space-y-4 text-xs">
-              <div className="flex items-center justify-between border-b border-[#DFC9AC]/70 pb-3">
+            <div className="bg-[#FFFFFF] rounded-2xl border border-[#E2E8F0] p-5 shadow-sm space-y-4 text-xs">
+              <div className="flex items-center justify-between border-b border-[#E2E8F0]/70 pb-3">
                 <div className="flex items-center gap-2">
-                  <Store className="w-4 h-4 text-[#E8B64F]" />
-                  <h3 className="font-extrabold text-sm text-[#301C10]">
+                  <Store className="w-4 h-4 text-[#7BBBFF]" />
+                  <h3 className="font-extrabold text-sm text-[#050F2A]">
                     Café Profile & Operations
                   </h3>
                 </div>
               </div>
 
               {/* Pause Ordering Control */}
-              <div className="p-4 bg-white rounded-xl border border-[#DFC9AC] space-y-3">
+              <div className="p-4 bg-white rounded-xl border border-[#E2E8F0] space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h4 className="font-extrabold text-xs text-[#301C10] flex items-center gap-1.5">
+                    <h4 className="font-extrabold text-xs text-[#050F2A] flex items-center gap-1.5">
                       {settings.isOrderingPaused ? (
-                        <PauseCircle className="w-4 h-4 text-[#E8B64F]" />
+                        <PauseCircle className="w-4 h-4 text-[#7BBBFF]" />
                       ) : (
                         <PlayCircle className="w-4 h-4 text-emerald-600" />
                       )}
                       <span>Ordering Availability</span>
                     </h4>
-                    <p className="text-[11px] text-[#8A6A53] mt-0.5">
+                    <p className="text-[11px] text-[#64748B] mt-0.5">
                       Pause incoming guest orders while allowing customers to still browse the menu.
                     </p>
                   </div>
@@ -1128,8 +1467,8 @@ export const CafeSettingsView: React.FC = () => {
                 </div>
 
                 {settings.isOrderingPaused && (
-                  <div className="pt-2 border-t border-[#DFC9AC]/60">
-                    <label className="block text-xs font-bold text-[#301C10] mb-1">
+                  <div className="pt-2 border-t border-[#E2E8F0]/60">
+                    <label className="block text-xs font-bold text-[#050F2A] mb-1">
                       Custom Pause Notice for Customers
                     </label>
                     <input
@@ -1139,7 +1478,7 @@ export const CafeSettingsView: React.FC = () => {
                         setSettings({ ...settings, pauseMessage: e.target.value })
                       }
                       placeholder="e.g. New orders temporarily paused for 15 minutes."
-                      className="w-full text-xs px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] placeholder-[#8A6A53] focus:border-[#C99532] outline-none"
+                      className="w-full text-xs px-3 py-2 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-[#050F2A] placeholder-[#64748B] focus:border-[#7BBBFF] outline-none"
                     />
                   </div>
                 )}
@@ -1148,31 +1487,31 @@ export const CafeSettingsView: React.FC = () => {
               {/* Profile fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                 <div>
-                  <label className="block font-bold text-[#301C10] mb-1">Café Name</label>
+                  <label className="block font-bold text-[#050F2A] mb-1">Café Name</label>
                   <input
                     type="text"
                     value={settings.cafeName}
                     onChange={(e) =>
                       setSettings({ ...settings, cafeName: e.target.value })
                     }
-                    className="w-full px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-[#050F2A] focus:border-[#7BBBFF] outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#301C10] mb-1">Tagline</label>
+                  <label className="block font-bold text-[#050F2A] mb-1">Tagline</label>
                   <input
                     type="text"
                     value={settings.tagline}
                     onChange={(e) =>
                       setSettings({ ...settings, tagline: e.target.value })
                     }
-                    className="w-full px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-[#050F2A] focus:border-[#7BBBFF] outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#301C10] mb-1">Opening Hours</label>
+                  <label className="block font-bold text-[#050F2A] mb-1">Opening Hours</label>
                   <input
                     type="text"
                     value={settings.openingHours}
@@ -1180,43 +1519,43 @@ export const CafeSettingsView: React.FC = () => {
                       setSettings({ ...settings, openingHours: e.target.value })
                     }
                     placeholder="e.g. 7:30 AM – 10:30 PM"
-                    className="w-full px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-[#050F2A] focus:border-[#7BBBFF] outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#301C10] mb-1">Currency Symbol</label>
+                  <label className="block font-bold text-[#050F2A] mb-1">Currency Symbol</label>
                   <input
                     type="text"
                     value={settings.currencySymbol}
                     onChange={(e) =>
                       setSettings({ ...settings, currencySymbol: e.target.value })
                     }
-                    className="w-full px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none font-bold"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-[#050F2A] focus:border-[#7BBBFF] outline-none font-bold"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#301C10] mb-1">Phone Number</label>
+                  <label className="block font-bold text-[#050F2A] mb-1">Phone Number</label>
                   <input
                     type="text"
                     value={settings.phone || "076 484 7081"}
                     onChange={(e) =>
                       setSettings({ ...settings, phone: e.target.value })
                     }
-                    className="w-full px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-[#050F2A] focus:border-[#7BBBFF] outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#301C10] mb-1">WhatsApp Order Support</label>
+                  <label className="block font-bold text-[#050F2A] mb-1">WhatsApp Order Support</label>
                   <input
                     type="text"
                     value={settings.whatsapp || "076 484 7081"}
                     onChange={(e) =>
                       setSettings({ ...settings, whatsapp: e.target.value })
                     }
-                    className="w-full px-3 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-[#050F2A] focus:border-[#7BBBFF] outline-none"
                   />
                 </div>
               </div>
@@ -1225,20 +1564,20 @@ export const CafeSettingsView: React.FC = () => {
 
           {/* SECTION 5.5: SOCIAL MEDIA & GOOGLE PROFILE MANAGER */}
           {(activeSection === "social" || activeSection === "branding" || activeSection === "store") && (
-            <div className="bg-[#FFFCF6] rounded-2xl border border-[#DFC9AC] p-5 sm:p-6 shadow-warm space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#DFC9AC]/60 pb-4">
+            <div className="bg-[#FFFFFF] rounded-2xl border border-[#E2E8F0] p-5 sm:p-6 shadow-sm space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E2E8F0]/60 pb-4">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-[#E8B64F]/20 border border-[#E8B64F]/40 flex items-center justify-center text-[#301C10]">
-                    <Globe className="w-5 h-5 text-[#C99532]" />
+                  <div className="w-9 h-9 rounded-xl bg-[#7BBBFF]/20 border border-[#7BBBFF]/40 flex items-center justify-center text-[#050F2A]">
+                    <Globe className="w-5 h-5 text-[#7BBBFF]" />
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-sm text-[#301C10] flex items-center gap-2">
+                    <h3 className="font-extrabold text-sm text-[#050F2A] flex items-center gap-2">
                       <span>Social Media & Google Profile Links</span>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
                         Real-time
                       </span>
                     </h3>
-                    <p className="text-[11px] text-[#8A6A53]">
+                    <p className="text-[11px] text-[#64748B]">
                       Add, edit, or delete customer links. Real-time updates appear immediately on the customer menu.
                     </p>
                   </div>
@@ -1248,16 +1587,16 @@ export const CafeSettingsView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleAddSocialLink("google")}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#2C190E] hover:bg-[#4A290F] text-[#FFFCF6] text-xs font-bold transition shadow-warm active:scale-95"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#050F2A] hover:bg-[#050F2A] text-[#FFFFFF] text-xs font-bold transition shadow-sm active:scale-95"
                 >
-                  <Plus className="w-4 h-4 text-[#E8B64F]" />
+                  <Plus className="w-4 h-4 text-[#7BBBFF]" />
                   <span>Add Link</span>
                 </button>
               </div>
 
               {/* Quick Add Presets Bar */}
-              <div className="bg-[#FAF7F0] rounded-xl p-3 border border-[#DFC9AC]/60 space-y-2">
-                <span className="text-[10px] font-bold text-[#8A6A53] uppercase tracking-wider block">
+              <div className="bg-[#F8F9FA] rounded-xl p-3 border border-[#E2E8F0]/60 space-y-2">
+                <span className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider block">
                   Quick Add Profile Presets:
                 </span>
                 <div className="flex flex-wrap gap-1.5">
@@ -1274,7 +1613,7 @@ export const CafeSettingsView: React.FC = () => {
                       key={preset.platform}
                       type="button"
                       onClick={() => handleAddSocialLink(preset.platform)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-[#FFFCF6] text-[#301C10] text-[11px] font-bold border border-[#DFC9AC] transition shadow-xs active:scale-95"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-[#FFFFFF] text-[#050F2A] text-[11px] font-bold border border-[#E2E8F0] transition shadow-xs active:scale-95"
                     >
                       <span>{preset.icon}</span>
                       <span>+ {preset.label}</span>
@@ -1289,14 +1628,14 @@ export const CafeSettingsView: React.FC = () => {
                   <div
                     key={link.id || idx}
                     className={`p-3.5 rounded-xl border transition-all ${link.isActive
-                        ? "bg-white border-[#DFC9AC] shadow-xs"
+                        ? "bg-white border-[#E2E8F0] shadow-xs"
                         : "bg-zinc-50 border-zinc-200 opacity-60"
                       }`}
                   >
                     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
                       {/* Platform selector */}
                       <div className="w-full sm:w-44 shrink-0">
-                        <label className="block text-[10px] font-bold text-[#8A6A53] mb-1">
+                        <label className="block text-[10px] font-bold text-[#64748B] mb-1">
                           Platform
                         </label>
                         <select
@@ -1306,7 +1645,7 @@ export const CafeSettingsView: React.FC = () => {
                               platform: e.target.value as SocialPlatform,
                             })
                           }
-                          className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] font-bold focus:border-[#C99532] outline-none"
+                          className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8F9FA] text-[#050F2A] font-bold focus:border-[#7BBBFF] outline-none"
                         >
                           <option value="google">🌐 Google Profile / Review</option>
                           <option value="instagram">📸 Instagram</option>
@@ -1322,7 +1661,7 @@ export const CafeSettingsView: React.FC = () => {
 
                       {/* Display Label */}
                       <div className="w-full sm:w-48 shrink-0">
-                        <label className="block text-[10px] font-bold text-[#8A6A53] mb-1">
+                        <label className="block text-[10px] font-bold text-[#64748B] mb-1">
                           Button Text
                         </label>
                         <input
@@ -1332,13 +1671,13 @@ export const CafeSettingsView: React.FC = () => {
                             handleUpdateSocialLink(link.id, { label: e.target.value })
                           }
                           placeholder="Label e.g. Google Reviews"
-                          className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] font-bold focus:border-[#C99532] outline-none"
+                          className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8F9FA] text-[#050F2A] font-bold focus:border-[#7BBBFF] outline-none"
                         />
                       </div>
 
                       {/* URL input */}
                       <div className="flex-1 w-full min-w-0">
-                        <label className="block text-[10px] font-bold text-[#8A6A53] mb-1">
+                        <label className="block text-[10px] font-bold text-[#64748B] mb-1">
                           Target URL / Profile Link
                         </label>
                         <input
@@ -1348,7 +1687,7 @@ export const CafeSettingsView: React.FC = () => {
                             handleUpdateSocialLink(link.id, { url: e.target.value })
                           }
                           placeholder="https://..."
-                          className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] focus:border-[#C99532] outline-none font-mono"
+                          className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8F9FA] text-[#050F2A] focus:border-[#7BBBFF] outline-none font-mono"
                         />
                       </div>
 
@@ -1361,7 +1700,7 @@ export const CafeSettingsView: React.FC = () => {
                             target="_blank"
                             rel="noopener noreferrer"
                             title="Test open profile in new tab"
-                            className="p-1.5 rounded-lg text-[#8A6A53] hover:text-[#301C10] hover:bg-[#FAF7F0] border border-transparent hover:border-[#DFC9AC] transition"
+                            className="p-1.5 rounded-lg text-[#64748B] hover:text-[#050F2A] hover:bg-[#F8F9FA] border border-transparent hover:border-[#E2E8F0] transition"
                           >
                             <ExternalLink className="w-4 h-4" />
                           </a>
@@ -1401,10 +1740,10 @@ export const CafeSettingsView: React.FC = () => {
                 ))}
 
                 {currentSocialLinks.length === 0 && (
-                  <div className="p-8 text-center bg-[#FAF7F0] rounded-xl border border-dashed border-[#DFC9AC] space-y-2">
-                    <Globe className="w-8 h-8 text-[#C99532]/60 mx-auto" />
-                    <p className="text-xs font-bold text-[#301C10]">No Social or Google Profiles Added</p>
-                    <p className="text-[11px] text-[#8A6A53]">
+                  <div className="p-8 text-center bg-[#F8F9FA] rounded-xl border border-dashed border-[#E2E8F0] space-y-2">
+                    <Globe className="w-8 h-8 text-[#7BBBFF]/60 mx-auto" />
+                    <p className="text-xs font-bold text-[#050F2A]">No Social or Google Profiles Added</p>
+                    <p className="text-[11px] text-[#64748B]">
                       Click any of the Quick Add buttons above to add Google Reviews, Instagram, Facebook, or WhatsApp.
                     </p>
                   </div>
@@ -1415,12 +1754,12 @@ export const CafeSettingsView: React.FC = () => {
 
           {/* SECTION 6: DATABASE UTILITIES */}
           {(activeSection === "system" || activeSection === "store") && (
-            <div className="bg-[#FFFCF6] border border-[#DFC9AC] rounded-2xl p-5 space-y-3 text-xs shadow-warm">
-              <div className="flex items-center gap-2 text-[#301C10] font-extrabold">
-                <Database className="w-4 h-4 text-[#E8B64F]" />
+            <div className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-2xl p-5 space-y-3 text-xs shadow-sm">
+              <div className="flex items-center gap-2 text-[#050F2A] font-extrabold">
+                <Database className="w-4 h-4 text-[#7BBBFF]" />
                 <span>Database & Menu Sync Utilities</span>
               </div>
-              <p className="text-[#8A6A53]">
+              <p className="text-[#64748B]">
                 Sync official authentic Ceylon teas, artisan coffees, snacks, desserts,
                 and Table 01–Table 11 directly into Firestore.
               </p>
@@ -1429,16 +1768,16 @@ export const CafeSettingsView: React.FC = () => {
                 type="button"
                 onClick={handleSeedSampleData}
                 disabled={seeding}
-                className="bg-[#2C190E] hover:bg-[#4A290F] text-[#FFFCF6] font-bold px-4 py-2 rounded-xl flex items-center gap-2 transition active:scale-95 shadow-warm"
+                className="bg-[#050F2A] hover:bg-[#050F2A] text-[#FFFFFF] font-bold px-4 py-2 rounded-xl flex items-center gap-2 transition active:scale-95 shadow-sm"
               >
                 {seeding ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin text-[#E8B64F]" />
+                    <Loader2 className="w-4 h-4 animate-spin text-[#7BBBFF]" />
                     <span>Seeding Firestore Database...</span>
                   </>
                 ) : (
                   <>
-                    <Database className="w-4 h-4 text-[#E8B64F]" />
+                    <Database className="w-4 h-4 text-[#7BBBFF]" />
                     <span>Sync 107 Menu Items & 11 Tables</span>
                   </>
                 )}
@@ -1452,7 +1791,7 @@ export const CafeSettingsView: React.FC = () => {
               type="button"
               onClick={() => handleSaveSettings()}
               disabled={saving}
-              className="bg-[#E8B64F] hover:bg-[#d9a53d] text-[#1A0F08] font-black px-6 py-3 rounded-xl text-sm shadow-warm flex items-center gap-2 transition active:scale-95 focus:outline-none focus:ring-2 focus:ring-[#C99532]"
+              className="bg-[#7BBBFF] hover:bg-[#68aaff] text-[#1A0F08] font-black px-6 py-3 rounded-xl text-sm shadow-sm flex items-center gap-2 transition active:scale-95 focus:outline-none focus:ring-2 focus:ring-[#7BBBFF]"
             >
               {saving ? (
                 <>
@@ -1471,25 +1810,25 @@ export const CafeSettingsView: React.FC = () => {
 
         {/* RIGHT COLUMN: Interactive Real-time Visual Preview */}
         <div className="lg:col-span-5 sticky top-20 space-y-4">
-          <div className="bg-[#FFFCF6] rounded-3xl border border-[#DFC9AC] p-5 shadow-warm-xl space-y-4">
-            <div className="flex items-center justify-between border-b border-[#DFC9AC]/70 pb-3">
+          <div className="bg-[#FFFFFF] rounded-3xl border border-[#E2E8F0] p-5 shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0]/70 pb-3">
               <div>
-                <span className="font-extrabold text-sm text-[#301C10] block">
+                <span className="font-extrabold text-sm text-[#050F2A] block">
                   Interactive Live Preview
                 </span>
-                <span className="text-[11px] text-[#8A6A53]">
+                <span className="text-[11px] text-[#64748B]">
                   Updates instantly as you edit colors & text
                 </span>
               </div>
 
               {/* Toggle Preview: Phone vs QR Card */}
-              <div className="flex items-center gap-1 bg-[#FAF7F0] p-1 rounded-xl border border-[#DFC9AC]">
+              <div className="flex items-center gap-1 bg-[#F8F9FA] p-1 rounded-xl border border-[#E2E8F0]">
                 <button
                   type="button"
                   onClick={() => setPreviewMode("mobile")}
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition ${previewMode === "mobile"
-                      ? "bg-[#2C190E] text-[#FFFCF6] shadow-xs"
-                      : "text-[#8A6A53] hover:text-[#301C10]"
+                      ? "bg-[#050F2A] text-[#FFFFFF] shadow-xs"
+                      : "text-[#64748B] hover:text-[#050F2A]"
                     }`}
                 >
                   <Smartphone className="w-3.5 h-3.5" />
@@ -1499,8 +1838,8 @@ export const CafeSettingsView: React.FC = () => {
                   type="button"
                   onClick={() => setPreviewMode("qr")}
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition ${previewMode === "qr"
-                      ? "bg-[#2C190E] text-[#FFFCF6] shadow-xs"
-                      : "text-[#8A6A53] hover:text-[#301C10]"
+                      ? "bg-[#050F2A] text-[#FFFFFF] shadow-xs"
+                      : "text-[#64748B] hover:text-[#050F2A]"
                     }`}
                 >
                   <Printer className="w-3.5 h-3.5" />
@@ -1540,7 +1879,8 @@ export const CafeSettingsView: React.FC = () => {
                           <img
                             src={settings.logoUrl}
                             alt="Logo"
-                            className="h-7 w-auto object-contain"
+                            style={{ height: `${Math.min(Number(settings.navbarLogoHeight) || 32, 44)}px` }}
+                            className="w-auto object-contain transition-all"
                           />
                         ) : (
                           <span className="font-black text-xs uppercase tracking-tight">
@@ -1654,7 +1994,7 @@ export const CafeSettingsView: React.FC = () => {
                           {currentSocialLinks.filter((l) => l.isActive).map((link) => (
                             <span
                               key={link.id}
-                              className="px-2 py-0.5 rounded-md text-[9px] font-bold text-[#FFFCF6] bg-[#0A0A0A] border border-[#E8B64F]/50 flex items-center gap-1 shadow-xs"
+                              className="px-2 py-0.5 rounded-md text-[9px] font-bold text-[#FFFFFF] bg-[#0A0A0A] border border-[#7BBBFF]/50 flex items-center gap-1 shadow-xs"
                             >
                               <span>
                                 {link.platform === "google"
@@ -1692,84 +2032,107 @@ export const CafeSettingsView: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                /* TABLE QR TENT CARD MOCKUP */
+                /* TABLE QR TENT CARD MOCKUP - Clean White Acrylic Stand Style */
                 <div
-                  className="w-64 rounded-[28px] p-6 pt-6 pb-6 shadow-2xl flex flex-col items-center text-center space-y-3.5 border transition-all"
+                  className="w-[260px] sm:w-[275px] rounded-3xl p-5 pt-6 pb-5 shadow-xl flex flex-col items-center text-center space-y-3.5 border border-zinc-200/90 transition-all select-none"
                   style={{
-                    backgroundColor: previewColors.headerBg || "#2C190E",
-                    color: "#FFFCF6",
-                    borderColor: previewColors.accent || "#4A290F",
+                    backgroundColor: settings.qrCardBgColor || "#FFFFFF",
+                    color: settings.qrCardTextColor || "#050F2A",
+                    fontFamily:
+                      '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "SF Pro", "Helvetica Neue", sans-serif',
                   }}
                 >
-                  {/* Optional Top Header Text */}
-                  {settings.qrHeaderTitle && settings.qrHeaderTitle.trim().length > 0 && (
-                    <div className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] text-[#FFFCF6]/90 select-none pt-0.5">
-                      {settings.qrHeaderTitle}
-                    </div>
-                  )}
-
-                  {/* Brand Logo - customizable size from admin panel */}
-                  <div className="pt-1 pb-1 flex flex-col items-center justify-center">
-                    {settings.logoUrl && !settings.logoUrl.includes("logo-horizontal") ? (
+                  {/* Top Brand Logo & Subtitle */}
+                  <div className="flex flex-col items-center space-y-1">
+                    {settings.logoUrl ? (
                       <img
                         src={settings.logoUrl}
                         alt={settings.cafeName || "Logo"}
                         style={{
                           height: `${getQrLogoHeight(settings.qrLogoSize)}px`,
-                          maxHeight: `${getQrLogoHeight(settings.qrLogoSize) + 20}px`,
+                          maxHeight: `${getQrLogoHeight(settings.qrLogoSize) + 15}px`,
                         }}
-                        className="max-w-[190px] w-auto object-contain select-none drop-shadow-md transition-all"
+                        className="max-w-[180px] w-auto object-contain drop-shadow-xs transition-all"
                       />
                     ) : (
-                      <img
-                        src="/assets/logo.png"
-                        alt="TEA TIME"
-                        style={{
-                          height: `${getQrLogoHeight(settings.qrLogoSize)}px`,
-                          maxHeight: `${getQrLogoHeight(settings.qrLogoSize) + 20}px`,
-                        }}
-                        className="max-w-[190px] w-auto object-contain select-none drop-shadow-md transition-all"
-                      />
+                      <div className="flex items-center gap-1.5">
+                        <div
+                          className="w-7 h-7 rounded-lg text-white flex items-center justify-center font-black text-xs"
+                          style={{ backgroundColor: previewColors.primary }}
+                        >
+                          {(settings.cafeName || "M").charAt(0)}
+                        </div>
+                        <span className="font-extrabold text-base tracking-tight" style={{ color: settings.qrCardTextColor || "#050F2A" }}>
+                          {settings.cafeName || "Tea Time"}
+                        </span>
+                      </div>
                     )}
+                    <span className="text-[9px] font-bold tracking-[0.2em] uppercase opacity-60 pt-0.5">
+                      YOUR DIGITAL MENU
+                    </span>
                   </div>
 
-                  {/* QR Code Container */}
-                  <div className="bg-[#FFFCF6] p-3 rounded-2xl shadow-xl border border-[#DFC9AC]/60">
-                    <QRCodeSVG
-                      value={`https://menyo.aevonix.lk/teatime/menu?table=tbl_07`}
-                      size={136}
-                      level="H"
-                      includeMargin={false}
-                      fgColor="#2C190E"
-                      bgColor="#FFFCF6"
-                    />
-                  </div>
-
-                  {/* Table details */}
-                  <div className="space-y-0.5">
-                    <h4 className="text-xl font-black tracking-wide text-white">
-                      Table 07
-                    </h4>
-                    <p className="text-[11px] font-black uppercase tracking-widest text-[#E8B64F]">
-                      {settings.qrSubtitle || "SCAN TO ORDER"}
+                  {/* Headline & Subhead */}
+                  <div className="space-y-0.5 max-w-[220px]">
+                    <h3 className="text-base sm:text-lg font-black leading-tight tracking-tight" style={{ color: settings.qrCardTextColor || "#050F2A" }}>
+                      {settings.qrHeaderTitle && settings.qrHeaderTitle.trim().length > 0
+                        ? settings.qrHeaderTitle
+                        : "Good food. One scan away."}
+                    </h3>
+                    <p className="text-[11px] font-medium opacity-70">
+                      {settings.qrSubtitle || "Scan to explore our menu"}
                     </p>
                   </div>
 
-                  {/* Slogan / Footer note */}
+                  {/* QR Code Container with Corner Brackets */}
                   <div
-                    className="pt-3 border-t border-[#E8B64F]/40 w-3/4 mx-auto text-[11px] italic leading-tight text-white/90"
+                    className="relative p-2 rounded-2xl flex items-center justify-center transition-colors"
+                    style={{ backgroundColor: settings.qrCardBgColor === "#050F2A" || settings.qrCardBgColor === "#000000" ? "#FFFFFF" : "transparent" }}
                   >
-                    <span>
-                      {settings.qrFooterNote || "☕ Good tea brings people together."}
-                    </span>
+                    <QrCornerBrackets color={previewColors.primary} />
+                    <div className="p-1 rounded-xl bg-white">
+                      <QRCodeSVG
+                        value={`https://menyo.aevonix.lk/teatime/menu?table=tbl_07`}
+                        size={120}
+                        level="H"
+                        includeMargin={false}
+                        fgColor="#050F2A"
+                        bgColor="#FFFFFF"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 3 Step Action Guide */}
+                  <QrActionGuide textColor={settings.qrCardTextColor || "#050F2A"} />
+
+                  {/* Table details pill badge */}
+                  <div className="pt-0.5">
+                    <div
+                      className="px-6 py-1.5 rounded-full font-black text-xs tracking-wider uppercase text-white shadow-sm inline-block"
+                      style={{ backgroundColor: previewColors.primary }}
+                    >
+                      {formatTableBadgeText("07")}
+                    </div>
+                  </div>
+
+                  {/* Slogan / Footer note */}
+                  <div className="text-[10px] italic max-w-[210px] truncate opacity-70">
+                    {settings.qrFooterNote && !settings.qrFooterNote.includes("tea brings")
+                      ? settings.qrFooterNote
+                      : "Enjoy your visit!"}
+                  </div>
+
+                  {/* Powered by menyo.org */}
+                  <div className="text-[9px] opacity-60 pt-0.5 tracking-wider">
+                    Powered by <span className="font-semibold" style={{ color: settings.qrCardTextColor || "#050F2A" }}>menyo.org</span>
                   </div>
                 </div>
               )}
             </div>
 
             {/* Hint Box */}
-            <div className="p-3 bg-white rounded-xl border border-[#DFC9AC] text-[11px] text-[#8A6A53] flex items-start gap-2">
-              <HelpCircle className="w-4 h-4 text-[#E8B64F] shrink-0 mt-0.5" />
+            <div className="p-3 bg-white rounded-xl border border-[#E2E8F0] text-[11px] text-[#64748B] flex items-start gap-2">
+              <HelpCircle className="w-4 h-4 text-[#7BBBFF] shrink-0 mt-0.5" />
               <span>
                 Changes previewed above update in real time on both customer smartphones and the printable table tent cards.
               </span>

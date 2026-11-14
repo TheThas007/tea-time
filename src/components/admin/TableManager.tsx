@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import {
+  db,
   collection,
   onSnapshot,
   addDoc,
   updateDoc,
   doc,
-  serverTimestamp
-} from "firebase/firestore";
+  serverTimestamp,
+} from "../../lib/supabaseStore";
 import { QRCodeSVG } from "qrcode.react";
 import {
   Plus,
@@ -19,11 +20,10 @@ import {
   ExternalLink,
   Download
 } from "lucide-react";
-import { db } from "../../lib/firebase";
 import { TableItem, CafeSettings } from "../../types";
 import { Logo } from "../common/Logo";
 import { INITIAL_TABLES, INITIAL_SETTINGS } from "../../data/seedData";
-import { getQrLogoHeight } from "./PrintableTableCard";
+import { SingleTablePrintModal } from "./PrintableTableCard";
 
 export const TableManager: React.FC = () => {
   const [tables, setTables] = useState<TableItem[]>([]);
@@ -287,164 +287,23 @@ export const TableManager: React.FC = () => {
         </div>
       )}
 
-      {/* Printable Tent Card Modal matching the mockup tent */}
+      {/* Printable Tent Card Modal - Using SingleTablePrintModal */}
       {previewTable && (
-        <div className="fixed inset-0 z-50 bg-[#2C190E]/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn print:p-0 print:bg-white print:fixed print:inset-0">
-          <style>{`
-            @media print {
-              @page {
-                size: 4in 6in;
-                margin: 0;
-              }
-              body {
-                margin: 0 !important;
-                padding: 0 !important;
-                background: transparent !important;
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-              }
-              .print-hidden {
-                display: none !important;
-              }
-              .print-page-wrapper {
-                position: fixed !important;
-                left: 0 !important;
-                top: 0 !important;
-                width: 100vw !important;
-                height: 100vh !important;
-                display: flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-                background: transparent !important;
-                padding: 0 !important;
-                margin: 0 !important;
-              }
-              .print-card-exact {
-                width: 3.8in !important;
-                height: 5.75in !important;
-                border-radius: 24px !important;
-                box-shadow: none !important;
-                page-break-inside: avoid !important;
-              }
-            }
-          `}</style>
-          <div className="bg-[#FAF7F0] rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-[#DFC9AC] flex flex-col print:border-0 print:shadow-none print:w-full print:max-w-none print:bg-transparent print-page-wrapper">
-            {/* Modal Header */}
-            <div className="bg-[#2C190E] text-[#FFFCF6] px-5 py-3.5 flex items-center justify-between border-b border-[#4A290F] print-hidden">
-              <h3 className="font-extrabold text-sm tracking-tight text-[#FFFCF6]">
-                Printable Table QR Card: {previewTable.number}
-              </h3>
-              <button
-                onClick={() => setPreviewTable(null)}
-                className="p-1 rounded-lg text-[#8A6A53] hover:text-[#FFFCF6] hover:bg-white/10 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Printable Preview Container */}
-            <div className="p-6 sm:p-8 bg-[#FAF7F0] flex items-center justify-center print:p-0 print:m-0 print:bg-transparent">
-              {/* Dynamic Tent Card Recreation matching exact uploaded 4x6" card style */}
-              <div
-                id="printable-tent-card"
-                className="w-64 sm:w-72 rounded-[28px] p-6 pt-5 pb-6 shadow-2xl flex flex-col items-center text-center space-y-4 border-2 print-card-exact"
-                style={{
-                  backgroundColor: settings.headerBackgroundColor || "#24140E",
-                  color: "#FFFCF6",
-                  borderColor: settings.accentColor || "#C99532",
-                }}
-              >
-                {/* Optional Top Header Text */}
-                {settings.qrHeaderTitle && settings.qrHeaderTitle.trim().length > 0 && (
-                  <div className="text-[11px] sm:text-xs font-black uppercase tracking-[0.2em] text-[#FFFCF6]/90 select-none pt-0.5">
-                    {settings.qrHeaderTitle}
-                  </div>
-                )}
-
-                {/* Brand Logo - prominent vertical styling matching uploaded photo */}
-                <div className="pt-1 pb-1 flex flex-col items-center justify-center min-h-[110px]">
-                  {settings.logoUrl && !settings.logoUrl.includes("logo-horizontal") ? (
-                    <img
-                      src={settings.logoUrl}
-                      alt={settings.cafeName || "Logo"}
-                      style={{
-                        height: `${getQrLogoHeight(settings.qrLogoSize)}px`,
-                        maxHeight: `${getQrLogoHeight(settings.qrLogoSize) + 20}px`,
-                      }}
-                      className="max-w-[215px] w-auto object-contain select-none drop-shadow-md transition-all"
-                    />
-                  ) : (
-                    <img
-                      src="/assets/logo.png"
-                      alt="TEA TIME"
-                      style={{
-                        height: `${getQrLogoHeight(settings.qrLogoSize)}px`,
-                        maxHeight: `${getQrLogoHeight(settings.qrLogoSize) + 20}px`,
-                      }}
-                      className="max-w-[215px] w-auto object-contain select-none drop-shadow-md transition-all"
-                    />
-                  )}
-                </div>
-
-                {/* QR Code in Soft Ivory Container */}
-                <div className="bg-[#FFFCF6] p-3.5 rounded-2xl shadow-xl border border-[#DFC9AC]/60">
-                  <QRCodeSVG
-                    value={getTableMenuUrl(previewTable.token)}
-                    size={144}
-                    level="H"
-                    includeMargin={false}
-                    fgColor={settings.headerBackgroundColor || "#24140E"}
-                    bgColor="#FFFCF6"
-                  />
-                </div>
-
-                {/* Table Details */}
-                <div className="space-y-0.5">
-                  <h4 className="text-2xl font-black tracking-wide text-white">
-                    {previewTable.number}
-                  </h4>
-                  <p
-                    className="text-xs font-black uppercase tracking-widest text-[#E8B64F]"
-                  >
-                    {settings.qrSubtitle || "SCAN TO ORDER"}
-                  </p>
-                </div>
-
-                {/* Divider Line & Footer Slogan */}
-                <div
-                  className="pt-3 border-t border-[#E8B64F]/40 w-3/4 mx-auto text-xs italic tracking-wide text-[#FFFCF6]/90"
-                >
-                  <span>
-                    {settings.qrFooterNote || "☕ Good tea brings people together."}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Actions */}
-            <div className="p-4 bg-[#FFFCF6] border-t border-[#DFC9AC] flex items-center justify-between text-xs print-hidden">
-              <span className="text-[#8A6A53] font-medium text-[11px] sm:text-xs">
-                Print on 4×6" cardstock or table stand
-              </span>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={() => window.print()}
-                  className="bg-[#4A290F] hover:bg-[#623B1B] text-[#FFFCF6] font-bold px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-warm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
-                >
-                  <Printer className="w-4 h-4 text-[#E8B64F]" />
-                  <span>Print Card</span>
-                </button>
-                <button
-                  onClick={() => setPreviewTable(null)}
-                  className="px-4 py-2 rounded-xl border border-[#DFC9AC] bg-[#FAF7F0] text-[#301C10] font-bold hover:bg-[#DFC9AC]/30 transition"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <SingleTablePrintModal
+          table={previewTable}
+          businessSlug="teatime"
+          businessName={settings.cafeName || "Tea Time"}
+          primaryColor={settings.primaryColor || "#050F2A"}
+          accentColor={settings.accentColor || "#050F2A"}
+          headerBackgroundColor={settings.headerBackgroundColor || "#050F2A"}
+          headerTextColor={settings.headerTextColor || "#FFFFFF"}
+          logoUrl={settings.logoUrl || null}
+          qrHeaderTitle={settings.qrHeaderTitle ?? ""}
+          qrSubtitle={settings.qrSubtitle || "Scan to explore our menu"}
+          qrFooterNote={settings.qrFooterNote || "Good food. One scan away."}
+          qrLogoSize={settings.qrLogoSize || 60}
+          onClose={() => setPreviewTable(null)}
+        />
       )}
     </div>
   );

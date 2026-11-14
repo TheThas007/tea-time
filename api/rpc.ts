@@ -1,7 +1,8 @@
 import {
-  createFirebaseAdminAuthProvider,
-  createFirebaseAdminStore,
-} from "../src/server/firebaseAdminAdapter";
+  createSupabaseAdminAuthProvider,
+  createSupabaseAdminStore,
+  hasSupabaseServerAdminConfig,
+} from "../src/server/supabaseAdminAdapter";
 import { PlatformEngine } from "../src/server/platformEngine";
 import { PlatformApiError, VerifiedCaller } from "../src/server/storeTypes";
 
@@ -9,8 +10,8 @@ let cachedEngine: PlatformEngine | null = null;
 
 function getEngine(): PlatformEngine {
   if (!cachedEngine) {
-    const store = createFirebaseAdminStore();
-    const auth = createFirebaseAdminAuthProvider();
+    const store = createSupabaseAdminStore();
+    const auth = createSupabaseAdminAuthProvider();
     cachedEngine = new PlatformEngine({
       store,
       auth,
@@ -97,8 +98,18 @@ export default async function handler(req: any, res: any) {
       });
     }
 
+    if (!hasSupabaseServerAdminConfig()) {
+      return res.status(501).json({
+        success: false,
+        error: {
+          code: "unknown",
+          message: "Server admin key not configured; delegating to Supabase RLS client handler.",
+        },
+      });
+    }
+
     const engine = getEngine();
-    const authProvider = createFirebaseAdminAuthProvider();
+    const authProvider = createSupabaseAdminAuthProvider();
 
     // Verify Authorization Bearer token if present
     const authHeader = (req.headers?.authorization || req.headers?.Authorization || "") as string;
@@ -131,6 +142,27 @@ export default async function handler(req: any, res: any) {
       case "resolvePublicMenuTenant":
         result = await engine.resolvePublicMenuTenant(data);
         break;
+
+      case "registerTrialBusiness": {
+        const callerNull: VerifiedCaller | null = null;
+        result = await engine.createBusinessWithOwner(callerNull, {
+          businessName: String(data.businessName || "My Restaurant").trim(),
+          slug: String(data.slug || "").trim(),
+          ownerName: String(data.ownerName || "Restaurant Owner").trim(),
+          username: String(data.email || "").split("@")[0].toLowerCase(),
+          ownerEmail: String(data.email || "").trim().toLowerCase(),
+          temporaryPassword: String(data.password || "MenyoTrial2026!"),
+          phone: data.phone || "",
+          packageId: "2_days_trial",
+          activationDateColombo: new Date().toISOString().split("T")[0],
+          paymentAmountRupees: 0,
+          paymentDateColombo: new Date().toISOString().split("T")[0],
+          paymentMethod: "CASH",
+          idempotencyKey: `trial_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+          isPublicTrialSignup: true,
+        });
+        break;
+      }
 
       case "createTenantOrder":
         result = await engine.createTenantOrder({ ...data, ip });

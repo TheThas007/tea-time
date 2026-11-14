@@ -140,6 +140,10 @@ export interface BusinessPublicProfile {
     qrSubtitle?: string;
     qrFooterNote?: string;
     qrLogoSize?: number | "small" | "medium" | "large" | "xlarge" | "huge" | string;
+    navbarLogoHeight?: number | string;
+    allCategoryIcon?: string;
+    qrCardBgColor?: string;
+    qrCardTextColor?: string;
   };
   phone: string;
   whatsapp: string;
@@ -454,6 +458,10 @@ export interface CafeSettings {
   qrSubtitle?: string;
   qrFooterNote?: string;
   qrLogoSize?: number | "small" | "medium" | "large" | "xlarge" | "huge" | string;
+  navbarLogoHeight?: number | string;
+  allCategoryIcon?: string;
+  qrCardBgColor?: string;
+  qrCardTextColor?: string;
   phone?: string;
   whatsapp?: string;
   address?: string;

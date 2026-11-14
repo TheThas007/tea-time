@@ -7,7 +7,7 @@
  * Environment variables:
  *   FIREBASE_AUTH_EMULATOR_HOST (defaults to 127.0.0.1:9099 if emulator is active)
  *   FIRESTORE_EMULATOR_HOST (defaults to 127.0.0.1:8080 if emulator is active)
- *   FIREBASE_PROJECT_ID (defaults to teatime-f4005 or teatime-cafe-app)
+ *   FIREBASE_PROJECT_ID (defaults to menyo-ffcc6)
  */
 
 const { initializeApp } = require("firebase-admin/app");
@@ -24,7 +24,7 @@ const app = initializeApp({
   projectId:
     process.env.FIREBASE_PROJECT_ID ||
     process.env.GCLOUD_PROJECT ||
-    "teatime-f4005",
+    "menyo-ffcc6",
 });
 
 const auth = getAuth(app);

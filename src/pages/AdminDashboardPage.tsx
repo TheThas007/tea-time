@@ -24,10 +24,10 @@ export const AdminDashboardPage: React.FC = () => {
 
   if (isLoading && !isAuthenticatedAdmin) {
     return (
-      <div className="min-h-screen bg-[#FAF7F0] flex flex-col items-center justify-center text-[#301C10] space-y-3">
-        <Loader2 className="w-8 h-8 animate-spin text-[#E8B64F]" />
-        <p className="text-xs text-[#8A6A53] font-semibold tracking-wide">
-          Verifying TEA TIME administrative privileges...
+      <div className="min-h-screen bg-[#F8F9FA] flex flex-col items-center justify-center text-[#050F2A] space-y-3">
+        <Loader2 className="w-8 h-8 animate-spin text-[#7BBBFF]" />
+        <p className="text-xs text-[#050F2A]/60 font-semibold tracking-wide">
+          Verifying Menyo administrative privileges...
         </p>
       </div>
     );
@@ -39,15 +39,15 @@ export const AdminDashboardPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#FAF7F0] flex flex-col text-[#301C10] selection:bg-[#E8B64F]/30">
-      {/* Top Espresso Header Bar */}
+    <div className="min-h-screen bg-[#F8F9FA] flex flex-col text-[#050F2A] selection:bg-[#7BBBFF]/30">
+      {/* Top Menyo Navy Header Bar */}
       <AdminHeader />
 
       <div className="flex-1 flex">
-        {/* Left Espresso Sidebar */}
+        {/* Left Menyo Navy Sidebar */}
         <AdminSidebar activeTab={activeTab} onSelectTab={setActiveTab} />
 
-        {/* Main Content View with warm cream background */}
+        {/* Main Content View with modern clean background */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto max-w-7xl mx-auto w-full pb-20 md:pb-8">
           {activeTab === "orders" && <LiveOrdersView />}
           {activeTab === "menu" && <MenuManager />}

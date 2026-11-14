@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from "react";
-import { 
-  collection, 
-  onSnapshot, 
-  addDoc, 
-  deleteDoc, 
+import {
+  db,
+  collection,
+  onSnapshot,
+  addDoc,
+  deleteDoc,
   setDoc,
   writeBatch,
-  doc, 
-  serverTimestamp 
-} from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+  doc,
+  serverTimestamp,
+} from "../../lib/supabaseStore";
+import { storage, ref, uploadBytes, getDownloadURL } from "../../lib/supabase";
 import { 
   Plus, 
   Edit2, 
@@ -25,7 +26,6 @@ import {
   Search,
   CloudUpload
 } from "lucide-react";
-import { db, storage } from "../../lib/firebase";
 import { MenuItem, Category } from "../../types";
 import {
   formatRupees,

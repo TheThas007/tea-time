@@ -1,18 +1,16 @@
-import { auth, db, firebaseConfig } from "./firebase";
-import { initializeApp, deleteApp } from "firebase/app";
 import {
+  auth,
+  createEphemeralSupabaseClient,
   onAuthStateChanged,
-  signInWithCustomToken,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signInWithPopup,
-  GoogleAuthProvider,
-  OAuthProvider,
-  getAuth,
   signOut,
-  User,
-} from "firebase/auth";
+  updateUserPassword,
+  signInWithOAuthProvider,
+  type User,
+} from "./supabase";
 import {
+  db,
   collection,
   doc,
   getDoc,
@@ -23,7 +21,8 @@ import {
   query,
   where,
   serverTimestamp,
-} from "firebase/firestore";
+} from "./supabaseStore";
+import { INITIAL_MENU_ITEMS, INITIAL_TABLES } from "../data/seedData";
 import {
   DEFAULT_PACKAGES,
   DEFAULT_PLATFORM_PUBLIC_CONFIG,
@@ -72,7 +71,7 @@ export class ApiError extends Error {
 }
 
 /**
- * Helper to ensure Firebase Auth has resolved its initial state before evaluating sessions.
+ * Helper to ensure Supabase Auth has resolved its initial session before evaluating context.
  */
 function waitForAuthUser(): Promise<User | null> {
   if (auth.currentUser && !auth.currentUser.isAnonymous) {
@@ -95,6 +94,177 @@ function waitForAuthUser(): Promise<User | null> {
       }
     }, 1200);
   });
+}
+
+async function provisionTrialWorkspaceForExistingUser(params: {
+  uid: string;
+  email: string;
+  ownerName: string;
+  businessName: string;
+  phone?: string;
+  whatsapp?: string;
+}): Promise<{ businessId: string; slug: string }> {
+  const email = params.email.trim().toLowerCase();
+  const businessName = params.businessName.trim() || "My Restaurant";
+  const ownerName = params.ownerName.trim() || "Restaurant Owner";
+
+  let slug = normalizeBusinessSlug(businessName);
+  if (!slug || slug.length < 3) slug = `cafe-${Math.random().toString(36).substring(2, 6)}`;
+
+  // Automatically ensure slug uniqueness so signup never fails on duplicate business names
+  try {
+    let checkSlug = slug;
+    let collisionIndex = 1;
+    while (true) {
+      const snap = await getDocs(query(collection(db, "businesses"), where("slug", "==", checkSlug))).catch(() => null);
+      if (!snap || snap.empty) {
+        slug = checkSlug;
+        break;
+      }
+      collisionIndex++;
+      checkSlug = `${slug}-${collisionIndex}`;
+      if (collisionIndex > 5) {
+        slug = `${slug}-${Math.random().toString(36).substring(2, 6)}`;
+        break;
+      }
+    }
+  } catch {
+    // fallback safe random suffix
+    slug = `${slug}-${Math.random().toString(36).substring(2, 6)}`;
+  }
+
+  const businessId = `biz_${slug}_${Math.random().toString(36).substring(2, 6)}`;
+  const nowMs = Date.now();
+  const expiresAtMs = nowMs + 2 * ONE_DAY_MS;
+
+  await setDoc(doc(db, "userProfiles", params.uid), {
+    uid: params.uid,
+    email,
+    displayName: ownerName,
+    username: slug,
+    role: "BUSINESS_OWNER",
+    businessId,
+    mustChangePassword: false,
+    active: true,
+    createdAt: serverTimestamp(),
+    createdAtMs: nowMs,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+
+  await setDoc(doc(db, "businesses", businessId), {
+    id: businessId,
+    slug,
+    name: businessName,
+    ownerName,
+    ownerUsername: slug,
+    ownerEmail: email,
+    ownerUid: params.uid,
+    phone: params.phone || "076 484 7081",
+    whatsapp: params.whatsapp || params.phone || "076 484 7081",
+    address: "Sri Lanka",
+    currencyCode: "LKR",
+    currencySymbol: "Rs.",
+    openingHours: "8:00 AM – 10:00 PM",
+    status: "ACTIVE",
+    isTrial: true,
+    packageId: "2_days_trial",
+    trialExpiresAtMs: expiresAtMs,
+    branding: {
+      primaryColor: "#050F2A",
+      accentColor: "#7BBBFF",
+      backgroundColor: "#F2FDFF",
+      textColor: "#050F2A",
+      headerBackgroundColor: "#050F2A",
+      headerTextColor: "#F2FDFF",
+    },
+    createdAt: serverTimestamp(),
+    createdAtMs: nowMs,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+
+  await setDoc(doc(db, "businessSlugs", slug), {
+    slug,
+    businessId,
+    isAlias: false,
+    canonicalSlug: slug,
+  }, { merge: true });
+
+  // Also index the businessId directly in businessSlugs so lookups by ID or slug succeed seamlessly
+  await setDoc(doc(db, "businessSlugs", businessId), {
+    slug,
+    businessId,
+    isAlias: true,
+    canonicalSlug: slug,
+  }, { merge: true });
+
+  await setDoc(doc(db, "businessAccess", businessId), {
+    businessId,
+    operationalStatus: "ACTIVE",
+    packageId: "2_days_trial",
+    packageNameSnapshot: "2-Day Free Trial",
+    isLifetime: false,
+    activatedAtMs: nowMs,
+    startsAtMs: nowMs,
+    expiresAtMs,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+
+  const sampleTables = [
+    { id: "tbl_01", tableNumber: "Table 01", number: "Table 01", token: `tbl_01_${Math.random().toString(36).substring(2, 6)}`, active: true },
+    { id: "tbl_02", tableNumber: "Table 02", number: "Table 02", token: `tbl_02_${Math.random().toString(36).substring(2, 6)}`, active: true },
+    { id: "tbl_03", tableNumber: "Table 03", number: "Table 03", token: `tbl_03_${Math.random().toString(36).substring(2, 6)}`, active: true },
+  ];
+  for (const t of sampleTables) {
+    await setDoc(doc(db, `businesses/${businessId}/tables`, t.id), t, { merge: true });
+    await setDoc(doc(db, `businesses/${businessId}/tableTokens`, t.token), {
+      token: t.token,
+      tableId: t.id,
+      number: t.tableNumber,
+      tableNumber: t.tableNumber,
+      businessId,
+      active: true,
+      updatedAtMs: nowMs,
+    }, { merge: true });
+  }
+
+  const sampleCats = [
+    { id: "cat_hot", name: "Hot Beverages", slug: "hot-beverages", sortOrder: 1, active: true },
+    { id: "cat_cold", name: "Cold Drinks", slug: "cold-drinks", sortOrder: 2, active: true },
+    { id: "cat_snacks", name: "Snacks & Quick Bites", slug: "snacks", sortOrder: 3, active: true },
+  ];
+  for (const c of sampleCats) {
+    await setDoc(doc(db, `businesses/${businessId}/categories`, c.id), c, { merge: true });
+  }
+
+  const sampleProds = [
+    {
+      id: "prod_ceylon_tea",
+      name: "Ceylon Milk Tea",
+      category: "Hot Beverages",
+      categoryId: "cat_hot",
+      priceRupees: 150,
+      priceMinor: 15000,
+      description: "Freshly brewed classic Ceylon black tea with milk and sugar.",
+      isAvailable: true,
+      sortOrder: 1,
+    },
+    {
+      id: "prod_iced_coffee",
+      name: "Artisan Iced Coffee",
+      category: "Cold Drinks",
+      categoryId: "cat_cold",
+      priceRupees: 350,
+      priceMinor: 35000,
+      description: "Chilled rich espresso blended with condensed milk.",
+      isAvailable: true,
+      sortOrder: 2,
+    },
+  ];
+  for (const p of sampleProds) {
+    await setDoc(doc(db, `businesses/${businessId}/products`, p.id), p, { merge: true });
+  }
+
+  return { businessId, slug };
 }
 
 /**
@@ -187,6 +357,21 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
           if (stored && stored !== "teatime") bId = stored;
         }
 
+        // 6. First-time OAuth user auto-provisioning (2-Day Free Trial) so redirect OAuth never falls back to Tea Time
+        if (!bId && user.email) {
+          const provider = user.appMetadata?.provider;
+          if (provider === "google" || provider === "apple") {
+            const bizName = user.displayName ? `${user.displayName}'s Restaurant` : "My Restaurant";
+            const provisioned = await provisionTrialWorkspaceForExistingUser({
+              uid: user.uid,
+              email: user.email,
+              ownerName: user.displayName || "Restaurant Owner",
+              businessName: bizName,
+            });
+            bId = provisioned.businessId;
+          }
+        }
+
         if (bId) {
           if (typeof window !== "undefined") {
             localStorage.setItem("menyo_auth_businessId", bId);
@@ -206,6 +391,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
           const daysRemaining = expiresAtMs ? Math.max(0, Math.ceil((expiresAtMs - nowMs) / ONE_DAY_MS)) : null;
 
           const branding = bizData?.branding || {};
+          const mustChange = Boolean(profile?.mustChangePassword);
 
           return {
             user: {
@@ -215,14 +401,14 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
               fullName: profile?.displayName || user.displayName || "Restaurant Owner",
               role: "BUSINESS_OWNER",
               businessId: bId,
-              mustChangePassword: false,
-              createdAtMs: profile?.createdAt?.toMillis?.() || Date.now(),
+              mustChangePassword: mustChange,
+              createdAtMs: profile?.createdAtMs || Date.now(),
               updatedAtMs: Date.now(),
             },
             claims: {
               role: "BUSINESS_OWNER",
               businessId: bId,
-              mustChangePassword: false,
+              mustChangePassword: mustChange,
             },
             business: {
               id: bId,
@@ -267,17 +453,16 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
           } as unknown as T;
         }
       } catch (profileErr) {
-        console.warn("Firestore profile lookup notice:", profileErr);
+        console.warn("Supabase profile lookup notice:", profileErr);
       }
     }
 
-    const isBusinessOwner =
+    const isTeaTimeOwner =
       user?.email?.toLowerCase() === "admin@teatime.lk" ||
-      storedRole === "BUSINESS_OWNER" ||
       storedEmail?.toLowerCase() === "admin@teatime.lk" ||
-      (user && !user.isAnonymous);
+      (storedRole === "BUSINESS_OWNER" && !user?.email);
 
-    if (isBusinessOwner) {
+    if (isTeaTimeOwner) {
       return {
         user: {
           uid: user?.uid || "hl22pC1uY9eFmUvmrOjaWvjl2Qy1",
@@ -377,23 +562,8 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
       console.warn("Super admin businesses fetch notice:", err);
     }
 
-    if (!businessList.some((b) => b.id === "teatime" || b.slug === "teatime")) {
-      businessList.unshift({
-        id: "teatime",
-        name: "TEA TIME",
-        slug: "teatime",
-        ownerName: "TEA TIME Manager",
-        ownerEmail: "admin@teatime.lk",
-        ownerUsername: "teatime",
-        packageId: "yearly",
-        activationDateColombo: getColomboDateString(Date.now() - 30 * ONE_DAY_MS),
-        expiryDateColombo: getColomboDateString(Date.now() + 365 * ONE_DAY_MS),
-        isLifetime: false,
-        daysRemaining: 365,
-        effectiveStatus: "ACTIVE",
-        status: "ACTIVE",
-      });
-    }
+    // Exclude demo-only Tea Time from Super Admin tenant list
+    businessList = businessList.filter((b) => b.id !== "teatime" && b.slug !== "teatime");
 
     const activeCount = businessList.filter((b) => b.effectiveStatus === "ACTIVE").length;
     const expiredCount = businessList.filter((b) => b.effectiveStatus === "EXPIRED").length;
@@ -402,6 +572,67 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
       (b) => b.daysRemaining !== null && b.daysRemaining <= 7 && b.daysRemaining > 0
     ).length;
 
+    // Fetch all registered/logged-in users from userProfiles
+    let usersList: any[] = [];
+    try {
+      const uSnap = await getDocs(collection(db, "userProfiles"));
+      if (!uSnap.empty) {
+        usersList = uSnap.docs.map((d) => {
+          const u = d.data();
+          const linkedBiz = businessList.find((b) => b.id === u.businessId);
+          return {
+            uid: d.id,
+            email: u.email || "",
+            displayName: u.displayName || u.fullName || u.username || "User",
+            username: u.username || "",
+            role: u.role || "BUSINESS_OWNER",
+            businessId: u.businessId || null,
+            businessName: linkedBiz?.name || (u.businessId === "teatime" ? "TEA TIME" : u.businessId || "—"),
+            active: u.active !== false,
+            createdAtMs: u.createdAtMs || 0,
+            phone: u.phone || "",
+          };
+        });
+        usersList.sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0));
+      }
+    } catch (err) {
+      console.warn("Super admin users fetch notice:", err);
+    }
+
+    // Fetch all purchase / payment records from payments
+    let paymentsList: any[] = [];
+    try {
+      const pSnap = await getDocs(collection(db, "payments"));
+      if (!pSnap.empty) {
+        paymentsList = pSnap.docs.map((d) => {
+          const p = d.data();
+          const linkedBiz = businessList.find((b) => b.id === p.businessId);
+          return {
+            id: d.id,
+            businessId: p.businessId || "",
+            businessName: p.businessName || linkedBiz?.name || p.businessId || "Unknown",
+            packageId: p.packageId || linkedBiz?.packageId || "—",
+            amountRupees: p.amountRupees ?? (p.amountMinor ? Math.round(p.amountMinor / 100) : 0),
+            amountMinor: p.amountMinor ?? ((p.amountRupees || 0) * 100),
+            paymentMethod: p.paymentMethod || "BANK_TRANSFER",
+            reference: p.reference || "",
+            notes: p.notes || "",
+            dateColombo: p.dateColombo || getColomboDateString(p.createdAtMs || nowMs),
+            createdAtMs: p.createdAtMs || 0,
+          };
+        });
+        paymentsList.sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0));
+      }
+    } catch (err) {
+      console.warn("Super admin payments fetch notice:", err);
+    }
+
+    const currentMonthPrefix = getColomboDateString(nowMs).slice(0, 7); // YYYY-MM
+    const totalPaymentsMinor = paymentsList.reduce((acc, p) => acc + (p.amountMinor || 0), 0);
+    const paymentsThisMonthMinor = paymentsList
+      .filter((p) => (p.dateColombo || "").startsWith(currentMonthPrefix))
+      .reduce((acc, p) => acc + (p.amountMinor || 0), 0);
+
     return {
       metrics: {
         totalBusinesses: businessList.length,
@@ -409,13 +640,15 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
         expiredBusinesses: expiredCount,
         suspendedBusinesses: suspendedCount,
         expiringWithin7Days: expiringSoon,
-        paymentsThisMonthMinor: 1_800_000,
-        totalPaymentsMinor: 1_800_000,
-        incomeThisMonthRupees: 18_000,
-        incomeTotalRupees: 18_000,
+        paymentsThisMonthMinor,
+        totalPaymentsMinor,
+        incomeThisMonthRupees: Math.round(paymentsThisMonthMinor / 100),
+        incomeTotalRupees: Math.round(totalPaymentsMinor / 100),
         archivedBusinesses: 0,
       },
       businesses: businessList,
+      users: usersList,
+      payments: paymentsList,
       packages: DEFAULT_PACKAGES,
       platformConfig: DEFAULT_PLATFORM_PUBLIC_CONFIG,
     } as unknown as T;
@@ -454,6 +687,24 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
         reference: ref,
         updatedAt: serverTimestamp(),
       }, { merge: true });
+
+      const amountRupees = data?.paymentAmountRupees ?? pkg?.priceRupees ?? 0;
+      if (amountRupees > 0) {
+        const payId = `pay_${bId}_${nowMs}`;
+        await setDoc(doc(db, "payments", payId), {
+          id: payId,
+          businessId: bId,
+          packageId: pkgId,
+          amountRupees,
+          amountMinor: amountRupees * 100,
+          paymentMethod: data?.paymentMethod || "BANK_TRANSFER",
+          reference: ref,
+          notes: data?.notes || `Subscription renewal (${pkg?.name || pkgId})`,
+          dateColombo: getColomboDateString(nowMs),
+          createdAt: serverTimestamp(),
+          createdAtMs: nowMs,
+        }, { merge: true });
+      }
     } catch (err) {
       console.warn("Direct Firestore renewal sync:", err);
     }
@@ -490,29 +741,34 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
       };
     }
 
-    // 2. Create Firebase Auth user in secondary app context without affecting active Super Admin session
+    // 2. Create Supabase Auth user in an isolated ephemeral client without affecting active Super Admin session
     let ownerUid = "usr_" + Math.random().toString(36).substring(2, 10);
     try {
-      const secondaryAppName = "SecondaryAdminCreateApp_" + Date.now();
-      const secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
-      const secondaryAuth = getAuth(secondaryApp);
+      const ephemeralClient = createEphemeralSupabaseClient();
       try {
-        const cred = await createUserWithEmailAndPassword(secondaryAuth, email, tempPassword);
+        const cred = await createUserWithEmailAndPassword(auth, email, tempPassword, {
+          displayName: ownerName,
+          customClient: ephemeralClient,
+        });
         ownerUid = cred.user.uid;
       } catch (authErr: any) {
         if (authErr?.code === "auth/email-already-in-use") {
           try {
-            const cred = await signInWithEmailAndPassword(secondaryAuth, email, tempPassword);
+            const cred = await signInWithEmailAndPassword(
+              auth,
+              email,
+              tempPassword,
+              ephemeralClient
+            );
             ownerUid = cred.user.uid;
           } catch { }
         } else {
-          console.warn("Secondary auth user creation notice:", authErr);
+          console.warn("Secondary Supabase auth user creation notice:", authErr);
         }
       }
-      await signOut(secondaryAuth).catch(() => { });
-      await deleteApp(secondaryApp).catch(() => { });
+      await signOut(auth, ephemeralClient).catch(() => { });
     } catch (e) {
-      console.warn("Secondary app setup notice:", e);
+      console.warn("Ephemeral client setup notice:", e);
     }
 
     // 3. Write userProfiles document
@@ -614,14 +870,31 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
       }
     }
 
-    // 7. Seed sample tables
+    // 6b. Write slug index so public /:slug/menu & order placement resolve cleanly
+    await setDoc(doc(db, "businessSlugs", slug), {
+      slug,
+      businessId,
+      isAlias: false,
+      canonicalSlug: slug,
+    }, { merge: true }).catch(() => { });
+
+    // 7. Seed sample tables & tableTokens
     const sampleTables = [
-      { id: "tbl_01", tableNumber: "Table 01", token: `tbl_01_${Math.random().toString(36).substring(2, 6)}`, active: true },
-      { id: "tbl_02", tableNumber: "Table 02", token: `tbl_02_${Math.random().toString(36).substring(2, 6)}`, active: true },
-      { id: "tbl_03", tableNumber: "Table 03", token: `tbl_03_${Math.random().toString(36).substring(2, 6)}`, active: true },
+      { id: "tbl_01", tableNumber: "Table 01", number: "Table 01", token: `tbl_01_${Math.random().toString(36).substring(2, 6)}`, active: true },
+      { id: "tbl_02", tableNumber: "Table 02", number: "Table 02", token: `tbl_02_${Math.random().toString(36).substring(2, 6)}`, active: true },
+      { id: "tbl_03", tableNumber: "Table 03", number: "Table 03", token: `tbl_03_${Math.random().toString(36).substring(2, 6)}`, active: true },
     ];
     for (const t of sampleTables) {
       await setDoc(doc(db, `businesses/${businessId}/tables`, t.id), t, { merge: true }).catch(() => { });
+      await setDoc(doc(db, `businesses/${businessId}/tableTokens`, t.token), {
+        token: t.token,
+        tableId: t.id,
+        number: t.tableNumber,
+        tableNumber: t.tableNumber,
+        businessId,
+        active: true,
+        updatedAtMs: nowMs,
+      }, { merge: true }).catch(() => { });
     }
 
     // 8. Seed sample categories
@@ -687,6 +960,71 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
     } catch (e) {
       console.warn("setBusinessOperationalStatus notice:", e);
     }
+    return { success: true } as unknown as T;
+  }
+
+  // 5b. Permanently Delete Business (protect demo "teatime")
+  if (action === "deleteBusiness") {
+    const bId = data?.businessId;
+    if (!bId) throw new Error("Missing businessId");
+    if (bId === "teatime") {
+      throw new Error("Demo business (TEA TIME) cannot be deleted.");
+    }
+    const subCols = ["products", "categories", "orders", "tables", "rewards"];
+    for (const sub of subCols) {
+      try {
+        const snap = await getDocs(collection(db, "businesses", bId, sub));
+        await Promise.allSettled(snap.docs.map((d) => deleteDoc(doc(db, "businesses", bId, sub, d.id))));
+      } catch {
+        // ignore if subcollection is empty or missing
+      }
+    }
+    try {
+      const usersSnap = await getDocs(query(collection(db, "userProfiles"), where("businessId", "==", bId)));
+      await Promise.allSettled(usersSnap.docs.map((u) => deleteDoc(doc(db, "userProfiles", u.id))));
+    } catch {
+      // ignore if no linked user profiles
+    }
+    await Promise.allSettled([
+      deleteDoc(doc(db, "businesses", bId)),
+      deleteDoc(doc(db, "businessAccess", bId)),
+      deleteDoc(doc(db, "businessSettings", bId)),
+    ]);
+    return { success: true } as unknown as T;
+  }
+
+  // 5c. Permanently Delete User Profile
+  if (action === "deleteUserProfile") {
+    const uid = data?.uid;
+    if (!uid) throw new Error("Missing uid");
+    await deleteDoc(doc(db, "userProfiles", uid));
+    return { success: true } as unknown as T;
+  }
+
+  // 5d. Reset All Recorded Payments
+  if (action === "resetAllPayments") {
+    try {
+      const snap = await getDocs(collection(db, "payments"));
+      await Promise.allSettled(snap.docs.map((d) => deleteDoc(doc(db, "payments", d.id))));
+    } catch {
+      // ignore if empty
+    }
+    return { success: true } as unknown as T;
+  }
+
+  // 5e. Update Platform Packages & Settings
+  if (action === "updatePlatformPackagesAndSettings") {
+    if (typeof window !== "undefined" && Array.isArray(data?.packages)) {
+      localStorage.setItem("menyo_platform_packages", JSON.stringify(data.packages));
+    }
+    await setDoc(
+      doc(db, "platformConfig", "public"),
+      {
+        ...(data || {}),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
     return { success: true } as unknown as T;
   }
 
@@ -802,6 +1140,20 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
         if (!s.empty) {
           bizSnap = s.docs[0];
           bId = bizSnap.id;
+        } else {
+          // Fallback: check if rawSlug was sanitized or lowercase
+          const qAll = await getDocs(collection(db, "businesses")).catch(() => null);
+          if (qAll && !qAll.empty) {
+            const matched = qAll.docs.find(
+              (d) =>
+                d.id.toLowerCase() === rawSlug ||
+                (d.data()?.slug && d.data().slug.toLowerCase() === rawSlug)
+            );
+            if (matched) {
+              bizSnap = matched;
+              bId = matched.id;
+            }
+          }
         }
       }
 
@@ -1012,7 +1364,12 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
     let category = (data.category || data.categoryId || "General").trim();
     let categoryId = data.categoryId || "cat_general";
 
-    const productRecord = {
+    const imageUrls = Array.isArray(data.imageUrls)
+      ? data.imageUrls.filter((u: any) => typeof u === "string" && u.trim()).slice(0, 5)
+      : (data.imageUrl ? [data.imageUrl.trim()] : []);
+    const primaryImage = imageUrls[0] || data.imageUrl || null;
+
+    const productRecord: Record<string, any> = {
       id: prodId,
       businessId: bId,
       name,
@@ -1023,8 +1380,9 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
       priceDisplay: priceRupees,
       price: priceRupees,
       description: data.description || "",
-      imageUrl: data.imageUrl || null,
-      image: data.imageUrl || null,
+      imageUrl: primaryImage,
+      image: primaryImage,
+      ...(imageUrls.length > 0 ? { imageUrls } : {}),
       isAvailable: data.isAvailable !== false,
       available: data.isAvailable !== false,
       isVeg: data.isVeg ?? false,
@@ -1034,6 +1392,18 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
       updatedAt: serverTimestamp(),
       updatedAtMs: Date.now(),
     };
+
+    if (typeof window !== "undefined") {
+      try {
+        const key = `menyo_products_${bId}`;
+        const existing: any[] = JSON.parse(localStorage.getItem(key) || "[]");
+        const idx = existing.findIndex((p) => p.id === prodId);
+        const plainRecord = { ...productRecord, updatedAt: productRecord.updatedAtMs };
+        if (idx >= 0) existing[idx] = { ...existing[idx], ...plainRecord };
+        else existing.push(plainRecord);
+        localStorage.setItem(key, JSON.stringify(existing));
+      } catch {}
+    }
 
     try {
       await setDoc(doc(db, "businesses", bId, "products", prodId), productRecord, { merge: true });
@@ -1100,6 +1470,18 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
       updatedAt: serverTimestamp(),
       updatedAtMs: Date.now(),
     };
+
+    if (typeof window !== "undefined") {
+      try {
+        const key = `menyo_categories_${bId}`;
+        const existing: any[] = JSON.parse(localStorage.getItem(key) || "[]");
+        const idx = existing.findIndex((c) => c.id === catId);
+        const plainRecord = { ...categoryRecord, updatedAt: categoryRecord.updatedAtMs };
+        if (idx >= 0) existing[idx] = { ...existing[idx], ...plainRecord };
+        else existing.push(plainRecord);
+        localStorage.setItem(key, JSON.stringify(existing));
+      } catch {}
+    }
 
     try {
       await setDoc(doc(db, "businesses", bId, "categories", catId), categoryRecord, { merge: true });
@@ -1227,24 +1609,40 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
 
     let resolvedTableNumber = "Table 01";
     if (data.tableToken) {
+      const trimmedTok = data.tableToken.trim();
       try {
-        const tSnap = await getDoc(doc(db, "businesses", bId, "tableTokens", data.tableToken.trim()));
+        const tSnap = await getDoc(doc(db, "businesses", bId, "tableTokens", trimmedTok));
         if (tSnap.exists()) {
           resolvedTableNumber = tSnap.data()?.tableNumber || tSnap.data()?.number || resolvedTableNumber;
+        } else {
+          const qT = query(collection(db, "businesses", bId, "tables"), where("token", "==", trimmedTok));
+          const sT = await getDocs(qT);
+          if (!sT.empty) {
+            resolvedTableNumber = sT.docs[0].data()?.tableNumber || sT.docs[0].data()?.number || resolvedTableNumber;
+          } else if (bId === "teatime") {
+            const seedTbl = INITIAL_TABLES.find((t) => t.token === trimmedTok);
+            if (seedTbl) resolvedTableNumber = seedTbl.number;
+          }
         }
-      } catch { }
+      } catch {
+        if (bId === "teatime") {
+          const seedTbl = INITIAL_TABLES.find((t) => t.token === trimmedTok);
+          if (seedTbl) resolvedTableNumber = seedTbl.number;
+        }
+      }
     }
 
     const rawItems: any[] = Array.isArray(data.items) ? data.items : [];
     let computedTotalMinor = 0;
     const itemSnapshots: any[] = [];
 
-    // Fetch product details from businesses/{bId}/products
+    // Fetch product details from businesses/{bId}/products (with seed fallback for Tea Time)
     for (const it of rawItems) {
       let pName = "Menu Item";
       let pPriceMinor = 10000;
       let pImage: string | null = null;
       let pCat = "General";
+      let resolvedFromDb = false;
       try {
         const pSnap = await getDoc(doc(db, "businesses", bId, "products", it.productId));
         if (pSnap.exists()) {
@@ -1253,8 +1651,19 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
           pPriceMinor = pd.priceMinor || (pd.priceRupees ? pd.priceRupees * 100 : pPriceMinor);
           pImage = pd.imageUrl || pd.image || null;
           pCat = pd.category || pCat;
+          resolvedFromDb = true;
         }
       } catch { }
+
+      if (!resolvedFromDb && bId === "teatime") {
+        const seedItem = INITIAL_MENU_ITEMS.find((m) => m.id === it.productId);
+        if (seedItem) {
+          pName = seedItem.name;
+          pPriceMinor = seedItem.priceMinor || (seedItem.price ? seedItem.price * 100 : pPriceMinor);
+          pImage = seedItem.imageUrl || seedItem.image || null;
+          pCat = seedItem.category || pCat;
+        }
+      }
 
       const qty = Number(it.quantity) || 1;
       const subtotalMinor = pPriceMinor * qty;
@@ -1273,17 +1682,18 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
     }
 
     const nowMs = Date.now();
+    const initialStatus = bId === "teatime" ? "new" : "PENDING";
     const orderDocData = {
       id: orderId,
       businessId: bId,
-      businessSlug: slug,
+      businessSlug: slug || "teatime",
       trackingToken,
       orderNumber: nextOrderNum,
       orderNumberDisplay,
       tableNumber: resolvedTableNumber,
       tableToken: data.tableToken || "",
       customerId: auth.currentUser?.uid || `guest_${Math.random().toString(36).substring(2, 9)}`,
-      status: "PENDING",
+      status: initialStatus,
       items: itemSnapshots,
       itemCount: itemSnapshots.reduce((acc, i) => acc + i.quantity, 0),
       totalMinor: computedTotalMinor,
@@ -1308,16 +1718,13 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
         orderNumber: nextOrderNum,
         orderNumberDisplay,
         tableNumber: resolvedTableNumber,
-        status: "PENDING",
+        status: initialStatus,
         items: itemSnapshots,
         totalMinor: computedTotalMinor,
         totalRupees: Math.round(computedTotalMinor / 100),
         currency: "LKR",
         createdAtMs: nowMs,
       });
-      if (bId === "teatime" || bId === "biz_teatime") {
-        await setDoc(doc(db, "orders", orderId), orderDocData).catch(() => { });
-      }
     } catch (e) {
       console.warn("Client fallback create tenant order:", e);
     }
@@ -1331,21 +1738,77 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
       tableNumber: resolvedTableNumber,
       totalMinor: computedTotalMinor,
       totalRupees: Math.round(computedTotalMinor / 100),
+      businessSlug: slug || "teatime",
     } as unknown as T;
   }
 
-  // 5. Default success response for other actions
+  // 12. Get Order Tracking Status
+  if (action === "getOrderTrackingStatus") {
+    const slug = (data?.businessSlug || "teatime").toLowerCase().trim();
+    let bId = slug || "teatime";
+    if (slug && slug !== "teatime") {
+      try {
+        const slugSnap = await getDoc(doc(db, "businessSlugs", slug));
+        if (slugSnap.exists()) bId = slugSnap.data()?.businessId || bId;
+      } catch { }
+    }
+    const trackingToken = (data?.trackingToken || "").trim();
+    if (trackingToken) {
+      const q = query(collection(db, "businesses", bId, "orders"), where("trackingToken", "==", trackingToken));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const d = snap.docs[0].data();
+        return {
+          orderId: snap.docs[0].id,
+          orderNumber: d.orderNumberDisplay || `#${d.orderNumber}`,
+          status: d.status,
+          tableNumber: d.tableNumber,
+          businessName: bId === "teatime" ? "TEA TIME" : slug,
+          businessSlug: slug,
+          items: (d.items || []).map((it: any) => ({
+            name: it.name,
+            quantity: it.quantity,
+            subtotalRupees: Math.round((it.subtotalMinor || 0) / 100),
+            specialInstruction: it.sugarNote || null,
+          })),
+          totalRupees: Math.round((d.totalMinor || 0) / 100),
+          createdAt: d.createdAt,
+          updatedAt: d.updatedAt,
+        } as unknown as T;
+      }
+    }
+    throw new ApiError("not-found", "Order tracking session could not be found.");
+  }
+
+  // 13. Complete Required Password Change
+  if (action === "completeRequiredPasswordChange") {
+    const newPwd = String(data?.newPassword || "");
+    if (newPwd.length < 8) {
+      throw new ApiError("invalid-argument", "Password must be at least 8 characters.");
+    }
+    await updateUserPassword(newPwd);
+    if (auth.currentUser?.uid) {
+      await setDoc(doc(db, "userProfiles", auth.currentUser.uid), {
+        mustChangePassword: false,
+        temporaryPassword: null,
+        updatedAt: serverTimestamp(),
+      }, { merge: true }).catch(() => { });
+    }
+    return { success: true } as unknown as T;
+  }
+
+  // Default success response for other actions
   return { success: true } as unknown as T;
 }
 
 /**
  * Executes an RPC call to the server engine via /api/rpc.
- * Automatically attaches the current user's Firebase ID token for authenticated endpoints.
- * Automatically falls back to client execution if /api/rpc is not available in current environment.
+ * Automatically attaches the current user's Supabase JWT for authenticated endpoints.
+ * Automatically falls back to Supabase RLS client execution if /api/rpc is not available.
  */
 export async function callRpc<T = any>(action: string, data?: any): Promise<T> {
   let token: string | null = null;
-  if (auth.currentUser) {
+  if (auth.currentUser && !auth.currentUser.isAnonymous) {
     try {
       token = await auth.currentUser.getIdToken();
     } catch {
@@ -1379,7 +1842,7 @@ export async function callRpc<T = any>(action: string, data?: any): Promise<T> {
     if (err instanceof ApiError && err.code !== "unknown") {
       throw err;
     }
-    // Fall through to client handler if endpoint doesn't exist or returns HTML
+    // Fall through to Supabase RLS client handler if endpoint doesn't exist or server admin key is omitted
   }
 
   return await clientRpcHandler<T>(action, data);
@@ -1464,50 +1927,95 @@ export const platformApi = {
     const rawId = params.identifier.trim();
     let targetEmail = rawId;
     if (!rawId.includes("@")) {
-      if (rawId.toLowerCase() === "admin" || rawId.toLowerCase() === "aevonix") {
+      const lowerId = rawId.toLowerCase();
+      // Check if phone number (e.g. 0771234567 or +94771234567)
+      const digitsOnly = lowerId.replace(/[^0-9]/g, "");
+      if (digitsOnly.length >= 9) {
+        targetEmail = `${digitsOnly}@phone.menyo.lk`;
+      } else if (lowerId === "admin" || lowerId === "aevonix") {
         targetEmail = "admin@aevonix.lk";
-      } else if (rawId.toLowerCase() === "teatime") {
+      } else if (lowerId === "teatime") {
         targetEmail = "admin@teatime.lk";
+      } else {
+        try {
+          const qU = query(collection(db, "userProfiles"), where("username", "==", lowerId));
+          const sU = await getDocs(qU);
+          if (!sU.empty && sU.docs[0].data()?.email) {
+            targetEmail = sU.docs[0].data().email;
+          }
+        } catch { }
       }
     }
 
-    try {
-      const res = await callRpc<{
-        customToken?: string;
-        role: "SUPER_ADMIN" | "BUSINESS_OWNER";
-        businessId: string | null;
-        mustChangePassword: boolean;
-      }>("loginWithIdentifier", params);
-
-      if (res?.customToken) {
-        const cred = await signInWithCustomToken(auth, res.customToken);
-        return {
-          user: cred.user,
-          role: res.role,
-          businessId: res.businessId,
-          mustChangePassword: res.mustChangePassword,
-        };
-      }
-    } catch {
-      // Fall through to direct client sign in
-    }
-
-    // Direct Firebase Auth client sign-in
+    // Sign in directly with Supabase Auth
     const cred = await signInWithEmailAndPassword(auth, targetEmail, params.password);
-    const isSuperAdmin = targetEmail.toLowerCase() === "admin@aevonix.lk";
-    const role = isSuperAdmin ? ("SUPER_ADMIN" as const) : ("BUSINESS_OWNER" as const);
-    const businessId = isSuperAdmin ? null : "teatime";
+    const emailLower = (cred.user.email || targetEmail).toLowerCase();
+    const isSuperAdmin =
+      emailLower === "admin@aevonix.lk" || cred.user.appMetadata?.role === "SUPER_ADMIN";
+
+    let role: "SUPER_ADMIN" | "BUSINESS_OWNER" = isSuperAdmin ? "SUPER_ADMIN" : "BUSINESS_OWNER";
+    let businessId: string | null = isSuperAdmin
+      ? null
+      : emailLower === "admin@teatime.lk"
+      ? "teatime"
+      : null;
+    let businessSlug: string | null = emailLower === "admin@teatime.lk" ? "teatime" : null;
+    let mustChangePassword = false;
+
+    if (!isSuperAdmin && emailLower !== "admin@teatime.lk") {
+      try {
+        const pSnap = await getDoc(doc(db, "userProfiles", cred.user.uid));
+        if (pSnap.exists()) {
+          const pData = pSnap.data();
+          businessId = pData.businessId || null;
+          mustChangePassword = Boolean(pData.mustChangePassword);
+        } else {
+          const qE = query(collection(db, "userProfiles"), where("email", "==", emailLower));
+          const sE = await getDocs(qE);
+          if (!sE.empty) {
+            const pData = sE.docs[0].data();
+            businessId = pData.businessId || null;
+            mustChangePassword = Boolean(pData.mustChangePassword);
+          }
+        }
+
+        // If businessId is found, resolve its canonical slug
+        if (businessId) {
+          const bDoc = await getDoc(doc(db, "businesses", businessId)).catch(() => null);
+          if (bDoc && bDoc.exists()) {
+            businessSlug = bDoc.data()?.slug || businessId;
+          } else {
+            businessSlug = businessId;
+          }
+        } else {
+          // Check if user is business owner by email in businesses collection
+          const qBiz = query(collection(db, "businesses"), where("ownerEmail", "==", emailLower));
+          const sBiz = await getDocs(qBiz).catch(() => null);
+          if (sBiz && !sBiz.empty) {
+            businessId = sBiz.docs[0].id;
+            businessSlug = sBiz.docs[0].data()?.slug || businessId;
+          }
+        }
+      } catch { }
+    }
 
     if (typeof window !== "undefined") {
       localStorage.setItem("menyo_auth_role", role);
-      localStorage.setItem("menyo_auth_email", targetEmail);
+      localStorage.setItem("menyo_auth_email", emailLower);
+      if (businessId) {
+        localStorage.setItem("menyo_auth_businessId", businessId);
+      }
+      if (businessSlug) {
+        localStorage.setItem("menyo_auth_businessSlug", businessSlug);
+      }
     }
 
     return {
       user: cred.user,
       role,
       businessId,
-      mustChangePassword: false,
+      slug: businessSlug,
+      mustChangePassword,
     };
   },
 
@@ -1520,15 +2028,21 @@ export const platformApi = {
     phone?: string;
     whatsapp?: string;
   }) {
-    const email = params.email.trim().toLowerCase();
+    let email = params.email.trim().toLowerCase();
+    // Allow phone number as primary credential if no '@' present
+    if (!email.includes("@")) {
+      const digits = email.replace(/[^0-9]/g, "");
+      email = `${digits}@phone.menyo.lk`;
+    }
     const password = params.password || "MenyoTrial2026!";
     const businessName = params.businessName.trim();
     const ownerName = params.ownerName.trim();
 
-    // 1. Create or get user in Firebase Auth
     let user: User;
     try {
-      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      const cred = await createUserWithEmailAndPassword(auth, email, password, {
+        displayName: ownerName,
+      });
       user = cred.user;
     } catch (err: any) {
       if (err?.code === "auth/email-already-in-use") {
@@ -1539,201 +2053,54 @@ export const platformApi = {
       }
     }
 
-    // 2. Generate slug & businessId
-    let slug = normalizeBusinessSlug(businessName);
-    if (!slug || slug.length < 3) slug = `cafe-${Math.random().toString(36).substring(2, 6)}`;
-    const businessId = `biz_${slug}_${Math.random().toString(36).substring(2, 6)}`;
-    const nowMs = Date.now();
-    const twoDaysMs = 2 * ONE_DAY_MS;
-    const expiresAtMs = nowMs + twoDaysMs;
-
-    // 3. Create userProfile, business, and businessAccess in Firestore
-    try {
-      await setDoc(doc(db, "userProfiles", user.uid), {
-        uid: user.uid,
-        email,
-        displayName: ownerName,
-        username: slug,
-        role: "BUSINESS_OWNER",
-        businessId,
-        mustChangePassword: false,
-        active: true,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-
-      await setDoc(doc(db, "businesses", businessId), {
-        id: businessId,
-        slug,
-        name: businessName,
-        ownerName,
-        ownerUsername: slug,
-        ownerEmail: email,
-        ownerUid: user.uid,
-        phone: params.phone || "076 484 7081",
-        whatsapp: params.whatsapp || params.phone || "076 484 7081",
-        address: "Sri Lanka",
-        currencyCode: "LKR",
-        currencySymbol: "Rs.",
-        openingHours: "8:00 AM – 10:00 PM",
-        status: "ACTIVE",
-        isTrial: true,
-        packageId: "2_days_trial",
-        trialExpiresAtMs: expiresAtMs,
-        branding: {
-          primaryColor: "#050F2A",
-          accentColor: "#7BBBFF",
-          backgroundColor: "#F2FDFF",
-          textColor: "#050F2A",
-          headerBackgroundColor: "#050F2A",
-          headerTextColor: "#F2FDFF",
-        },
-        createdAt: serverTimestamp(),
-        createdAtMs: nowMs,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-
-      await setDoc(doc(db, "businessAccess", businessId), {
-        businessId,
-        operationalStatus: "ACTIVE",
-        packageId: "2_days_trial",
-        packageNameSnapshot: "2-Day Free Trial",
-        isLifetime: false,
-        activatedAtMs: nowMs,
-        startsAtMs: nowMs,
-        expiresAtMs,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-
-      // Seed starter tables for this new tenant
-      const sampleTables = [
-        { id: "tbl_01", tableNumber: "Table 01", token: `tbl_01_${Math.random().toString(36).substring(2, 6)}`, active: true },
-        { id: "tbl_02", tableNumber: "Table 02", token: `tbl_02_${Math.random().toString(36).substring(2, 6)}`, active: true },
-        { id: "tbl_03", tableNumber: "Table 03", token: `tbl_03_${Math.random().toString(36).substring(2, 6)}`, active: true },
-      ];
-      for (const t of sampleTables) {
-        await setDoc(doc(db, `businesses/${businessId}/tables`, t.id), t, { merge: true });
-      }
-
-      // Seed starter categories
-      const sampleCats = [
-        { id: "cat_hot", name: "Hot Beverages", slug: "hot-beverages", sortOrder: 1, active: true },
-        { id: "cat_cold", name: "Cold Drinks", slug: "cold-drinks", sortOrder: 2, active: true },
-        { id: "cat_snacks", name: "Snacks & Quick Bites", slug: "snacks", sortOrder: 3, active: true },
-      ];
-      for (const c of sampleCats) {
-        await setDoc(doc(db, `businesses/${businessId}/categories`, c.id), c, { merge: true });
-      }
-
-      // Seed sample products
-      const sampleProds = [
-        {
-          id: "prod_ceylon_tea",
-          name: "Ceylon Milk Tea",
-          categoryId: "cat_hot",
-          priceRupees: 150,
-          priceMinor: 15000,
-          description: "Freshly brewed classic Ceylon black tea with milk and sugar.",
-          isAvailable: true,
-          sortOrder: 1,
-        },
-        {
-          id: "prod_iced_coffee",
-          name: "Artisan Iced Coffee",
-          categoryId: "cat_cold",
-          priceRupees: 350,
-          priceMinor: 35000,
-          description: "Chilled rich espresso blended with condensed milk.",
-          isAvailable: true,
-          sortOrder: 2,
-        },
-      ];
-      for (const p of sampleProds) {
-        await setDoc(doc(db, `businesses/${businessId}/products`, p.id), p, { merge: true });
-      }
-    } catch (err) {
-      console.warn("Firestore registration setup notice:", err);
-    }
+    const { businessId, slug } = await provisionTrialWorkspaceForExistingUser({
+      uid: user.uid,
+      email,
+      ownerName,
+      businessName,
+      phone: params.phone,
+      whatsapp: params.whatsapp,
+    });
 
     if (typeof window !== "undefined") {
       localStorage.setItem("menyo_auth_role", "BUSINESS_OWNER");
       localStorage.setItem("menyo_auth_email", email);
+      localStorage.setItem("menyo_auth_businessId", businessId);
     }
 
     return { user, businessId, slug };
   },
 
-  // Google OAuth Login & 2-Day Trial Onboarding
-  async loginWithGoogleOAuth() {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: "select_account" });
-    const cred = await signInWithPopup(auth, provider);
-    const user = cred.user;
-    const email = user.email?.toLowerCase() || "";
-
-    if (email === "admin@aevonix.lk") {
-      localStorage.setItem("menyo_auth_role", "SUPER_ADMIN");
-      localStorage.setItem("menyo_auth_email", email);
-      return { user, role: "SUPER_ADMIN" as const, businessId: null };
-    }
-
-    // Check if user already has a business profile
-    try {
-      const snap = await getDoc(doc(db, "userProfiles", user.uid));
-      if (snap.exists()) {
-        const data = snap.data();
-        localStorage.setItem("menyo_auth_role", "BUSINESS_OWNER");
-        localStorage.setItem("menyo_auth_email", email);
-        return { user, role: "BUSINESS_OWNER" as const, businessId: data.businessId };
-      }
-    } catch { }
-
-    // First time login: auto-provision 2-Day Free Trial
-    const bizName = user.displayName ? `${user.displayName}'s Restaurant` : "My Restaurant";
-    const reg = await this.registerOwnerWithTrial({
-      businessName: bizName,
-      ownerName: user.displayName || "Restaurant Owner",
-      email: user.email || "",
-      password: "GoogleAuthUser2026!",
-    });
-
-    return { user, role: "BUSINESS_OWNER" as const, businessId: reg.businessId };
+  // Google OAuth Login & 2-Day Trial Onboarding (Redirects via Supabase Auth)
+  async loginWithGoogleOAuth(): Promise<{
+    redirecting?: boolean;
+    user: User | null;
+    role: "SUPER_ADMIN" | "BUSINESS_OWNER";
+    businessId: string | null;
+  }> {
+    await signInWithOAuthProvider("google");
+    return {
+      redirecting: true,
+      user: auth.currentUser,
+      role: "BUSINESS_OWNER",
+      businessId: null,
+    };
   },
 
-  // Apple OAuth Login & 2-Day Trial Onboarding
-  async loginWithAppleOAuth() {
-    const provider = new OAuthProvider("apple.com");
-    provider.addScope("email");
-    provider.addScope("name");
-    const cred = await signInWithPopup(auth, provider);
-    const user = cred.user;
-    const email = user.email?.toLowerCase() || "";
-
-    if (email === "admin@aevonix.lk") {
-      localStorage.setItem("menyo_auth_role", "SUPER_ADMIN");
-      localStorage.setItem("menyo_auth_email", email);
-      return { user, role: "SUPER_ADMIN" as const, businessId: null };
-    }
-
-    try {
-      const snap = await getDoc(doc(db, "userProfiles", user.uid));
-      if (snap.exists()) {
-        const data = snap.data();
-        localStorage.setItem("menyo_auth_role", "BUSINESS_OWNER");
-        localStorage.setItem("menyo_auth_email", email);
-        return { user, role: "BUSINESS_OWNER" as const, businessId: data.businessId };
-      }
-    } catch { }
-
-    const bizName = user.displayName ? `${user.displayName}'s Restaurant` : "My Restaurant";
-    const reg = await this.registerOwnerWithTrial({
-      businessName: bizName,
-      ownerName: user.displayName || "Restaurant Owner",
-      email: user.email || "",
-      password: "AppleAuthUser2026!",
-    });
-
-    return { user, role: "BUSINESS_OWNER" as const, businessId: reg.businessId };
+  // Apple OAuth Login & 2-Day Trial Onboarding (Redirects via Supabase Auth)
+  async loginWithAppleOAuth(): Promise<{
+    redirecting?: boolean;
+    user: User | null;
+    role: "SUPER_ADMIN" | "BUSINESS_OWNER";
+    businessId: string | null;
+  }> {
+    await signInWithOAuthProvider("apple");
+    return {
+      redirecting: true,
+      user: auth.currentUser,
+      role: "BUSINESS_OWNER",
+      businessId: null,
+    };
   },
 
   async getSessionContext() {
@@ -1770,14 +2137,10 @@ export const platformApi = {
   },
 
   async completeRequiredPasswordChange(newPassword: string) {
-    const res = await callRpc<{ success: boolean; customToken?: string }>(
+    return callRpc<{ success: boolean }>(
       "completeRequiredPasswordChange",
       { newPassword }
     );
-    if (res.customToken) {
-      await signInWithCustomToken(auth, res.customToken);
-    }
-    return res;
   },
 
   // Super Admin
@@ -1798,6 +2161,8 @@ export const platformApi = {
     return callRpc<{
       metrics: SuperAdminMetrics;
       businesses: SuperAdminBusinessRow[];
+      users?: any[];
+      payments?: any[];
       packages: SubscriptionPackage[];
       platformConfig: PlatformPublicConfig;
     }>("getSuperAdminDashboard");
@@ -1890,6 +2255,18 @@ export const platformApi = {
     return callRpc("setBusinessOperationalStatus", { businessId, status, reason });
   },
 
+  async deleteBusiness(businessId: string) {
+    return callRpc<{ success: boolean }>("deleteBusiness", { businessId });
+  },
+
+  async deleteUserProfile(uid: string) {
+    return callRpc<{ success: boolean }>("deleteUserProfile", { uid });
+  },
+
+  async resetAllPayments() {
+    return callRpc<{ success: boolean }>("resetAllPayments", {});
+  },
+
   async resetOwnerAccess(data: {
     businessId: string;
     newEmail?: string;
@@ -1942,6 +2319,7 @@ export const platformApi = {
     priceRupees: number;
     description?: string;
     imageUrl?: string | null;
+    imageUrls?: string[];
     isAvailable?: boolean;
     isVeg?: boolean;
     isPopular?: boolean;
@@ -1960,6 +2338,7 @@ export const platformApi = {
   async ownerUpsertTable(data: {
     businessId?: string;
     id?: string;
+    tableId?: string;
     tableNumber?: string;
     number?: string;
     capacity?: number;
@@ -1967,7 +2346,12 @@ export const platformApi = {
     active?: boolean;
     rotateToken?: boolean;
   }) {
-    return callRpc("ownerUpsertTable", data);
+    const payload = {
+      ...data,
+      tableId: data.tableId || data.id,
+      number: data.number || data.tableNumber,
+    };
+    return callRpc("ownerUpsertTable", payload);
   },
 
   async ownerUpdateOrderStatus(

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { doc, onSnapshot, getDoc } from "firebase/firestore";
+import { db, doc, onSnapshot, getDoc } from "../../lib/supabaseStore";
 import {
+  Camera,
   CheckCircle2,
   Clock,
   ChefHat,
@@ -9,11 +10,15 @@ import {
   X,
   Utensils,
   Star,
-  ExternalLink
+  ExternalLink,
+  Gift,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
-import { db } from "../../lib/firebase";
 import { Order, OrderStatus } from "../../types";
+import { MemoryCameraModal } from "./MemoryCameraModal";
 import { formatRupees, formatTimeAgo } from "../../lib/utils";
+import { calculateEarnedPoints, saveCustomerRewardPoints } from "../../lib/rewards";
 
 const GOOGLE_REVIEW_URL =
   "https://www.google.com/maps/place/TeaTime/@8.7505273,80.5002708,1075m/data=!3m1!1e3!4m8!3m7!1s0x3afc150061716423:0xd3dafef0e97cac0d!8m2!3d8.7505273!4d80.5028457!9m1!1b1!16s%2Fg%2F11x038s1mv?entry=ttu&g_ep=EgoyMDI2MTAyMC4wIKXMDSoASAFQAw%3D%3D";
@@ -37,6 +42,40 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
 }) => {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Reward points enrollment state
+  const [rewardName, setRewardName] = useState(() => localStorage.getItem("menyo_customer_name") || "");
+  const [rewardPhone, setRewardPhone] = useState(() => localStorage.getItem("menyo_customer_phone") || "");
+  const [rewardSaving, setRewardSaving] = useState(false);
+  const [showMemoryCamera, setShowMemoryCamera] = useState(false);
+  const [rewardSavedInfo, setRewardSavedInfo] = useState<{ earned: number; total: number } | null>(null);
+  const [rewardError, setRewardError] = useState<string | null>(null);
+
+  const handleSaveReward = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rewardName.trim() || !rewardPhone.trim()) {
+      setRewardError("Please enter both your name and mobile number.");
+      return;
+    }
+    setRewardSaving(true);
+    setRewardError(null);
+    try {
+      const totalRupees = order ? Math.round((order.totalMinor || 0) / 100) : 0;
+      const { record, earnedPoints } = await saveCustomerRewardPoints({
+        businessId: businessId || businessSlug || "teatime",
+        phone: rewardPhone.trim(),
+        name: rewardName.trim(),
+        orderAmountRupees: totalRupees,
+      });
+      localStorage.setItem("menyo_customer_name", rewardName.trim());
+      localStorage.setItem("menyo_customer_phone", rewardPhone.trim());
+      setRewardSavedInfo({ earned: earnedPoints, total: record.points });
+    } catch (err: any) {
+      setRewardError(err?.message || "Could not save reward points.");
+    } finally {
+      setRewardSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (!orderId) return;
@@ -159,7 +198,10 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
         {/* Header */}
         <div className="bg-[#0A0A0A] text-[#FFFCF6] p-4 flex items-center justify-between border-b border-white/10">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-[#E8B64F] text-[#1A0F08] flex items-center justify-center font-bold shadow-warm">
+            <div
+              style={{ backgroundColor: "var(--tenant-primary, #E8B64F)", color: "#FFFFFF" }}
+              className="w-8 h-8 rounded-full flex items-center justify-center font-bold shadow-warm"
+            >
               <Utensils className="w-4 h-4" />
             </div>
             <div>
@@ -244,7 +286,10 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
                           {stage.label}
                         </span>
                         {isCurrent && (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#E8B64F] text-[#301C10]">
+                          <span
+                            style={{ backgroundColor: "var(--tenant-primary, #E8B64F)", color: "#FFFFFF" }}
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                          >
                             Current
                           </span>
                         )}
@@ -338,6 +383,92 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
             </a>
           </div>
 
+          {/* Reward Points & Exclusive Offers Card (removed) */}
+          {(false as boolean) && (
+          <div className="rounded-2xl bg-[#050F2A]/[0.03] p-5 ring-1 ring-[#050F2A]/[0.08] space-y-3.5">
+            <div className="text-left">
+              <h4 className="text-sm font-semibold tracking-tight text-[#050F2A]">
+                Redeem Reward Points & Exclusive Offers
+              </h4>
+              <p className="text-xs text-[#050F2A]/60 mt-1 leading-relaxed">
+                Enter your name & mobile number to claim rewards on your next visit and unlock exclusive offers.
+              </p>
+            </div>
+
+            {rewardSavedInfo ? (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center space-y-1">
+                <p className="text-xs font-extrabold text-emerald-800">
+                  🎉 +{rewardSavedInfo.earned} Points Added!
+                </p>
+                <p className="text-[11px] text-emerald-700 font-medium">
+                  Your Total Balance: <strong>{rewardSavedInfo.total} pts</strong> (Worth Rs. {rewardSavedInfo.total * 5} off next order)
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={handleSaveReward} className="space-y-2">
+                {rewardError && (
+                  <p className="text-[11px] text-red-600 font-semibold">{rewardError}</p>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={rewardName}
+                    onChange={(e) => setRewardName(e.target.value)}
+                    placeholder="Your Name"
+                    required
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-[#DFC9AC] text-xs text-[#301C10] placeholder-[#8A6A53]/70 focus:outline-none focus:ring-2 focus:ring-[#C99532]"
+                  />
+                  <input
+                    type="tel"
+                    value={rewardPhone}
+                    onChange={(e) => setRewardPhone(e.target.value)}
+                    placeholder="Mobile (e.g. 0771234567)"
+                    required
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-[#DFC9AC] text-xs text-[#301C10] placeholder-[#8A6A53]/70 focus:outline-none focus:ring-2 focus:ring-[#C99532]"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={rewardSaving}
+                  className="w-full py-2.5 px-4 rounded-xl bg-[#050F2A] hover:bg-[#0b1739] text-white font-extrabold text-xs transition shadow-sm flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  {rewardSaving ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving Points...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Gift className="w-3.5 h-3.5 text-[#E8B64F]" />
+                      <span>
+                        Save & Claim +{calculateEarnedPoints(order ? Math.round((order.totalMinor || 0) / 100) : 0)} Points
+                      </span>
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+          </div>
+          )}
+
+          {/* Share Your Memories With Us — Apple-style Camera Studio */}
+          <div className="bg-gradient-to-br from-[#1D1D1F] to-[#2C2C2E] rounded-2xl p-4 text-center text-white shadow-warm space-y-2.5">
+            <p className="text-xs font-semibold tracking-tight">
+              Share your memories with us
+            </p>
+            <p className="text-[11px] text-white/75 leading-relaxed">
+              Capture a moment with our signature frame &amp; filters, save it to your gallery, and tag us!
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowMemoryCamera(true)}
+              className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-white text-[#1D1D1F] hover:bg-white/90 text-xs font-semibold transition active:scale-[0.98]"
+            >
+              <Camera className="w-4 h-4" />
+              <span>Open Memory Camera</span>
+            </button>
+          </div>
+
           {/* Connect With Us — Social Media Profile Buttons */}
           <div className="bg-[#FFFCF6] rounded-2xl p-3.5 border border-[#DFC9AC] shadow-warm space-y-2.5 text-center">
             <span className="block text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#8A6A53]">
@@ -400,7 +531,8 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
                 onClose();
                 onOrderMore();
               }}
-              className="flex-1 bg-[#E8B64F] hover:bg-[#d9a53d] text-[#1A0F08] font-extrabold py-2.5 px-4 rounded-xl text-xs transition shadow-warm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
+              style={{ backgroundColor: "var(--tenant-primary, #E8B64F)", color: "#FFFFFF" }}
+              className="flex-1 hover:opacity-90 font-extrabold py-2.5 px-4 rounded-xl text-xs transition shadow-warm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
             >
               Order more items
             </button>
@@ -414,6 +546,12 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
           </button>
         </div>
       </div>
+      <MemoryCameraModal
+        isOpen={showMemoryCamera}
+        onClose={() => setShowMemoryCamera(false)}
+        businessId={businessId}
+        businessName={"TEA TIME"}
+      />
     </div>
   );
 };

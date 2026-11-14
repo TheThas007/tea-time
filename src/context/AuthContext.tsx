@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { User, onAuthStateChanged, signOut as fbSignOut } from "firebase/auth";
-import { auth, getOrInitAnonymousCustomer } from "../lib/firebase";
+import {
+  type User,
+  auth,
+  onAuthStateChanged,
+  signOut as sbSignOut,
+  getOrInitAnonymousCustomer,
+} from "../lib/supabase";
 
 interface AuthContextType {
   user: User | null;
@@ -73,7 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signOutAdmin = async () => {
-    await fbSignOut(auth);
+    await sbSignOut(auth);
     // After signing out of admin, restore anonymous customer session
     const anon = await getOrInitAnonymousCustomer();
     setUser(anon);

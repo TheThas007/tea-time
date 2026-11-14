@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { X, Trash2, Minus, Plus, Send, Loader2, AlertCircle, Utensils } from "lucide-react";
+import { X, Trash2, Minus, Plus, Send, Loader2, AlertCircle, Utensils, Gift, CheckCircle2 } from "lucide-react";
 import confetti from "canvas-confetti";
-import { addDoc, collection, doc, getDoc, serverTimestamp } from "firebase/firestore";
-import { signInAnonymously } from "firebase/auth";
+import { db, addDoc, collection, doc, getDoc, serverTimestamp } from "../../lib/supabaseStore";
+import { auth, signInAnonymously } from "../../lib/supabase";
 import { useCart } from "../../context/CartContext";
 import {
   formatRupees,
@@ -12,8 +12,14 @@ import {
   SUGAR_SPOON_OPTIONS,
   formatSugarLabel,
 } from "../../lib/utils";
-import { auth, db, callCreateOrder } from "../../lib/firebase";
 import { platformApi } from "../../lib/apiClient";
+import {
+  CustomerRewardRecord,
+  getCustomerRewardByPhone,
+  pointsToRupeesDiscount,
+  saveCustomerRewardPoints,
+  calculateEarnedPoints,
+} from "../../lib/rewards";
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -25,6 +31,7 @@ interface CartDrawerProps {
     tableNumber: string;
   }) => void;
   businessSlug?: string;
+  businessId?: string;
   isDemo?: boolean;
 }
 
@@ -33,6 +40,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onClose,
   onOrderPlaced,
   businessSlug = "teatime",
+  businessId,
   isDemo = false,
 }) => {
   const {
@@ -53,9 +61,51 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Reward Card / Points Claim State
+  const [customerName, setCustomerName] = useState("");
+  const [rewardPhone, setRewardPhone] = useState(() =>
+    typeof window !== "undefined" ? localStorage.getItem("menyo_customer_phone") || "" : ""
+  );
+  const [rewardRecord, setRewardRecord] = useState<CustomerRewardRecord | null>(null);
+  const [rewardLoading, setRewardLoading] = useState(false);
+  const [rewardChecked, setRewardChecked] = useState(false);
+  const [applyReward, setApplyReward] = useState(false);
+
+  const rupeePerPoint = React.useMemo(() => {
+    if (typeof window === "undefined") return 5;
+    const raw = localStorage.getItem(`menyo_reward_rate_${businessSlug}`);
+    const parsed = raw ? Number(raw) : 5;
+    return parsed > 0 ? parsed : 5;
+  }, [businessSlug]);
+
   if (!isOpen) return null;
 
   const sugarEligibleItems = items.filter((i) => supportsSugarSelection(i.product));
+
+  const totalRupees = Math.round(totalMinor / 100);
+  const maxRedeemableDiscount = rewardRecord ? pointsToRupeesDiscount(rewardRecord.points, rupeePerPoint) : 0;
+  const appliedDiscountRupees = applyReward && rewardRecord ? Math.min(totalRupees, maxRedeemableDiscount) : 0;
+  const pointsToRedeem = appliedDiscountRupees > 0 ? Math.ceil(appliedDiscountRupees / rupeePerPoint) : 0;
+  const finalTotalMinor = Math.max(0, totalMinor - appliedDiscountRupees * 100);
+
+  const handleCheckRewards = async () => {
+    if (!rewardPhone.trim()) return;
+    setRewardLoading(true);
+    setRewardChecked(false);
+    try {
+      const rec = await getCustomerRewardByPhone(businessId || businessSlug, rewardPhone.trim());
+      setRewardRecord(rec);
+      setRewardChecked(true);
+      if (rec && rec.points > 0) {
+        localStorage.setItem("menyo_customer_phone", rewardPhone.trim());
+      }
+    } catch {
+      setRewardRecord(null);
+      setRewardChecked(true);
+    } finally {
+      setRewardLoading(false);
+    }
+  };
 
   const handlePlaceOrder = async () => {
     if (items.length === 0) return;
@@ -92,16 +142,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       .filter(Boolean)
       .join(" • ")
       .slice(0, 300);
-
-    const payload = {
-      tableToken: tableToken.trim(),
-      items: items.map((i) => ({
-        productId: i.product.id,
-        quantity: i.quantity,
-      })),
-      specialInstructions: combinedSpecialInstructions,
-      idempotencyKey,
-    };
 
     let orderId = "";
     let orderNum = 1000 + Math.floor(Math.random() * 900);
@@ -167,72 +207,77 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           throw tenantErr;
         }
 
-        // Fallback to legacy Cloud function if platform API route is unreachable
-        try {
-          const response = await callCreateOrder(payload);
-          const data = response.data;
-          if (data && data.success) {
-            orderId = data.orderId;
-            orderNum = data.orderNumber;
-            orderNumDisplay = data.orderNumberDisplay;
-            resolvedTableNumber = data.tableNumber || resolvedTableNumber;
-          }
-        } catch (cloudFnErr: any) {
-          console.warn("Falling back to direct Firestore order placement:", cloudFnErr);
+        console.warn("Falling back to direct Supabase order placement:", tenantErr);
 
-          // 2. Direct Firestore fallback (works immediately even without Cloud Functions deployed)
-          let tenantBizId: string | null = null;
-          if (businessSlug && businessSlug !== "teatime") {
-            try {
-              const slugDoc = await getDoc(doc(db, "businessSlugs", businessSlug.toLowerCase().trim()));
-              if (slugDoc.exists()) {
-                tenantBizId = slugDoc.data()?.businessId || null;
-              }
-            } catch {}
-          }
+        let tenantBizId: string | null = null;
+        if (businessSlug && businessSlug !== "teatime") {
+          try {
+            const slugDoc = await getDoc(doc(db, "businessSlugs", businessSlug.toLowerCase().trim()));
+            if (slugDoc.exists()) {
+              tenantBizId = slugDoc.data()?.businessId || null;
+            }
+          } catch {}
+        }
 
-          const currentUid = currentUser?.uid || "guest_" + Math.random().toString(36).substring(2, 9);
-          const orderData = {
-            orderNumber: orderNum,
-            orderNumberDisplay: orderNumDisplay,
-            tableNumber: resolvedTableNumber,
-            tableToken: tableToken.trim(),
-            customerId: currentUid,
-            status: "PENDING",
-            items: items.map((i) => ({
-              productId: i.product.id,
-              name: i.product.name,
-              category: i.product.category || "General",
-              priceMinor: i.product.priceMinor,
-              quantity: i.quantity,
-              subtotalMinor: i.product.priceMinor * i.quantity,
-              imageUrl: i.product.imageUrl || null,
-              sugarNote:
-                supportsSugarSelection(i.product) && typeof i.sugarSpoons === "number"
-                  ? formatSugarLabel(i.sugarSpoons)
-                  : null,
-            })),
-            itemCount: totalItems,
-            totalMinor: totalMinor,
-            currency: "LKR",
-            specialInstructions: combinedSpecialInstructions,
-            idempotencyKey,
-            paymentStatus: "pay_at_counter",
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          };
+        const currentUid = currentUser?.uid || "guest_" + Math.random().toString(36).substring(2, 9);
+        const orderData = {
+          orderNumber: orderNum,
+          orderNumberDisplay: orderNumDisplay,
+          tableNumber: resolvedTableNumber,
+          tableToken: tableToken.trim(),
+          customerId: currentUid,
+          status: tenantBizId ? "PENDING" : "new",
+          items: items.map((i) => ({
+            productId: i.product.id,
+            name: i.product.name,
+            category: i.product.category || "General",
+            priceMinor: i.product.priceMinor,
+            quantity: i.quantity,
+            subtotalMinor: i.product.priceMinor * i.quantity,
+            imageUrl: i.product.imageUrl || null,
+            sugarNote:
+              supportsSugarSelection(i.product) && typeof i.sugarSpoons === "number"
+                ? formatSugarLabel(i.sugarSpoons)
+                : null,
+          })),
+          itemCount: totalItems,
+          totalMinor: finalTotalMinor,
+          originalTotalMinor: totalMinor,
+          rewardPhone: pointsToRedeem > 0 ? rewardPhone.trim() : null,
+          rewardPointsClaimed: pointsToRedeem,
+          rewardDiscountRupees: appliedDiscountRupees,
+          currency: "LKR",
+          specialInstructions: combinedSpecialInstructions,
+          idempotencyKey,
+          paymentStatus: "pay_at_counter",
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        };
 
-          if (tenantBizId) {
-            const docRef = await addDoc(collection(db, "businesses", tenantBizId, "orders"), orderData);
-            orderId = docRef.id;
-          } else {
-            const docRef = await addDoc(collection(db, "orders"), orderData);
-            orderId = docRef.id;
-          }
+        if (tenantBizId) {
+          const docRef = await addDoc(collection(db, "businesses", tenantBizId, "orders"), orderData);
+          orderId = docRef.id;
+        } else {
+          const docRef = await addDoc(collection(db, "orders"), orderData);
+          orderId = docRef.id;
         }
       }
 
       if (orderId) {
+        if (rewardPhone.trim()) {
+          try {
+            await saveCustomerRewardPoints({
+              businessId: businessId || businessSlug,
+              phone: rewardPhone.trim(),
+              name: rewardRecord?.name || "Guest",
+              orderAmountRupees: totalRupees,
+              pointsRedeemed: pointsToRedeem,
+              rupeePerPoint,
+            });
+          } catch (e) {
+            console.warn("Reward points save notice:", e);
+          }
+        }
         // Trigger celebratory confetti
         try {
           confetti({
@@ -246,6 +291,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         }
 
         addCustomerOrderId(orderId);
+        if (rewardPhone.trim()) {
+          localStorage.setItem(`menyo_order_phone_${orderId}`, rewardPhone.trim());
+          localStorage.setItem("menyo_customer_phone", rewardPhone.trim());
+        }
         clearCart();
         onClose();
         onOrderPlaced({
@@ -270,20 +319,21 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-[#2C190E]/60 backdrop-blur-sm flex justify-center md:items-center md:p-6 animate-fadeIn">
-      <div className="w-full max-w-md md:max-w-lg lg:max-w-xl bg-[#FAF7F0] min-h-screen md:min-h-0 md:max-h-[88vh] md:rounded-3xl md:border md:border-[#DFC9AC] md:overflow-hidden flex flex-col justify-between shadow-warm-xl relative">
+    <div className="fixed inset-0 z-50 overflow-hidden bg-black/45 backdrop-blur-xl flex justify-center md:items-center md:p-6 animate-fadeIn">
+      <div className="w-full max-w-md md:max-w-lg lg:max-w-xl bg-white/95 backdrop-blur-2xl min-h-screen md:min-h-0 md:max-h-[88vh] rounded-t-[28px] md:rounded-[28px] ring-1 ring-black/10 md:overflow-hidden flex flex-col justify-between shadow-[0_32px_80px_-12px_rgba(0,0,0,0.45)] relative">
         {/* Top Header */}
-        <div className="sticky top-0 bg-[#FAF7F0]/95 backdrop-blur border-b border-[#DFC9AC] px-4 md:px-6 py-3 md:py-4 flex items-center justify-between z-10">
+        <div className="sticky top-0 bg-white/85 backdrop-blur-xl border-b border-black/[0.06] px-5 md:px-6 py-4 flex items-center justify-between z-10">
           <div>
-            <h2 className="text-xl font-extrabold text-[#301C10]">Your order</h2>
-            <p className="text-xs text-[#8A6A53]">
-              Review your items before placing the order.
+            <h2 className="text-xl font-semibold tracking-tight text-[#050F2A]">Your order</h2>
+            <p className="text-xs text-[#050F2A]/55 mt-0.5">
+              Review your items before placing the order
             </p>
           </div>
 
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-[#FFFCF6] border border-[#DFC9AC] hover:bg-[#4A290F] hover:text-[#FFFCF6] flex items-center justify-center text-[#301C10] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
+            aria-label="Close cart"
+            className="w-8 h-8 rounded-full bg-black/[0.05] hover:bg-black/[0.1] flex items-center justify-center text-[#050F2A]/70 hover:text-[#050F2A] transition active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#050F2A]/30"
           >
             <X className="w-4 h-4" />
           </button>
@@ -449,6 +499,105 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 </div>
               </div>
 
+              {/* Reward Card / Claim Points Section */}
+              <div className="bg-gradient-to-br from-[#FFFCF6] via-[#FFF9EC] to-[#FFF4DC] rounded-2xl p-4 border border-[#DFC9AC] shadow-warm space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2.5">
+                    <div
+                      style={{ backgroundColor: "var(--tenant-primary, #E8B64F)", color: "#FFFFFF" }}
+                      className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-sm mt-0.5"
+                    >
+                      <Gift className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-extrabold text-[#301C10] leading-snug">
+                        Earn Reward Points &amp; Gifts
+                      </p>
+                      <p className="text-[11px] text-[#8A6A53] mt-0.5 leading-relaxed">
+                        Enter your name and mobile number to collect loyalty points on every order and unlock exclusive gifts &amp; discounts!
+                      </p>
+                    </div>
+                  </div>
+                  {rewardRecord && (
+                    <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[#E8B64F]/25 text-[#9A6B12] shrink-0">
+                      {rewardRecord.points} pts (Rs. {pointsToRupeesDiscount(rewardRecord.points)})
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Your name (Optional)"
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-[#DFC9AC] text-xs text-[#301C10] placeholder-[#8A6A53]/70 focus:outline-none focus:ring-2 focus:ring-[#C99532]"
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="tel"
+                      value={rewardPhone}
+                      onChange={(e) => {
+                        setRewardPhone(e.target.value);
+                        setRewardChecked(false);
+                        setApplyReward(false);
+                      }}
+                      placeholder="Mobile number..."
+                      className="flex-1 px-3 py-2 rounded-xl bg-white border border-[#DFC9AC] text-xs text-[#301C10] placeholder-[#8A6A53]/70 focus:outline-none focus:ring-2 focus:ring-[#C99532]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCheckRewards}
+                      disabled={rewardLoading || !rewardPhone.trim()}
+                      className="px-4 py-2 rounded-xl bg-[#050F2A] hover:bg-[#0b1739] text-white text-xs font-bold transition disabled:opacity-50 shadow-sm"
+                    >
+                      {rewardLoading ? "..." : "Check"}
+                    </button>
+                  </div>
+                </div>
+
+                {rewardChecked && !rewardRecord && (
+                  <p className="text-[11px] text-emerald-700 font-medium">
+                    Ready! You&apos;ll earn <strong>+{calculateEarnedPoints(totalRupees)} pts</strong> on this order toward your next reward &amp; gift.
+                  </p>
+                )}
+
+                {rewardRecord && rewardRecord.points > 0 && (
+                  (() => {
+                    const rawMin = typeof window !== "undefined" ? localStorage.getItem(`menyo_reward_min_claim_${businessId || businessSlug}`) : null;
+                    const minClaimPts = rawMin && Number(rawMin) > 0 ? Number(rawMin) : 1000;
+                    const canClaim = rewardRecord.points >= minClaimPts;
+                    return (
+                      <div className="flex items-center justify-between bg-white rounded-xl p-2.5 border border-[#DFC9AC]">
+                        <div className="text-[11px]">
+                          <p className="font-bold text-[#301C10]">
+                            Hi {rewardRecord.name}! {rewardRecord.points} pts available
+                          </p>
+                          <p className="text-[#8A6A53]">
+                            {canClaim
+                              ? `Save Rs. ${Math.min(totalRupees, maxRedeemableDiscount)} on this order`
+                              : `Need ${minClaimPts} pts to claim (${minClaimPts - rewardRecord.points} more needed)`}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={!canClaim}
+                          onClick={() => setApplyReward((prev) => !prev)}
+                          className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition flex items-center gap-1 disabled:opacity-45 disabled:cursor-not-allowed ${
+                            applyReward
+                              ? "bg-emerald-600 text-white"
+                              : "bg-[#E8B64F] text-[#1A0F08] hover:bg-[#d9a53d]"
+                          }`}
+                        >
+                          {applyReward && <CheckCircle2 className="w-3.5 h-3.5" />}
+                          <span>{applyReward ? "Claimed" : "Claim"}</span>
+                        </button>
+                      </div>
+                    );
+                  })()
+                )}
+              </div>
+
               {/* Error message banner */}
               {errorMessage && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-xs text-red-800">
@@ -463,24 +612,31 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         {/* Bottom Total & Place Order Button */}
         {items.length > 0 && (
           <div className="sticky bottom-0 bg-[#FFFCF6] border-t border-[#DFC9AC] p-4 space-y-3 shadow-warm-lg">
+            {appliedDiscountRupees > 0 && (
+              <div className="flex items-center justify-between text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-1.5">
+                <span>Reward Discount ({pointsToRedeem} pts)</span>
+                <span>- Rs. {appliedDiscountRupees.toLocaleString()}</span>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-sm font-semibold text-[#301C10]">Total</span>
                 <span className="block text-[11px] text-[#8A6A53]">Pay at counter</span>
               </div>
               <span className="text-2xl font-black text-[#301C10] tracking-tight">
-                {formatRupees(totalMinor)}
+                {formatRupees(finalTotalMinor)}
               </span>
             </div>
 
             <button
               onClick={handlePlaceOrder}
               disabled={isSubmitting}
-              className="w-full bg-[#E8B64F] hover:bg-[#d9a53d] disabled:opacity-60 text-[#1A0F08] font-extrabold py-3.5 px-4 rounded-xl shadow-warm-md transition-all duration-200 flex items-center justify-center gap-2 active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
+              style={{ backgroundColor: "var(--tenant-primary, #E8B64F)", color: "#FFFFFF" }}
+              className="w-full hover:opacity-90 disabled:opacity-60 font-extrabold py-3.5 px-4 rounded-xl shadow-warm-md transition-all duration-200 flex items-center justify-center gap-2 active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C99532]"
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin text-[#1A0F08]" />
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
                   <span>Sending to kitchen...</span>
                 </>
               ) : (

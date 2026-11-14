@@ -9,6 +9,17 @@ import {
   Palette,
   Menu as MenuIcon,
   X,
+  CreditCard,
+  Gift,
+  Camera,
+  Sparkles,
+  TrendingUp,
+  ShieldCheck,
+  HeartHandshake,
+  DollarSign,
+  Smartphone,
+  CheckCircle2,
+  Mail,
 } from "lucide-react";
 import { MenyoWordmark } from "../components/common/MenyoLogo";
 
@@ -30,7 +41,7 @@ export const LandingPage: React.FC = () => {
     }
   }, []);
 
-  const packages = [
+  const defaultPackages = [
     {
       id: "monthly",
       name: "Monthly",
@@ -42,9 +53,13 @@ export const LandingPage: React.FC = () => {
       badge: null,
       isPopular: false,
       features: [
-        "Branded digital menu",
-        "Table QR codes",
-        "Order management",
+        "Branded digital menu & QR codes",
+        "Live Kitchen & Order management",
+        "Smart POS & Cashier Billing system",
+        "Thermal Bill Printing",
+        "Customer Loyalty & Rewards wallet",
+        "Branded Memory Studio (1080×1350)",
+        "Custom Logo, Colors & Themes",
       ],
     },
     {
@@ -58,9 +73,13 @@ export const LandingPage: React.FC = () => {
       badge: "Save Rs. 2,000",
       isPopular: true,
       features: [
-        "Branded digital menu",
-        "Table QR codes",
-        "Order management",
+        "Branded digital menu & QR codes",
+        "Live Kitchen & Order management",
+        "Smart POS & Cashier Billing system",
+        "Thermal Bill Printing",
+        "Customer Loyalty & Rewards wallet",
+        "Branded Memory Studio (1080×1350)",
+        "Custom Logo, Colors & Themes",
       ],
     },
     {
@@ -74,12 +93,40 @@ export const LandingPage: React.FC = () => {
       badge: "Save Rs. 6,000",
       isPopular: false,
       features: [
-        "Branded digital menu",
-        "Table QR codes",
-        "Order management",
+        "Branded digital menu & QR codes",
+        "Live Kitchen & Order management",
+        "Smart POS & Cashier Billing system",
+        "Thermal Bill Printing",
+        "Customer Loyalty & Rewards wallet",
+        "Branded Memory Studio (1080×1350)",
+        "Custom Logo, Colors & Themes",
       ],
     },
   ];
+
+  const packages = React.useMemo(() => {
+    if (typeof window === "undefined") return defaultPackages;
+    try {
+      const raw = localStorage.getItem("menyo_platform_packages");
+      if (!raw) return defaultPackages;
+      const saved = JSON.parse(raw) as any[];
+      if (!Array.isArray(saved) || saved.length === 0) return defaultPackages;
+      return defaultPackages.map((dp) => {
+        const match = saved.find((s) => s.id === dp.id);
+        if (!match) return dp;
+        const rupees = Number(match.priceRupees ?? 0);
+        const usd = match.priceUsd ?? Math.max(1, Math.round(rupees / 300));
+        return {
+          ...dp,
+          name: match.name || dp.name,
+          price: rupees > 0 ? `Rs. ${rupees.toLocaleString()}` : dp.price,
+          priceUsd: `$${usd}`,
+        };
+      });
+    } catch {
+      return defaultPackages;
+    }
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#F2FDFF] text-[#050F2A] flex flex-col font-sans selection:bg-[#7BBBFF]/40 selection:text-[#050F2A]">
@@ -113,6 +160,15 @@ export const LandingPage: React.FC = () => {
             <a href="#pricing" className="hover:text-[#050F2A] transition-colors">
               Pricing
             </a>
+            <Link
+              to="/teatime/menu?table=tbl_07_k8j3m&demo=true"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#050F2A] font-bold hover:text-[#7BBBFF] transition-colors flex items-center gap-1.5"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>Live Demo</span>
+            </Link>
           </nav>
 
           {/* Login and Get Started on the right */}
@@ -230,7 +286,13 @@ export const LandingPage: React.FC = () => {
               </svg>
 
               {/* Central QR Code Card */}
-              <div className="relative z-10 bg-white border border-[#050F2A]/10 rounded-2xl p-2.5 shadow-sm shadow-[#050F2A]/5 flex flex-col items-center gap-1.5 transition-all hover:scale-105">
+              <Link
+                to="/teatime/menu?table=tbl_07_k8j3m&demo=true"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Click to open Live Demo"
+                className="relative z-10 bg-white border border-[#050F2A]/10 rounded-2xl p-2.5 shadow-sm shadow-[#050F2A]/5 flex flex-col items-center gap-1.5 transition-all hover:scale-105 hover:border-[#7BBBFF] cursor-pointer"
+              >
                 <QrCode className="w-8 h-8 text-[#050F2A]" />
                 <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#7BBBFF]/20 text-[#050F2A] whitespace-nowrap">
                   Live demo
@@ -243,18 +305,23 @@ export const LandingPage: React.FC = () => {
                 <span className="absolute -right-2 top-1/2 -translate-y-1/2 text-xs text-[#7BBBFF] select-none">
                   ))
                 </span>
-              </div>
+              </Link>
             </div>
 
             {/* Mobile Divider & QR Badge (when devices are stacked vertically) */}
             <div className="flex lg:hidden items-center justify-center gap-3 my-1 select-none">
               <div className="h-px w-10 bg-[#7BBBFF]/50 border-t border-dashed border-[#7BBBFF]" />
-              <div className="bg-white border border-[#050F2A]/10 rounded-2xl px-3 py-1.5 shadow-sm flex items-center gap-2">
+              <Link
+                to="/teatime/menu?table=tbl_07_k8j3m&demo=true"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-white border border-[#050F2A]/10 hover:border-[#7BBBFF] rounded-2xl px-3 py-1.5 shadow-sm flex items-center gap-2"
+              >
                 <QrCode className="w-4 h-4 text-[#050F2A]" />
                 <span className="text-[10px] font-extrabold text-[#050F2A]">
-                  Table QR Scan
+                  Live Demo • Scan QR
                 </span>
-              </div>
+              </Link>
               <div className="h-px w-10 bg-[#7BBBFF]/50 border-t border-dashed border-[#7BBBFF]" />
             </div>
 
@@ -310,15 +377,6 @@ export const LandingPage: React.FC = () => {
             >
               <span>View Live Demo</span>
             </Link>
-
-            <a
-              href="https://wa.me/94764847081?text=Hi%20Menyo,%20I'm%20ready%20to%20get%20started%20with%20a%20digital%20menu."
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full sm:w-auto px-6 py-3.5 rounded-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center justify-center gap-1.5"
-            >
-              <span>WhatsApp Sales</span>
-            </a>
           </div>
 
           <div className="pt-2 text-[11px] font-bold uppercase tracking-widest text-[#050F2A]/40">
@@ -384,7 +442,7 @@ export const LandingPage: React.FC = () => {
               <div className="w-12 h-12 rounded-2xl bg-[#B8A9FF]/25 flex items-center justify-center text-[#050F2A] mb-5">
                 <Palette className="w-6 h-6 text-[#050F2A]" />
               </div>
-              <h3 className="text-lg font-bold text-[#050F2A] mb-2">Your Logo & Colours</h3>
+              <h3 className="text-lg font-bold text-[#050F2A] mb-2">Change your color theme and logo</h3>
               <p className="text-xs text-[#050F2A]/70 leading-relaxed">
                 Custom branding for your restaurant. Upload your logo and set your own colors, fonts, and theme.
               </p>
@@ -414,6 +472,138 @@ export const LandingPage: React.FC = () => {
               <p className="text-xs text-[#050F2A]/70 leading-relaxed">
                 Dedicated management portal to print QR tent cards, review order history, and track tables.
               </p>
+            </div>
+          </div>
+
+          {/* Card 7: Complete Cashier & POS Billing System */}
+          <div className="bg-white rounded-3xl p-7 border border-[#050F2A]/10 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+            <div>
+              <div className="w-12 h-12 rounded-2xl bg-[#7BBBFF]/20 flex items-center justify-center text-[#050F2A] mb-5">
+                <CreditCard className="w-6 h-6 text-[#050F2A]" />
+              </div>
+              <h3 className="text-lg font-bold text-[#050F2A] mb-2">Smart POS &amp; Cashier Billing</h3>
+              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
+                Fast barcode scanning, Cash/Card/QR/Credit payments, thermal bill printing, stock control, and daily sales reports.
+              </p>
+            </div>
+          </div>
+
+          {/* Card 8: Customer Loyalty & Rewards Wallet */}
+          <div className="bg-white rounded-3xl p-7 border border-[#050F2A]/10 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+            <div>
+              <div className="w-12 h-12 rounded-2xl bg-[#B8A9FF]/25 flex items-center justify-center text-[#050F2A] mb-5">
+                <Gift className="w-6 h-6 text-[#050F2A]" />
+              </div>
+              <h3 className="text-lg font-bold text-[#050F2A] mb-2">Customer Reward Wallet</h3>
+              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
+                Reward points on every order, wallet balance tracking via phone number, and automated discounts on repeat visits.
+              </p>
+            </div>
+          </div>
+
+          {/* Card 9: Memory Studio & Branded Photo Frame */}
+          <div className="bg-white rounded-3xl p-7 border border-[#050F2A]/10 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+            <div>
+              <div className="w-12 h-12 rounded-2xl bg-[#7BBBFF]/20 flex items-center justify-center text-[#050F2A] mb-5">
+                <Camera className="w-6 h-6 text-[#050F2A]" />
+              </div>
+              <h3 className="text-lg font-bold text-[#050F2A] mb-2">Branded Memory Studio</h3>
+              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
+                Customers take 1080×1350 photos with your custom logo overlay &amp; trendy filters, save to gallery, and share on social media!
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 3.5. BENEFITS SECTION — Why Restaurant Owners Choose Menyo */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto w-full border-t border-[#050F2A]/10">
+        <div className="text-center max-w-2xl mx-auto mb-14">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-[#7BBBFF] block mb-1">
+            Proven Results
+          </span>
+          <h2 className="text-3xl sm:text-4xl font-black text-[#050F2A] tracking-tight">
+            Why cafés &amp; restaurants choose Menyo.
+          </h2>
+          <p className="text-sm text-[#050F2A]/70 mt-2">
+            Built to boost revenue, speed up order turnaround, and keep customers returning again and again.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Benefit 1 */}
+          <div className="bg-gradient-to-br from-white to-[#F8FAFC] rounded-3xl p-6 border border-[#050F2A]/10 shadow-sm flex flex-col justify-between hover:-translate-y-1 transition-all duration-200">
+            <div>
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 text-emerald-700 flex items-center justify-center mb-4">
+                <TrendingUp className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-extrabold text-[#050F2A] mb-1.5">
+                Up to +30% Order Value
+              </h3>
+              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
+                Appetizing food photos and seamless add-ons prompt customers to order extra drinks, sides, and desserts effortlessly.
+              </p>
+            </div>
+            <div className="mt-4 pt-4 border-t border-[#050F2A]/10 flex items-center gap-1.5 text-[11px] font-bold text-emerald-700">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              <span>Higher table average</span>
+            </div>
+          </div>
+
+          {/* Benefit 2 */}
+          <div className="bg-gradient-to-br from-white to-[#F8FAFC] rounded-3xl p-6 border border-[#050F2A]/10 shadow-sm flex flex-col justify-between hover:-translate-y-1 transition-all duration-200">
+            <div>
+              <div className="w-12 h-12 rounded-2xl bg-blue-500/15 text-blue-700 flex items-center justify-center mb-4">
+                <Zap className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-extrabold text-[#050F2A] mb-1.5">
+                Zero Waiter Delays
+              </h3>
+              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
+                Customers scan the table QR code and send orders immediately to your kitchen without waving or waiting for a paper menu.
+              </p>
+            </div>
+            <div className="mt-4 pt-4 border-t border-[#050F2A]/10 flex items-center gap-1.5 text-[11px] font-bold text-blue-700">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              <span>Faster table turnover</span>
+            </div>
+          </div>
+
+          {/* Benefit 3 */}
+          <div className="bg-gradient-to-br from-white to-[#F8FAFC] rounded-3xl p-6 border border-[#050F2A]/10 shadow-sm flex flex-col justify-between hover:-translate-y-1 transition-all duration-200">
+            <div>
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/15 text-amber-700 flex items-center justify-center mb-4">
+                <DollarSign className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-extrabold text-[#050F2A] mb-1.5">
+                Zero Printing Costs
+              </h3>
+              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
+                No more re-printing laminated cards when prices or stock change. Update any dish, special, or price in 5 seconds.
+              </p>
+            </div>
+            <div className="mt-4 pt-4 border-t border-[#050F2A]/10 flex items-center gap-1.5 text-[11px] font-bold text-amber-700">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              <span>100% digital &amp; eco-friendly</span>
+            </div>
+          </div>
+
+          {/* Benefit 4 */}
+          <div className="bg-gradient-to-br from-white to-[#F8FAFC] rounded-3xl p-6 border border-[#050F2A]/10 shadow-sm flex flex-col justify-between hover:-translate-y-1 transition-all duration-200">
+            <div>
+              <div className="w-12 h-12 rounded-2xl bg-purple-500/15 text-purple-700 flex items-center justify-center mb-4">
+                <HeartHandshake className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-extrabold text-[#050F2A] mb-1.5">
+                Repeat Customer Loyalty
+              </h3>
+              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
+                Reward points wallet and social photo studio create memorable dining experiences that turn one-time visitors into regulars.
+              </p>
+            </div>
+            <div className="mt-4 pt-4 border-t border-[#050F2A]/10 flex items-center gap-1.5 text-[11px] font-bold text-purple-700">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              <span>Viral social sharing</span>
             </div>
           </div>
         </div>
@@ -596,9 +786,19 @@ export const LandingPage: React.FC = () => {
               href="https://wa.me/94764847081"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-white transition-colors"
+              className="hover:text-white transition-colors inline-flex items-center gap-1.5"
             >
-              WhatsApp: 076 484 7081
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-emerald-400 shrink-0">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+              </svg>
+              <span>WhatsApp: 076 484 7081</span>
+            </a>
+            <a
+              href="mailto:aevonixlk@gmail.com"
+              className="hover:text-white transition-colors inline-flex items-center gap-1.5"
+            >
+              <Mail className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              <span>aevonixlk@gmail.com</span>
             </a>
             <span className="text-[#F2FDFF]/30">|</span>
             <span className="text-xs uppercase tracking-widest text-[#F2FDFF]/50 font-semibold">

@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
-import { 
-  collection, 
-  query, 
-  orderBy, 
-  onSnapshot, 
-  doc, 
-  updateDoc, 
-  serverTimestamp 
-} from "firebase/firestore";
+import {
+  db,
+  collection,
+  query,
+  orderBy,
+  onSnapshot,
+  doc,
+  updateDoc,
+  serverTimestamp,
+} from "../../lib/supabaseStore";
 import { 
   Bell, 
   ChefHat, 
@@ -16,7 +17,6 @@ import {
   Ban, 
   History
 } from "lucide-react";
-import { db, callUpdateOrderStatus } from "../../lib/firebase";
 import { Order, OrderStatus } from "../../types";
 import { formatRupees, formatTimeAgo } from "../../lib/utils";
 import { soundManager } from "../../lib/audio";
@@ -40,7 +40,9 @@ export const LiveOrdersView: React.FC = () => {
           ...doc.data(),
         } as Order));
 
-        const currentNewCount = list.filter((o) => o.status === "new").length;
+        const currentNewCount = list.filter(
+          (o) => o.status === "new" || o.status === "PENDING"
+        ).length;
 
         if (
           previousNewOrdersCount.current !== null &&
@@ -65,22 +67,17 @@ export const LiveOrdersView: React.FC = () => {
   const handleUpdateStatus = async (orderId: string, nextStatus: OrderStatus) => {
     setActionLoadingId(orderId);
     try {
-      await callUpdateOrderStatus({ orderId, status: nextStatus });
-    } catch (functionErr) {
-      console.warn("Cloud function update fallback to direct Firestore admin update:", functionErr);
-      try {
-        const orderRef = doc(db, "orders", orderId);
-        const payload: Record<string, any> = {
-          status: nextStatus,
-          updatedAt: serverTimestamp(),
-        };
-        if (nextStatus === "served") {
-          payload.servedAt = serverTimestamp();
-        }
-        await updateDoc(orderRef, payload);
-      } catch (directErr) {
-        console.error("Direct update failure:", directErr);
+      const orderRef = doc(db, "orders", orderId);
+      const payload: Record<string, any> = {
+        status: nextStatus,
+        updatedAt: serverTimestamp(),
+      };
+      if (nextStatus === "served") {
+        payload.servedAt = serverTimestamp();
       }
+      await updateDoc(orderRef, payload);
+    } catch (directErr) {
+      console.error("Order status update failure:", directErr);
     } finally {
       setActionLoadingId(null);
     }
@@ -92,12 +89,6 @@ export const LiveOrdersView: React.FC = () => {
 
     setActionLoadingId(orderId);
     try {
-      await callUpdateOrderStatus({
-        orderId,
-        status: "cancelled",
-        cancelReason: reason || "Cancelled by staff",
-      });
-    } catch {
       const orderRef = doc(db, "orders", orderId);
       await updateDoc(orderRef, {
         status: "cancelled",
@@ -109,10 +100,18 @@ export const LiveOrdersView: React.FC = () => {
     }
   };
 
-  const newOrders = orders.filter((o) => o.status === "new");
-  const preparingOrders = orders.filter((o) => o.status === "preparing");
-  const readyOrders = orders.filter((o) => o.status === "ready");
-  const historyOrders = orders.filter((o) => o.status === "served" || o.status === "cancelled");
+  const newOrders = orders.filter((o) => o.status === "new" || o.status === "PENDING");
+  const preparingOrders = orders.filter((o) => o.status === "preparing" || o.status === "PREPARING");
+  const readyOrders = orders.filter((o) => o.status === "ready" || o.status === "READY");
+  const historyOrders = orders.filter(
+    (o) =>
+      o.status === "served" ||
+      o.status === "SERVED" ||
+      o.status === "completed" ||
+      o.status === "COMPLETED" ||
+      o.status === "cancelled" ||
+      o.status === "CANCELLED"
+  );
 
   return (
     <div className="space-y-6">

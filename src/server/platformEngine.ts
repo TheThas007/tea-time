@@ -885,6 +885,7 @@ export class PlatformEngine {
       paymentReference?: string;
       paymentNote?: string;
       idempotencyKey: string;
+      isPublicTrialSignup?: boolean;
     }
   ): Promise<{
     success?: boolean;
@@ -894,7 +895,10 @@ export class PlatformEngine {
     ownerUid: string;
     duplicate?: boolean;
   }> {
-    const superAdmin = await this.requireSuperAdmin(caller);
+    let superAdmin = { uid: "system", email: "system@menyo.lk" };
+    if (!input.isPublicTrialSignup) {
+      superAdmin = await this.requireSuperAdmin(caller);
+    }
     const nowMs = this.clock.now();
 
     const effectiveIdem =

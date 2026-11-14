@@ -28,7 +28,7 @@ const app = initializeApp({
   projectId:
     process.env.FIREBASE_PROJECT_ID ||
     process.env.GCLOUD_PROJECT ||
-    "teatime-f4005",
+    "menyo-ffcc6",
 });
 
 const db = getFirestore(app);
