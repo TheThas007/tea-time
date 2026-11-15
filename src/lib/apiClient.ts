@@ -1426,6 +1426,14 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
     let bId = data.businessId || (typeof window !== "undefined" ? localStorage.getItem("menyo_auth_businessId") : null) || "teatime";
     const productId = data.productId;
     if (productId) {
+      if (typeof window !== "undefined") {
+        try {
+          const key = `menyo_products_${bId}`;
+          const existing: any[] = JSON.parse(localStorage.getItem(key) || "[]");
+          const filtered = existing.filter((p) => p.id !== productId);
+          localStorage.setItem(key, JSON.stringify(filtered));
+        } catch {}
+      }
       try {
         await updateDoc(doc(db, "businesses", bId, "products", productId), {
           isArchived: true,
@@ -1434,12 +1442,14 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
           updatedAt: serverTimestamp(),
           updatedAtMs: Date.now(),
         });
+        await deleteDoc(doc(db, "businesses", bId, "products", productId)).catch(() => {});
         if (bId === "teatime" || bId === "biz_teatime") {
           await updateDoc(doc(db, "menu", productId), {
             isArchived: true,
             isAvailable: false,
             available: false,
           }).catch(() => { });
+          await deleteDoc(doc(db, "menu", productId)).catch(() => {});
         }
       } catch (e) {
         console.warn("Client fallback archive product:", e);

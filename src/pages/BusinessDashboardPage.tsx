@@ -57,6 +57,7 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  deleteDoc,
   getDocs,
   onSnapshot,
 } from "../lib/supabaseStore";
@@ -705,6 +706,36 @@ export const BusinessDashboardPage: React.FC = () => {
       ...prev,
       socialLinks: prev.socialLinks.map((l) => (l.id === id ? { ...l, ...updates } : l)),
     }));
+  };
+
+  const handleDeleteProduct = async (productId: string, productName: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${productName}" from your menu?`)) {
+      return;
+    }
+    const bId = business?.id;
+    if (!bId) return;
+
+    // Immediately update local state
+    setProducts((prev) => prev.filter((p) => p.id !== productId));
+
+    // Update local cache
+    try {
+      const localProdsKey = `menyo_products_${bId}`;
+      const localProds: any[] = JSON.parse(localStorage.getItem(localProdsKey) || "[]");
+      const filtered = localProds.filter((p) => p.id !== productId);
+      localStorage.setItem(localProdsKey, JSON.stringify(filtered));
+    } catch {}
+
+    try {
+      await platformApi.ownerArchiveProduct({ productId, businessId: bId });
+      // Hard delete from database if possible so it's completely gone
+      await deleteDoc(storeDoc(db, `businesses/${bId}/products`, productId)).catch(() => {});
+      if (bId === "teatime" || bId === "biz_teatime") {
+        await deleteDoc(storeDoc(db, "menu", productId)).catch(() => {});
+      }
+    } catch (err) {
+      console.error("Failed to delete product:", err);
+    }
   };
 
   const handleOwnerDeleteSocialLink = (id: string) => {
@@ -2085,6 +2116,13 @@ export const BusinessDashboardPage: React.FC = () => {
                               >
                                 <Edit className="w-3.5 h-3.5" />
                               </button>
+                              <button
+                                onClick={() => handleDeleteProduct(p.id, p.name)}
+                                className="p-1.5 rounded-full bg-white hover:bg-rose-50 border border-rose-200 text-rose-500 hover:text-rose-700"
+                                title="Delete item"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -2564,6 +2602,18 @@ export const BusinessDashboardPage: React.FC = () => {
                     } as Category,
                   ];
                 });
+              }
+            } else if (editingProduct?.id) {
+              // Product was archived/deleted via ProductModal
+              const removedId = editingProduct.id;
+              setProducts((prev) => prev.filter((p) => p.id !== removedId));
+              const bId = business?.id;
+              if (bId) {
+                try {
+                  const key = `menyo_products_${bId}`;
+                  const localProds: any[] = JSON.parse(localStorage.getItem(key) || "[]");
+                  localStorage.setItem(key, JSON.stringify(localProds.filter((p) => p.id !== removedId)));
+                } catch {}
               }
             }
             setShowProductModal(false);
