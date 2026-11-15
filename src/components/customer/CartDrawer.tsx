@@ -63,6 +63,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   // Reward Card / Points Claim State
   const [customerName, setCustomerName] = useState("");
+  const [customerDob, setCustomerDob] = useState("");
   const [rewardPhone, setRewardPhone] = useState(() =>
     typeof window !== "undefined" ? localStorage.getItem("menyo_customer_phone") || "" : ""
   );
@@ -320,9 +321,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-black/45 backdrop-blur-xl flex justify-center md:items-center md:p-6 animate-fadeIn">
-      <div className="w-full max-w-md md:max-w-lg lg:max-w-xl bg-white/95 backdrop-blur-2xl min-h-screen md:min-h-0 md:max-h-[88vh] rounded-t-[28px] md:rounded-[28px] ring-1 ring-black/10 md:overflow-hidden flex flex-col justify-between shadow-[0_32px_80px_-12px_rgba(0,0,0,0.45)] relative">
+      <div className="w-full max-w-md md:max-w-lg lg:max-w-xl bg-white/95 backdrop-blur-2xl h-full md:h-auto md:max-h-[88vh] rounded-t-[28px] md:rounded-[28px] ring-1 ring-black/10 overflow-hidden flex flex-col justify-between shadow-[0_32px_80px_-12px_rgba(0,0,0,0.45)] relative">
         {/* Top Header */}
-        <div className="sticky top-0 bg-white/85 backdrop-blur-xl border-b border-black/[0.06] px-5 md:px-6 py-4 flex items-center justify-between z-10">
+        <div className="shrink-0 bg-white/85 backdrop-blur-xl border-b border-black/[0.06] px-5 md:px-6 py-4 flex items-center justify-between z-10">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-[#050F2A]">Your order</h2>
             <p className="text-xs text-[#050F2A]/55 mt-0.5">
@@ -340,7 +341,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         </div>
 
         {/* Scrollable Order Items List */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-4 pb-8 space-y-3">
           {items.length === 0 ? (
             <div className="text-center py-16 space-y-3">
               <div className="w-16 h-16 rounded-full bg-[#E8B64F]/20 border border-[#DFC9AC] mx-auto flex items-center justify-center text-[#4A290F]">
@@ -526,13 +527,28 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 </div>
 
                 <div className="space-y-2">
-                  <input
-                    type="text"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Your name (Optional)"
-                    className="w-full px-3 py-2 rounded-xl bg-white border border-[#DFC9AC] text-xs text-[#301C10] placeholder-[#8A6A53]/70 focus:outline-none focus:ring-2 focus:ring-[#C99532]"
-                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      placeholder="Your name (Optional)"
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-[#DFC9AC] text-xs text-[#301C10] placeholder-[#8A6A53]/70 focus:outline-none focus:ring-2 focus:ring-[#C99532]"
+                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        onFocus={(e) => (e.target.type = "date")}
+                        onBlur={(e) => {
+                          if (!e.target.value) e.target.type = "text";
+                        }}
+                        value={customerDob}
+                        onChange={(e) => setCustomerDob(e.target.value)}
+                        placeholder="Birthday (Optional - for gifts!)"
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-[#DFC9AC] text-xs text-[#301C10] placeholder-[#8A6A53]/70 focus:outline-none focus:ring-2 focus:ring-[#C99532]"
+                      />
+                    </div>
+                  </div>
                   <div className="flex gap-2">
                     <input
                       type="tel"
@@ -542,7 +558,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         setRewardChecked(false);
                         setApplyReward(false);
                       }}
-                      placeholder="Mobile number..."
+                      placeholder="Mobile number (e.g. 0771234567)..."
                       className="flex-1 px-3 py-2 rounded-xl bg-white border border-[#DFC9AC] text-xs text-[#301C10] placeholder-[#8A6A53]/70 focus:outline-none focus:ring-2 focus:ring-[#C99532]"
                     />
                     <button
@@ -611,7 +627,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
         {/* Bottom Total & Place Order Button */}
         {items.length > 0 && (
-          <div className="sticky bottom-0 bg-[#FFFCF6] border-t border-[#DFC9AC] p-4 space-y-3 shadow-warm-lg">
+          <div className="shrink-0 bg-[#FFFCF6] border-t border-[#DFC9AC] p-4 space-y-3 shadow-warm-lg z-20">
             {appliedDiscountRupees > 0 && (
               <div className="flex items-center justify-between text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-1.5">
                 <span>Reward Discount ({pointsToRedeem} pts)</span>
