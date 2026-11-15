@@ -1785,6 +1785,89 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
     throw new ApiError("not-found", "Order tracking session could not be found.");
   }
 
+  // 13. Customer Rewards Client Fallback
+  if (action === "getCustomerReward") {
+    const phone = String(data?.phone || "").replace(/[^0-9]/g, "").trim();
+    let bId = (data?.businessId || "").trim();
+    if (!bId && data?.businessSlug) {
+      const slug = (data.businessSlug || "").toLowerCase().trim();
+      try {
+        const sSnap = await getDoc(doc(db, "businessSlugs", slug));
+        if (sSnap.exists()) bId = sSnap.data()?.businessId || slug;
+      } catch {}
+    }
+    if (!bId || bId === "teatime") bId = "teatime";
+
+    if (phone.length >= 7) {
+      try {
+        const snap = await getDoc(doc(db, "businesses", bId, "customers", phone));
+        if (snap.exists()) {
+          return { record: snap.data() } as unknown as T;
+        }
+      } catch {}
+      if (bId === "teatime") {
+        try {
+          const rootSnap = await getDoc(doc(db, "customers", phone));
+          if (rootSnap.exists()) {
+            return { record: rootSnap.data() } as unknown as T;
+          }
+        } catch {}
+      }
+    }
+    return { record: null } as unknown as T;
+  }
+
+  if (action === "saveCustomerReward") {
+    const phone = String(data?.phone || "").replace(/[^0-9]/g, "").trim();
+    if (phone.length < 7) {
+      throw new ApiError("invalid-argument", "Valid mobile number is required.");
+    }
+    let bId = (data?.businessId || "").trim();
+    if (!bId && data?.businessSlug) {
+      const slug = (data.businessSlug || "").toLowerCase().trim();
+      try {
+        const sSnap = await getDoc(doc(db, "businessSlugs", slug));
+        if (sSnap.exists()) bId = sSnap.data()?.businessId || slug;
+      } catch {}
+    }
+    if (!bId || bId === "teatime") bId = "teatime";
+
+    const ref = doc(db, "businesses", bId, "customers", phone);
+    let existing: any = null;
+    try {
+      const snap = await getDoc(ref);
+      if (snap.exists()) existing = snap.data();
+    } catch {}
+
+    const nowMs = Date.now();
+    const redeemed = Math.max(0, Number(data?.pointsRedeemed) || 0);
+    const rpp = Number(data?.rupeePerPoint) > 0 ? Number(data?.rupeePerPoint) : 5;
+    const netSpent = Math.max(0, (Number(data?.orderAmountRupees) || 0) - redeemed * rpp);
+    const earnedPoints = Math.floor((netSpent / 100) * 2);
+    const welcomeBonus = existing ? 0 : 20;
+    const currentPoints = Math.max(0, (existing?.points || 0) - redeemed + earnedPoints + welcomeBonus);
+
+    const record = {
+      phone,
+      name: String(data?.name || existing?.name || "Guest").trim(),
+      points: currentPoints,
+      totalSpentRupees: (existing?.totalSpentRupees || 0) + netSpent,
+      totalOrders: (existing?.totalOrders || 0) + 1,
+      claimedOrdersCount: (existing?.claimedOrdersCount || 0) + (redeemed > 0 ? 1 : 0),
+      lastOrderAtMs: nowMs,
+      createdAtMs: existing?.createdAtMs || nowMs,
+      updatedAtMs: nowMs,
+    };
+
+    try {
+      await setDoc(ref, record, { merge: true });
+    } catch (err) {
+      console.warn("Direct customer save fallback:", err);
+    }
+
+    return { record, earnedPoints } as unknown as T;
+  }
+
   // 13. Complete Required Password Change
   if (action === "completeRequiredPasswordChange") {
     const newPwd = String(data?.newPassword || "");
@@ -1925,6 +2008,26 @@ export const platformApi = {
       createdAt: any;
       updatedAt: any;
     }>("getOrderTrackingStatus", params);
+  },
+
+  async getCustomerReward(params: {
+    businessId?: string;
+    businessSlug?: string;
+    phone: string;
+  }) {
+    return callRpc<{ record: any | null }>("getCustomerReward", params);
+  },
+
+  async saveCustomerReward(params: {
+    businessId?: string;
+    businessSlug?: string;
+    phone: string;
+    name: string;
+    orderAmountRupees: number;
+    pointsRedeemed?: number;
+    rupeePerPoint?: number;
+  }) {
+    return callRpc<{ record: any; earnedPoints: number }>("saveCustomerReward", params);
   },
 
   // Authentication & Session

@@ -3336,5 +3336,106 @@ export class PlatformEngine {
     }
     return tracking;
   }
+
+  // ============================================================================
+  // 6. CUSTOMER REWARDS & VIP LOYALTY (SECURE SERVER-AUTHORITATIVE)
+  // ============================================================================
+
+  async getCustomerReward(input: {
+    businessId?: string;
+    businessSlug?: string;
+    phone: string;
+  }): Promise<{ record: Record<string, any> | null }> {
+    const rawPhone = String(input.phone || "").replace(/[^0-9]/g, "").trim();
+    if (rawPhone.length < 7) {
+      throw new PlatformApiError("invalid-argument", "Valid mobile number is required.");
+    }
+
+    let bId = (input.businessId || "").trim();
+    if (!bId && input.businessSlug) {
+      const slug = normalizeBusinessSlug(input.businessSlug);
+      if (slug) {
+        const slugDoc = await this.store.getDoc<{ businessId: string }>(`businessSlugs/${slug}`);
+        if (slugDoc?.businessId) bId = slugDoc.businessId;
+      }
+    }
+    if (!bId || bId === "teatime") bId = "teatime";
+
+    // 1. Try businesses/{bId}/customers/{phone}
+    const customer = await this.store.getDoc<Record<string, any>>(
+      `businesses/${bId}/customers/${rawPhone}`
+    );
+    if (customer) {
+      return { record: customer };
+    }
+
+    // 2. Fallback check for root customers/{phone} if bId is teatime
+    if (bId === "teatime") {
+      const rootCustomer = await this.store.getDoc<Record<string, any>>(
+        `customers/${rawPhone}`
+      );
+      if (rootCustomer) return { record: rootCustomer };
+    }
+
+    return { record: null };
+  }
+
+  async saveCustomerReward(input: {
+    businessId?: string;
+    businessSlug?: string;
+    phone: string;
+    name: string;
+    orderAmountRupees: number;
+    pointsRedeemed?: number;
+    rupeePerPoint?: number;
+  }): Promise<{ record: Record<string, any>; earnedPoints: number }> {
+    const rawPhone = String(input.phone || "").replace(/[^0-9]/g, "").trim();
+    if (rawPhone.length < 7) {
+      throw new PlatformApiError("invalid-argument", "Valid mobile number is required.");
+    }
+
+    let bId = (input.businessId || "").trim();
+    if (!bId && input.businessSlug) {
+      const slug = normalizeBusinessSlug(input.businessSlug);
+      if (slug) {
+        const slugDoc = await this.store.getDoc<{ businessId: string }>(`businessSlugs/${slug}`);
+        if (slugDoc?.businessId) bId = slugDoc.businessId;
+      }
+    }
+    if (!bId || bId === "teatime") bId = "teatime";
+
+    const path = `businesses/${bId}/customers/${rawPhone}`;
+    const nowMs = this.clock.now();
+
+    const existing = await this.store.getDoc<Record<string, any>>(path);
+
+    const redeemed = Math.max(0, Number(input.pointsRedeemed) || 0);
+    const rpp = Number(input.rupeePerPoint) > 0 ? Number(input.rupeePerPoint) : 5;
+    const discount = redeemed * rpp;
+    const netSpent = Math.max(0, (Number(input.orderAmountRupees) || 0) - discount);
+
+    const pointsPer100 = 2; // Rs. 1,000 = 20 pts
+    const earnedPoints = Math.floor((netSpent / 100) * pointsPer100);
+    const welcomeBonus = existing ? 0 : 20;
+    const totalAddedPoints = earnedPoints + welcomeBonus;
+    const currentPoints = Math.max(0, (existing?.points || 0) - redeemed + totalAddedPoints);
+
+    const record = {
+      phone: rawPhone,
+      name: String(input.name || existing?.name || "Guest").trim(),
+      points: currentPoints,
+      totalSpentRupees: (existing?.totalSpentRupees || 0) + netSpent,
+      totalOrders: (existing?.totalOrders || 0) + 1,
+      claimedOrdersCount: (existing?.claimedOrdersCount || 0) + (redeemed > 0 ? 1 : 0),
+      lastOrderAtMs: nowMs,
+      createdAtMs: existing?.createdAtMs || nowMs,
+      updatedAtMs: nowMs,
+    };
+
+    await this.store.setDoc(path, record, { merge: true });
+
+    return { record, earnedPoints };
+  }
 }
+
 

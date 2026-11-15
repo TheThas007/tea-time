@@ -546,17 +546,19 @@ export const BusinessDashboardPage: React.FC = () => {
       () => { }
     );
 
-    const handleStorageRewards = (ev: StorageEvent) => {
-      if (ev.key === `menyo_rewards_${bId}`) {
+    const handleStorageRewards = (ev?: StorageEvent | Event) => {
+      if (!ev || (ev as StorageEvent).key === `menyo_rewards_${bId}` || (ev as StorageEvent).key === undefined) {
         const updated = loadLocalCustomers();
         updated.sort((a, b) => (b.lastOrderAtMs || 0) - (a.lastOrderAtMs || 0));
         setCustomers(updated);
       }
     };
     window.addEventListener("storage", handleStorageRewards);
+    window.addEventListener("menyo_rewards_updated", handleStorageRewards);
 
     return () => {
       window.removeEventListener("storage", handleStorageRewards);
+      window.removeEventListener("menyo_rewards_updated", handleStorageRewards);
       unsubCategories();
       unsubProducts();
       unsubTables();

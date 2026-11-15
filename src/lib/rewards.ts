@@ -1,4 +1,5 @@
 import { db, doc, getDoc, setDoc, serverTimestamp } from "./supabaseStore";
+import { platformApi } from "./apiClient";
 
 export interface CustomerRewardRecord {
   phone: string;
@@ -35,11 +36,49 @@ export function pointsToRupeesDiscount(points: number, rupeePerPoint: number = 5
   return points * (rupeePerPoint > 0 ? rupeePerPoint : 5);
 }
 
-function getCustomerDocRef(businessId: string | null | undefined, phoneDigits: string) {
-  if (businessId && businessId !== "teatime") {
-    return doc(db, "businesses", businessId, "customers", phoneDigits);
+function resolveCanonicalBusinessId(businessId: string | null | undefined): string {
+  const trimmed = (businessId || "").trim();
+  if (!trimmed || trimmed === "teatime" || trimmed === "biz_teatime") return "teatime";
+  return trimmed;
+}
+
+function updateLocalRewardsCache(bId: string, record: CustomerRewardRecord) {
+  if (typeof window === "undefined" || !bId || !record?.phone) return;
+  try {
+    const key = `menyo_rewards_${bId}`;
+    const raw = localStorage.getItem(key);
+    let list: CustomerRewardRecord[] = [];
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      list = Array.isArray(parsed) ? parsed : Object.values(parsed || {});
+    }
+    const idx = list.findIndex((c) => c.phone === record.phone);
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...record };
+    } else {
+      list.push(record);
+    }
+    localStorage.setItem(key, JSON.stringify(list));
+    // Dispatch custom and storage event so any active admin dashboard tab updates instantly
+    window.dispatchEvent(new Event("storage"));
+    window.dispatchEvent(new CustomEvent("menyo_rewards_updated", { detail: { businessId: bId, record } }));
+  } catch (err) {
+    console.warn("Failed to update local rewards cache:", err);
   }
-  return doc(db, "customers", phoneDigits);
+}
+
+function getLocalRewardByPhone(bId: string, phoneDigits: string): CustomerRewardRecord | null {
+  if (typeof window === "undefined" || !bId) return null;
+  try {
+    const raw = localStorage.getItem(`menyo_rewards_${bId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const list: CustomerRewardRecord[] = Array.isArray(parsed) ? parsed : Object.values(parsed || {});
+    const found = list.find((c) => c && c.phone === phoneDigits);
+    return found || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function getCustomerRewardByPhone(
@@ -49,14 +88,49 @@ export async function getCustomerRewardByPhone(
   const phoneDigits = normalizePhone(rawPhone);
   if (phoneDigits.length < 7) return null;
 
+  const canonicalBizId = resolveCanonicalBusinessId(businessId);
+
+  // 1. Try secure Server RPC (service role - bypasses client RLS restrictions safely)
   try {
-    const snap = await getDoc(getCustomerDocRef(businessId, phoneDigits));
-    if (snap.exists()) {
-      return snap.data() as CustomerRewardRecord;
+    const res = await platformApi.getCustomerReward({
+      businessId: canonicalBizId,
+      phone: phoneDigits,
+    });
+    if (res?.record) {
+      const record = res.record as CustomerRewardRecord;
+      updateLocalRewardsCache(canonicalBizId, record);
+      return record;
     }
-  } catch (err) {
-    console.warn("Reward lookup error:", err);
+  } catch (rpcErr) {
+    console.warn("RPC customer reward lookup notice:", rpcErr);
   }
+
+  // 2. Direct client store fallback
+  try {
+    const directRef = doc(db, "businesses", canonicalBizId, "customers", phoneDigits);
+    const snap = await getDoc(directRef);
+    if (snap.exists()) {
+      const record = snap.data() as CustomerRewardRecord;
+      updateLocalRewardsCache(canonicalBizId, record);
+      return record;
+    }
+  } catch {}
+
+  if (canonicalBizId === "teatime") {
+    try {
+      const rootSnap = await getDoc(doc(db, "customers", phoneDigits));
+      if (rootSnap.exists()) {
+        const record = rootSnap.data() as CustomerRewardRecord;
+        updateLocalRewardsCache(canonicalBizId, record);
+        return record;
+      }
+    } catch {}
+  }
+
+  // 3. Instant local storage cache fallback
+  const localRec = getLocalRewardByPhone(canonicalBizId, phoneDigits);
+  if (localRec) return localRec;
+
   return null;
 }
 
@@ -73,16 +147,41 @@ export async function saveCustomerRewardPoints(params: {
     throw new Error("Please enter a valid mobile number.");
   }
 
-  const ref = getCustomerDocRef(params.businessId, phoneDigits);
+  const canonicalBizId = resolveCanonicalBusinessId(params.businessId);
+
+  // 1. Try secure Server RPC
+  try {
+    const res = await platformApi.saveCustomerReward({
+      businessId: canonicalBizId,
+      phone: phoneDigits,
+      name: params.name,
+      orderAmountRupees: params.orderAmountRupees,
+      pointsRedeemed: params.pointsRedeemed,
+      rupeePerPoint: params.rupeePerPoint,
+    });
+    if (res?.record) {
+      const record = res.record as CustomerRewardRecord;
+      updateLocalRewardsCache(canonicalBizId, record);
+      return { record, earnedPoints: res.earnedPoints ?? 0 };
+    }
+  } catch (rpcErr) {
+    console.warn("RPC customer reward save fallback:", rpcErr);
+  }
+
+  // 2. Client store direct write fallback
+  const directRef = doc(db, "businesses", canonicalBizId, "customers", phoneDigits);
   const nowMs = Date.now();
   let existing: CustomerRewardRecord | null = null;
 
   try {
-    const snap = await getDoc(ref);
+    const snap = await getDoc(directRef);
     if (snap.exists()) {
       existing = snap.data() as CustomerRewardRecord;
     }
   } catch {}
+  if (!existing) {
+    existing = getLocalRewardByPhone(canonicalBizId, phoneDigits);
+  }
 
   const redeemed = Math.max(0, params.pointsRedeemed || 0);
   const netSpent = Math.max(
@@ -91,7 +190,7 @@ export async function saveCustomerRewardPoints(params: {
   );
   let pointsPer100 = 2;
   if (typeof window !== "undefined") {
-    const rawRate = localStorage.getItem(`menyo_reward_earn_rate_${params.businessId}`);
+    const rawRate = localStorage.getItem(`menyo_reward_earn_rate_${canonicalBizId}`);
     if (rawRate && Number(rawRate) > 0) pointsPer100 = Number(rawRate);
   }
   const earnedPoints = calculateEarnedPoints(netSpent, pointsPer100);
@@ -111,15 +210,20 @@ export async function saveCustomerRewardPoints(params: {
     updatedAtMs: nowMs,
   };
 
-  await setDoc(
-    ref,
-    {
-      ...record,
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true }
-  );
+  try {
+    await setDoc(
+      directRef,
+      {
+        ...record,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } catch (writeErr) {
+    console.warn("Direct customer save write notice:", writeErr);
+  }
+
+  updateLocalRewardsCache(canonicalBizId, record);
 
   return { record, earnedPoints };
 }
-

@@ -1121,11 +1121,26 @@ export const CustomerMenuPage: React.FC = () => {
                   </button>
                 </form>
                 {walletChecked && (
-                  <p className="text-[11px] font-medium text-center text-[#050F2A]">
-                    {walletRecord
-                      ? `${walletRecord.name}: ${walletRecord.points} pts available`
-                      : "No reward points found for this number yet."}
-                  </p>
+                  <div className="text-center space-y-1">
+                    {walletRecord ? (
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 text-xs text-emerald-900">
+                        <p className="font-extrabold flex items-center justify-center gap-1">
+                          <span>🎉</span>
+                          <span>{walletRecord.name}</span>
+                        </p>
+                        <p className="font-black text-sm text-emerald-800 mt-0.5">
+                          {walletRecord.points} Points Available
+                        </p>
+                        <p className="text-[11px] text-emerald-700 font-medium">
+                          Worth Rs. {(walletRecord.points * 5).toLocaleString()} discount
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] font-medium text-center text-[#050F2A]/70 py-1">
+                        No reward points found for this number yet.
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             )}

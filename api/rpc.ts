@@ -172,6 +172,14 @@ export default async function handler(req: any, res: any) {
         result = await engine.getOrderTrackingStatus(data);
         break;
 
+      case "getCustomerReward":
+        result = await engine.getCustomerReward(data);
+        break;
+
+      case "saveCustomerReward":
+        result = await engine.saveCustomerReward(data);
+        break;
+
       case "loginWithIdentifier":
         result = await engine.loginWithIdentifier(
           { identifier: data?.identifier, password: data?.password },
