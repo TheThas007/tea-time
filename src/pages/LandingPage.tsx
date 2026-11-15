@@ -20,12 +20,12 @@ import {
   Smartphone,
   CheckCircle2,
   Mail,
-  Store,
   Coffee,
-  Hotel,
-  Wine,
-  Truck,
   Building2,
+  Store,
+  Pizza,
+  Wine,
+  Flame,
 } from "lucide-react";
 import { MenyoWordmark } from "../components/common/MenyoLogo";
 
@@ -522,126 +522,7 @@ export const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* 3.5. WHO IS MENYO BUILT FOR? (Industry Use Cases) */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto w-full border-t border-[#050F2A]/10">
-        <div className="text-center max-w-2xl mx-auto mb-14">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-[#7BBBFF] block mb-1">
-            Built For Modern Hospitality
-          </span>
-          <h2 className="text-3xl sm:text-4xl font-black text-[#050F2A] tracking-tight">
-            Tailored for every dining business.
-          </h2>
-          <p className="text-sm text-[#050F2A]/70 mt-2">
-            Whether you run a cozy local café, a high-traffic hotel restaurant, or a bustling cloud kitchen — Menyo elevates your guest ordering experience.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* 1. Cafés & Coffee Shops */}
-          <div className="bg-white rounded-3xl p-7 border border-[#050F2A]/10 shadow-sm hover:border-[#7BBBFF] transition-all flex flex-col justify-between">
-            <div>
-              <div className="w-12 h-12 rounded-2xl bg-amber-500/15 text-amber-700 flex items-center justify-center mb-5">
-                <Coffee className="w-6 h-6" />
-              </div>
-              <h3 className="text-lg font-bold text-[#050F2A] mb-2">Cafés &amp; Coffee Shops</h3>
-              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
-                Fast barcode scanning, custom sugar &amp; milk choices, pastry upsells, and instant cashier thermal billing during morning rush hours.
-              </p>
-            </div>
-            <div className="mt-5 pt-4 border-t border-[#050F2A]/10 flex items-center gap-1.5 text-[11px] font-bold text-amber-700">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              <span>Instant table &amp; counter ordering</span>
-            </div>
-          </div>
-
-          {/* 2. Fine Dining & Casual Restaurants */}
-          <div className="bg-white rounded-3xl p-7 border border-[#050F2A]/10 shadow-sm hover:border-[#7BBBFF] transition-all flex flex-col justify-between">
-            <div>
-              <div className="w-12 h-12 rounded-2xl bg-blue-500/15 text-blue-700 flex items-center justify-center mb-5">
-                <UtensilsCrossed className="w-6 h-6" />
-              </div>
-              <h3 className="text-lg font-bold text-[#050F2A] mb-2">Dine-in Restaurants</h3>
-              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
-                Appetizing high-res dish photos, live kitchen display chimes, multi-course reordering, and contactless table QR payments.
-              </p>
-            </div>
-            <div className="mt-5 pt-4 border-t border-[#050F2A]/10 flex items-center gap-1.5 text-[11px] font-bold text-blue-700">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              <span>Zero waiter waiting time</span>
-            </div>
-          </div>
-
-          {/* 3. Hotels, Resorts & Lounges */}
-          <div className="bg-white rounded-3xl p-7 border border-[#050F2A]/10 shadow-sm hover:border-[#7BBBFF] transition-all flex flex-col justify-between">
-            <div>
-              <div className="w-12 h-12 rounded-2xl bg-purple-500/15 text-purple-700 flex items-center justify-center mb-5">
-                <Hotel className="w-6 h-6" />
-              </div>
-              <h3 className="text-lg font-bold text-[#050F2A] mb-2">Hotels &amp; Resorts</h3>
-              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
-                Room service QR ordering, poolside snack menus, multi-language visitor menus, and VIP guest rewards point collection.
-              </p>
-            </div>
-            <div className="mt-5 pt-4 border-t border-[#050F2A]/10 flex items-center gap-1.5 text-[11px] font-bold text-purple-700">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              <span>Seamless room &amp; lounge service</span>
-            </div>
-          </div>
-
-          {/* 4. Bars, Pubs & Rooftop Lounges */}
-          <div className="bg-white rounded-3xl p-7 border border-[#050F2A]/10 shadow-sm hover:border-[#7BBBFF] transition-all flex flex-col justify-between">
-            <div>
-              <div className="w-12 h-12 rounded-2xl bg-rose-500/15 text-rose-700 flex items-center justify-center mb-5">
-                <Wine className="w-6 h-6" />
-              </div>
-              <h3 className="text-lg font-bold text-[#050F2A] mb-2">Bars &amp; Rooftops</h3>
-              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
-                Direct beverage refills, rapid bartender ticketing, social memory photo studio sharing, and late-night digital ordering.
-              </p>
-            </div>
-            <div className="mt-5 pt-4 border-t border-[#050F2A]/10 flex items-center gap-1.5 text-[11px] font-bold text-rose-700">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              <span>High-speed drink reorders</span>
-            </div>
-          </div>
-
-          {/* 5. Cloud Kitchens & Takeaway Spots */}
-          <div className="bg-white rounded-3xl p-7 border border-[#050F2A]/10 shadow-sm hover:border-[#7BBBFF] transition-all flex flex-col justify-between">
-            <div>
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 text-emerald-700 flex items-center justify-center mb-5">
-                <Truck className="w-6 h-6" />
-              </div>
-              <h3 className="text-lg font-bold text-[#050F2A] mb-2">Cloud Kitchens &amp; Takeaway</h3>
-              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
-                Share your menu link on Instagram, WhatsApp, and Google Maps. Receive takeaway orders directly without high delivery app commissions.
-              </p>
-            </div>
-            <div className="mt-5 pt-4 border-t border-[#050F2A]/10 flex items-center gap-1.5 text-[11px] font-bold text-emerald-700">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              <span>Direct 0% commission sales</span>
-            </div>
-          </div>
-
-          {/* 6. Food Courts, Bakeries & Juice Bars */}
-          <div className="bg-white rounded-3xl p-7 border border-[#050F2A]/10 shadow-sm hover:border-[#7BBBFF] transition-all flex flex-col justify-between">
-            <div>
-              <div className="w-12 h-12 rounded-2xl bg-teal-500/15 text-teal-700 flex items-center justify-center mb-5">
-                <Store className="w-6 h-6" />
-              </div>
-              <h3 className="text-lg font-bold text-[#050F2A] mb-2">Food Courts &amp; Bakeries</h3>
-              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
-                Queue-busting QR counter ordering, instant daily specials highlight, daily stock tracking, and repeat buyer discount rewards.
-              </p>
-            </div>
-            <div className="mt-5 pt-4 border-t border-[#050F2A]/10 flex items-center gap-1.5 text-[11px] font-bold text-teal-700">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              <span>Zero queue congestion</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 3.6. BENEFITS SECTION — Why Restaurant Owners Choose Menyo */}
+      {/* 3.5. BENEFITS SECTION — Why Restaurant Owners Choose Menyo */}
       <section className="py-20 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto w-full border-t border-[#050F2A]/10">
         <div className="text-center max-w-2xl mx-auto mb-14">
           <span className="text-[10px] font-bold uppercase tracking-widest text-[#7BBBFF] block mb-1">
@@ -729,6 +610,125 @@ export const LandingPage: React.FC = () => {
             <div className="mt-4 pt-4 border-t border-[#050F2A]/10 flex items-center gap-1.5 text-[11px] font-bold text-purple-700">
               <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
               <span>Viral social sharing</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 3.6. WHO CAN USE MENYO — Industry Fit Section */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto w-full border-t border-[#050F2A]/10">
+        <div className="text-center max-w-2xl mx-auto mb-14">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-[#7BBBFF] block mb-1">
+            Universal Compatibility
+          </span>
+          <h2 className="text-3xl sm:text-4xl font-black text-[#050F2A] tracking-tight">
+            Built for every hospitality business.
+          </h2>
+          <p className="text-sm text-[#050F2A]/70 mt-2">
+            Whether you run a fast-paced espresso bar, a fine-dining hotel restaurant, or a bustling cloud kitchen — Menyo fits your workflow seamlessly.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* 1. Cafés & Coffee Shops */}
+          <div className="bg-white rounded-3xl p-7 border border-[#050F2A]/10 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+            <div>
+              <div className="w-12 h-12 rounded-2xl bg-[#E8B64F]/20 text-[#9A6B12] flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <Coffee className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-bold text-[#050F2A] mb-2">Cafés &amp; Coffee Shops</h3>
+              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
+                Handle busy morning rushes with instant table-side and counter QR ordering. Sugar customizations, beverage add-ons, and quick thermal bills.
+              </p>
+            </div>
+            <div className="mt-5 pt-4 border-t border-[#050F2A]/10 text-[11px] font-semibold text-[#050F2A]/60 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              <span>Barista &amp; Bakery Ready</span>
+            </div>
+          </div>
+
+          {/* 2. Restaurants & Diners */}
+          <div className="bg-white rounded-3xl p-7 border border-[#050F2A]/10 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+            <div>
+              <div className="w-12 h-12 rounded-2xl bg-blue-500/15 text-blue-700 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <UtensilsCrossed className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-bold text-[#050F2A] mb-2">Dine-in Restaurants</h3>
+              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
+                Turn tables 40% faster. Multi-course ordering, live kitchen preparation status for guests, and contactless cashier billing.
+              </p>
+            </div>
+            <div className="mt-5 pt-4 border-t border-[#050F2A]/10 text-[11px] font-semibold text-[#050F2A]/60 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+              <span>Full Dining Room POS</span>
+            </div>
+          </div>
+
+          {/* 3. Hotels & Resorts */}
+          <div className="bg-white rounded-3xl p-7 border border-[#050F2A]/10 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+            <div>
+              <div className="w-12 h-12 rounded-2xl bg-purple-500/15 text-purple-700 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <Building2 className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-bold text-[#050F2A] mb-2">Hotels &amp; Resorts</h3>
+              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
+                Room service, poolside loungers, and rooftop dining. Guests scan a dedicated room or bed QR code for instant delivery.
+              </p>
+            </div>
+            <div className="mt-5 pt-4 border-t border-[#050F2A]/10 text-[11px] font-semibold text-[#050F2A]/60 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+              <span>Room Service &amp; Poolside</span>
+            </div>
+          </div>
+
+          {/* 4. Bars, Pubs & Lounges */}
+          <div className="bg-white rounded-3xl p-7 border border-[#050F2A]/10 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+            <div>
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/15 text-rose-700 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <Wine className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-bold text-[#050F2A] mb-2">Bars &amp; Resto-Lounges</h3>
+              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
+                Eliminate crowded counter queues. Guests re-order cocktails, appetizers, and mocktails right from their booth with one tap.
+              </p>
+            </div>
+            <div className="mt-5 pt-4 border-t border-[#050F2A]/10 text-[11px] font-semibold text-[#050F2A]/60 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+              <span>Fast Drink Re-orders</span>
+            </div>
+          </div>
+
+          {/* 5. Food Trucks & Popups */}
+          <div className="bg-white rounded-3xl p-7 border border-[#050F2A]/10 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+            <div>
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/15 text-amber-700 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <Pizza className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-bold text-[#050F2A] mb-2">Food Trucks &amp; Pizzerias</h3>
+              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
+                Stand out with digital ordering on a single banner QR code. Customers view delicious photos while queuing and pay in seconds.
+              </p>
+            </div>
+            <div className="mt-5 pt-4 border-t border-[#050F2A]/10 text-[11px] font-semibold text-[#050F2A]/60 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+              <span>Grab &amp; Go Ordering</span>
+            </div>
+          </div>
+
+          {/* 6. Cloud Kitchens & Takeaway */}
+          <div className="bg-white rounded-3xl p-7 border border-[#050F2A]/10 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+            <div>
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 text-emerald-700 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <Flame className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-bold text-[#050F2A] mb-2">Cloud Kitchens &amp; Takeaway</h3>
+              <p className="text-xs text-[#050F2A]/70 leading-relaxed">
+                Publish your live menu link on Instagram bio, WhatsApp, and Google Maps. Receive takeaway orders directly into your kitchen screen.
+              </p>
+            </div>
+            <div className="mt-5 pt-4 border-t border-[#050F2A]/10 text-[11px] font-semibold text-[#050F2A]/60 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              <span>Direct Link &amp; Social Orders</span>
             </div>
           </div>
         </div>
