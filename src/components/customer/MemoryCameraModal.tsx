@@ -43,12 +43,14 @@ export const MemoryCameraModal: React.FC<MemoryCameraModalProps> = ({
 
   const overlayPos: LogoOverlayPosition =
     ((typeof window !== "undefined"
-      ? localStorage.getItem(`menyo_memory_logo_pos_${businessId}`)
+      ? localStorage.getItem(`menyo_memory_logo_pos_${businessId}`) ||
+        (businessId ? localStorage.getItem(`menyo_memory_logo_pos_${businessId.replace(/^biz_/, "")}`) : null)
       : null) as LogoOverlayPosition) || "bottom-right";
 
   const customOverlayLogo =
     (typeof window !== "undefined"
-      ? localStorage.getItem(`menyo_memory_logo_url_${businessId}`)
+      ? localStorage.getItem(`menyo_memory_logo_url_${businessId}`) ||
+        (businessId ? localStorage.getItem(`menyo_memory_logo_url_${businessId.replace(/^biz_/, "")}`) : null)
       : null) || logoUrl;
 
   const stopStream = () => {
@@ -278,10 +280,6 @@ export const MemoryCameraModal: React.FC<MemoryCameraModalProps> = ({
                 alt="Captured memory"
                 className="w-full h-full object-cover"
               />
-              {/* Show restaurant branding watermark badge if no logo uploaded */}
-              <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-full bg-black/50 backdrop-blur-md border border-white/15 text-[10px] font-bold text-white flex items-center gap-1 shadow-lg pointer-events-none">
-                <span>{businessName}</span>
-              </div>
             </div>
           ) : (
             <>

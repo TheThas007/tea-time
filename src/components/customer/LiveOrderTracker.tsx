@@ -29,6 +29,8 @@ interface LiveOrderTrackerProps {
   orderId: string;
   businessSlug?: string;
   businessId?: string;
+  businessName?: string;
+  logoUrl?: string;
   onClose: () => void;
   onOrderMore?: () => void;
 }
@@ -37,6 +39,8 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
   orderId,
   businessSlug,
   businessId,
+  businessName,
+  logoUrl,
   onClose,
   onOrderMore,
 }) => {
@@ -549,8 +553,9 @@ export const LiveOrderTracker: React.FC<LiveOrderTrackerProps> = ({
       <MemoryCameraModal
         isOpen={showMemoryCamera}
         onClose={() => setShowMemoryCamera(false)}
-        businessId={businessId}
-        businessName={"TEA TIME"}
+        businessId={businessId || businessSlug}
+        businessName={businessName || (order as any)?.businessName || (businessSlug && businessSlug !== "teatime" ? businessSlug.toUpperCase() : "TEA TIME")}
+        logoUrl={logoUrl}
       />
     </div>
   );

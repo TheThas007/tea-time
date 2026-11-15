@@ -1237,6 +1237,8 @@ export const CustomerMenuPage: React.FC = () => {
           orderId={activeTrackerOrderId}
           businessSlug={businessSlug}
           businessId={tenantBusiness?.id}
+          businessName={tenantBusiness?.name || (isTeaTime ? "Tea Time" : undefined)}
+          logoUrl={tenantBusiness?.branding?.logoUrl || tenantBusiness?.logoUrl}
           onClose={() => setActiveTrackerOrderId(null)}
           onOrderMore={() => {
             setActiveTrackerOrderId(null);
