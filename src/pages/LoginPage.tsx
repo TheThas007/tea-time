@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, ArrowLeft, CheckCircle2 } from "lucide-react";
 import { platformApi } from "../lib/apiClient";
+import { getSupabase, updateUserPassword } from "../lib/supabase";
 import { ForcePasswordChangeModal } from "../components/auth/ForcePasswordChangeModal";
 import { MenyoIcon, MenyoWordmark } from "../components/common/MenyoLogo";
 
@@ -26,8 +27,44 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
 
-  // Auto-Redirect if user is already authenticated
+  // Password Reset State
+  const [resetMode, setResetMode] = useState<"none" | "request" | "recovery">(() => {
+    if (typeof window !== "undefined") {
+      const hash = window.location.hash || "";
+      const search = window.location.search || "";
+      if (hash.includes("type=recovery") || search.includes("mode=recovery")) {
+        return "recovery";
+      }
+    }
+    return "none";
+  });
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetSent, setResetSent] = useState(false);
+  const [newResetPassword, setNewResetPassword] = useState("");
+  const [confirmResetPassword, setConfirmResetPassword] = useState("");
+  const [showNewResetPassword, setShowNewResetPassword] = useState(false);
+  const [showConfirmResetPassword, setShowConfirmResetPassword] = useState(false);
+  const [resetSuccessMsg, setResetSuccessMsg] = useState<string | null>(null);
+
+  // Listen for Supabase PASSWORD_RECOVERY event
   useEffect(() => {
+    try {
+      const sb = getSupabase();
+      const { data: sub } = sb.auth.onAuthStateChange((event) => {
+        if (event === "PASSWORD_RECOVERY") {
+          setResetMode("recovery");
+          setError(null);
+        }
+      });
+      return () => {
+        sub.subscription.unsubscribe();
+      };
+    } catch { }
+  }, []);
+
+  // Auto-Redirect if user is already authenticated (unless in password recovery mode)
+  useEffect(() => {
+    if (resetMode !== "none") return;
     const existingRole = localStorage.getItem("menyo_auth_role");
     const existingSlug = localStorage.getItem("menyo_auth_businessSlug");
     const existingBizId = localStorage.getItem("menyo_auth_businessId");
@@ -41,14 +78,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
         navigate("/admin");
       }
     }
-  }, [navigate]);
+  }, [navigate, resetMode]);
 
   // Sign Up Form State (2-Day Free Trial)
   const [restaurantName, setRestaurantName] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [signupContact, setSignupContact] = useState(""); // Phone number or email
   const [signupPassword, setSignupPassword] = useState("");
+  const [signupConfirmPassword, setSignupConfirmPassword] = useState("");
   const [showSignupPassword, setShowSignupPassword] = useState(false);
+  const [showSignupConfirmPassword, setShowSignupConfirmPassword] = useState(false);
   const [signupPhone, setSignupPhone] = useState("");
 
   const [loading, setLoading] = useState(false);
@@ -137,6 +176,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
       setLoading(false);
       return;
     }
+    if (signupPassword !== signupConfirmPassword) {
+      setError("Passwords do not match. Please enter the same password twice.");
+      setLoading(false);
+      return;
+    }
 
     try {
       const regRes = await platformApi.registerOwnerWithTrial({
@@ -164,32 +208,61 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
     }
   };
 
-  // Google OAuth Login
-  const handleGoogleLogin = async () => {
+  // Handle Password Reset Email Request
+  const handleSendResetLink = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError(null);
-    setOauthLoading("google");
+    setResetSuccessMsg(null);
+    const emailVal = resetEmail.trim().toLowerCase();
+    if (!emailVal || !emailVal.includes("@")) {
+      setError("Please enter a valid email address associated with your account.");
+      return;
+    }
+    setLoading(true);
     try {
-      const res = await platformApi.loginWithGoogleOAuth();
-      if ((res as any)?.redirecting) return;
-      if (res.role === "SUPER_ADMIN") {
-        navigate("/super-admin");
-      } else {
-        localStorage.setItem("menyo_auth_role", "BUSINESS_OWNER");
-        localStorage.setItem("menyo_auth_email", (res as any)?.email || "admin@teatime.lk");
-        const storedSlug = localStorage.getItem("menyo_auth_businessSlug");
-        if (storedSlug && storedSlug !== "teatime") {
-          navigate(`/${storedSlug}/admin`);
-        } else {
-          navigate("/admin");
-        }
-      }
+      const sb = getSupabase();
+      const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/login?mode=recovery` : undefined;
+      const { error: resetErr } = await sb.auth.resetPasswordForEmail(emailVal, {
+        redirectTo,
+      });
+      if (resetErr) throw resetErr;
+      setResetSent(true);
+      setResetSuccessMsg("Password reset link sent! Please check your email inbox and click the link to set a new password.");
     } catch (err: any) {
-      console.warn("Google sign-in notice:", err);
-      if (err?.code !== "auth/popup-closed-by-user") {
-        setError(err?.message || "Google sign-in is being enabled. Please use Phone / Email & password.");
-      }
+      setError(err?.message || "Failed to send password reset email. Please try again.");
     } finally {
-      setOauthLoading(null);
+      setLoading(false);
+    }
+  };
+
+  // Handle Setting New Password after Recovery Link
+  const handleUpdateRecoveredPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setResetSuccessMsg(null);
+    if (newResetPassword.length < 8) {
+      setError("New password must be at least 8 characters.");
+      return;
+    }
+    if (newResetPassword !== confirmResetPassword) {
+      setError("Passwords do not match. Please enter the same password twice.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await updateUserPassword(newResetPassword);
+      setResetSuccessMsg("Your password has been updated successfully! You can now sign in.");
+      setNewResetPassword("");
+      setConfirmResetPassword("");
+      setTimeout(() => {
+        setResetMode("none");
+        setResetSuccessMsg(null);
+        setActiveTab("signin");
+      }, 2000);
+    } catch (err: any) {
+      setError(err?.message || "Failed to update password. Please request a new reset link.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -234,44 +307,60 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
           {/* Heading & Subtitle */}
           <div className="text-center mb-8">
             <h1 className="text-2xl sm:text-[26px] font-extrabold text-[#111827] tracking-tight">
-              {activeTab === "signin" ? "Welcome to Menyo." : "Make it yours."}
+              {resetMode === "request"
+                ? "Reset your password."
+                : resetMode === "recovery"
+                ? "Set a new password."
+                : activeTab === "signin"
+                ? "Welcome to Menyo."
+                : "Make it yours."}
             </h1>
             <p className="text-xs sm:text-[13px] text-gray-500 mt-1.5 font-normal">
-              {activeTab === "signin"
+              {resetMode === "request"
+                ? "Enter your account email to receive a password reset link."
+                : resetMode === "recovery"
+                ? "Enter your new password twice below to update your account."
+                : activeTab === "signin"
                 ? "Everything for your restaurant. In one place."
                 : "Try Menyo free for 2 days. No credit card required."}
             </p>
           </div>
 
           {/* Clean Segmented Tab Switcher (Underline style) */}
-          <div className="flex border-b border-gray-200 mb-6">
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab("signin");
-                setError(null);
-              }}
-              className={`flex-1 pb-2.5 text-xs font-bold text-center transition-all relative ${activeTab === "signin"
-                  ? "text-black border-b-2 border-black -mb-[1px]"
-                  : "text-gray-400 hover:text-gray-700"
+          {resetMode === "none" && (
+            <div className="flex border-b border-gray-200 mb-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("signin");
+                  setError(null);
+                  setResetSuccessMsg(null);
+                }}
+                className={`flex-1 pb-2.5 text-xs font-bold text-center transition-all relative ${
+                  activeTab === "signin"
+                    ? "text-black border-b-2 border-black -mb-[1px]"
+                    : "text-gray-400 hover:text-gray-700"
                 }`}
-            >
-              Sign in
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab("signup");
-                setError(null);
-              }}
-              className={`flex-1 pb-2.5 text-xs font-bold text-center transition-all relative ${activeTab === "signup"
-                  ? "text-black border-b-2 border-black -mb-[1px]"
-                  : "text-gray-400 hover:text-gray-700"
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("signup");
+                  setError(null);
+                  setResetSuccessMsg(null);
+                }}
+                className={`flex-1 pb-2.5 text-xs font-bold text-center transition-all relative ${
+                  activeTab === "signup"
+                    ? "text-black border-b-2 border-black -mb-[1px]"
+                    : "text-gray-400 hover:text-gray-700"
                 }`}
-            >
-              Create account
-            </button>
-          </div>
+              >
+                Create account
+              </button>
+            </div>
+          )}
 
           {/* Error Banner */}
           {error && (
@@ -280,8 +369,124 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
             </div>
           )}
 
+          {/* Success Banner */}
+          {resetSuccessMsg && (
+            <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-xs leading-relaxed flex items-start gap-2 animate-fadeIn">
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+              <span>{resetSuccessMsg}</span>
+            </div>
+          )}
+
+          {/* PASSWORD RESET REQUEST FORM */}
+          {resetMode === "request" && (
+            <form onSubmit={handleSendResetLink} className="space-y-3.5">
+              <div>
+                <input
+                  type="email"
+                  required
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] text-xs text-gray-900 placeholder-gray-400 outline-none transition"
+                  placeholder="Enter your email address"
+                  autoComplete="email"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 rounded-lg bg-[#050F2A] hover:bg-[#0b1739] active:scale-[0.99] text-white font-bold text-xs transition flex items-center justify-center gap-2 shadow-xs cursor-pointer mt-2"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : resetSent ? "Resend reset link" : "Send password reset link"}
+              </button>
+
+              <div className="text-center pt-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetMode("none");
+                    setError(null);
+                    setResetSuccessMsg(null);
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[#050F2A] hover:underline cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back to sign in</span>
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* PASSWORD RECOVERY (SET NEW PASSWORD) FORM */}
+          {resetMode === "recovery" && (
+            <form onSubmit={handleUpdateRecoveredPassword} className="space-y-3.5">
+              <div className="relative">
+                <input
+                  type={showNewResetPassword ? "text" : "password"}
+                  required
+                  minLength={8}
+                  value={newResetPassword}
+                  onChange={(e) => setNewResetPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] text-xs text-gray-900 placeholder-gray-400 outline-none transition pr-10"
+                  placeholder="New password (min 8 characters)"
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewResetPassword(!showNewResetPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer"
+                >
+                  {showNewResetPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+
+              <div className="relative">
+                <input
+                  type={showConfirmResetPassword ? "text" : "password"}
+                  required
+                  minLength={8}
+                  value={confirmResetPassword}
+                  onChange={(e) => setConfirmResetPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] text-xs text-gray-900 placeholder-gray-400 outline-none transition pr-10"
+                  placeholder="Confirm new password"
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmResetPassword(!showConfirmResetPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer"
+                >
+                  {showConfirmResetPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 rounded-lg bg-[#050F2A] hover:bg-[#0b1739] active:scale-[0.99] text-white font-bold text-xs transition flex items-center justify-center gap-2 shadow-xs cursor-pointer mt-2"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : "Update password"}
+              </button>
+
+              <div className="text-center pt-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetMode("none");
+                    setError(null);
+                    setResetSuccessMsg(null);
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[#050F2A] hover:underline cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back to sign in</span>
+                </button>
+              </div>
+            </form>
+          )}
+
           {/* 3. SIGN IN FORM */}
-          {activeTab === "signin" && (
+          {resetMode === "none" && activeTab === "signin" && (
             <form onSubmit={handleSignIn} className="space-y-3.5">
               <div>
                 <input
@@ -314,16 +519,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
                 </button>
               </div>
 
-              {/* Forgot password link */}
+              {/* Forgot password button */}
               <div className="flex justify-end pt-0.5">
-                <a
-                  href="https://wa.me/94764847081?text=Hi%20Menyo,%20I%20forgot%20my%20password%20for%20my%20restaurant%20account."
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[11px] font-semibold text-[#2563EB] hover:underline"
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null);
+                    setResetSuccessMsg(null);
+                    setResetSent(false);
+                    if (identifier.includes("@")) {
+                      setResetEmail(identifier.trim());
+                    }
+                    setResetMode("request");
+                  }}
+                  className="text-[11px] font-semibold text-[#2563EB] hover:underline cursor-pointer"
                 >
                   Forgot password?
-                </a>
+                </button>
               </div>
 
               {/* Solid Navy Blue Continue Button (Matching Menyo Brand Color) */}
@@ -355,7 +567,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
           )}
 
           {/* 4. CREATE ACCOUNT FORM (Free Trial) */}
-          {activeTab === "signup" && (
+          {resetMode === "none" && activeTab === "signup" && (
             <form onSubmit={handleSignUp} className="space-y-3">
               <div>
                 <input
@@ -406,6 +618,25 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
                   className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer"
                 >
                   {showSignupPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+
+              <div className="relative">
+                <input
+                  type={showSignupConfirmPassword ? "text" : "password"}
+                  required
+                  minLength={8}
+                  value={signupConfirmPassword}
+                  onChange={(e) => setSignupConfirmPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] text-xs text-gray-900 placeholder-gray-400 outline-none transition pr-10"
+                  placeholder="Confirm password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSignupConfirmPassword(!showSignupConfirmPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer"
+                >
+                  {showSignupConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
 
