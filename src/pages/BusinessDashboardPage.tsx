@@ -317,22 +317,20 @@ export const BusinessDashboardPage: React.FC = () => {
 
       setCurrentUser(session.user);
       setBusiness(b);
-      const isConfigured = Boolean(
-        (b as any).country &&
-        String((b as any).country).trim() &&
-        (b as any).country !== "" &&
-        b.phone &&
-        String(b.phone).trim() &&
-        b.phone !== "076 484 7081" &&
-        b.name &&
-        b.name !== "My Business" &&
-        b.name !== "My Cafe" &&
-        b.name !== "My Restaurant"
+      const isAlreadySetup = Boolean(
+        (b as any).setupCompleted ||
+        localStorage.getItem(`menyo_setup_done_${b.id}`) === "1" ||
+        ((b as any).country &&
+          String((b as any).country).trim() !== "" &&
+          b.phone &&
+          String(b.phone).trim() !== "" &&
+          b.phone !== "076 484 7081" &&
+          b.name &&
+          b.name !== "My Business" &&
+          b.name !== "My Cafe" &&
+          b.name !== "My Restaurant")
       );
-      if (
-        b.slug !== "teatime" &&
-        (!isConfigured || localStorage.getItem(`menyo_setup_done_${b.id}`) !== "1")
-      ) {
+      if (b.slug !== "teatime" && !isAlreadySetup) {
         setSetupBusinessName(b.name && b.name !== "My Business" && b.name !== "My Cafe" && b.name !== "My Restaurant" ? b.name : "");
         setSetupPhone(b.phone && b.phone !== "076 484 7081" ? b.phone : "");
         if ((b as any).country) setSetupCountry((b as any).country);
@@ -2752,11 +2750,14 @@ export const BusinessDashboardPage: React.FC = () => {
                   }
                   newSlug = finalSlug;
 
+                  // Update Supabase businesses table with country & phone
                   const { data: updatedRows, error: bizUpdateErr } = await getSupabase()
                     .from("businesses")
                     .update({
                       name: cleanName,
                       slug: newSlug,
+                      country: setupCountry,
+                      phone: fullPhone,
                       branding: {
                         ...(business.branding || {}),
                         phone: fullPhone,
@@ -2774,6 +2775,8 @@ export const BusinessDashboardPage: React.FC = () => {
                         id: business.id,
                         name: cleanName,
                         slug: newSlug,
+                        country: setupCountry,
+                        phone: fullPhone,
                         owner_uid: currentUser?.uid || null,
                         branding: {
                           ...(business.branding || {}),
@@ -2783,6 +2786,24 @@ export const BusinessDashboardPage: React.FC = () => {
                       });
                     if (bizInsertErr) throw bizInsertErr;
                   }
+
+                  // Also persist directly to Firestore/Supabase document store
+                  await setDoc(
+                    storeDoc(db, "businesses", business.id),
+                    {
+                      name: cleanName,
+                      slug: newSlug,
+                      country: setupCountry,
+                      phone: fullPhone,
+                      setupCompleted: true,
+                      branding: {
+                        ...(business.branding || {}),
+                        phone: fullPhone,
+                        country: setupCountry,
+                      },
+                    },
+                    { merge: true }
+                  ).catch(() => {});
 
                   await setDoc(
                     storeDoc(db, "businessSlugs", newSlug),
