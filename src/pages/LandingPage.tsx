@@ -33,6 +33,13 @@ export const LandingPage: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  // If redirected from Supabase OAuth with hash tokens on the root URL, forward immediately to /admin
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.location.hash && (window.location.hash.includes("access_token") || window.location.hash.includes("refresh_token"))) {
+      window.location.replace(`/admin${window.location.hash}`);
+    }
+  }, []);
+
   // Ensure autoplay works reliably on mobile and desktop by strictly setting muted before play
   useEffect(() => {
     if (videoRef.current) {
