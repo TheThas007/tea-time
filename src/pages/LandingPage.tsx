@@ -773,12 +773,12 @@ export const LandingPage: React.FC = () => {
 
       {/* 7. MINIMAL NAVY FOOTER (Matching Mockup) */}
       <footer className="mt-auto bg-[#050F2A] text-[#F2FDFF] py-8 px-6 border-t border-[#050F2A]/20">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
           <div className="flex items-center gap-2">
-            <MenyoWordmark variant="light" height={22} />
+            <MenyoWordmark variant="light" height={24} />
           </div>
 
-          <div className="flex items-center gap-6 text-xs text-[#F2FDFF]/70">
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-xs text-[#F2FDFF]/80">
             <Link to="/login" className="hover:text-white transition-colors">
               Client Portal
             </Link>
@@ -800,8 +800,8 @@ export const LandingPage: React.FC = () => {
               <Mail className="w-3.5 h-3.5 text-blue-400 shrink-0" />
               <span>aevonixlk@gmail.com</span>
             </a>
-            <span className="text-[#F2FDFF]/30">|</span>
-            <span className="text-xs uppercase tracking-widest text-[#F2FDFF]/50 font-semibold">
+            <span className="hidden md:inline text-[#F2FDFF]/30">|</span>
+            <span className="text-xs uppercase tracking-widest text-[#F2FDFF]/60 font-semibold w-full md:w-auto mt-1 md:mt-0">
               by AEVONIX
             </span>
           </div>

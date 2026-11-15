@@ -234,27 +234,31 @@ export const MemoryCameraModal: React.FC<MemoryCameraModalProps> = ({
       : "bottom-4 right-4";
 
   return (
-    <div className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-2xl flex items-center justify-center p-3 sm:p-6">
-      <div className="w-full max-w-[420px] bg-[#111113] text-white rounded-[32px] overflow-hidden border border-white/10 shadow-2xl flex flex-col">
+    <div className="fixed inset-0 z-[120] bg-black/95 backdrop-blur-2xl flex flex-col justify-between overflow-y-auto overscroll-none p-2 sm:p-4">
+      {/* Centered Modal Container that fits completely in view */}
+      <div className="w-full max-w-[400px] mx-auto my-auto bg-[#111113] text-white rounded-[28px] overflow-hidden border border-white/10 shadow-2xl flex flex-col shrink-0">
         {/* Top Bar */}
-        <div className="px-5 py-4 flex items-center justify-between border-b border-white/10">
-          <span className="text-xs font-semibold tracking-tight text-white">
-            Memory Studio
-          </span>
+        <div className="px-4 py-3 flex items-center justify-between border-b border-white/10">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-[#7BBBFF]" />
+            <span className="text-xs font-bold tracking-tight text-white">
+              Memory Studio
+            </span>
+          </div>
           <button
             type="button"
             onClick={() => {
               stopStream();
               onClose();
             }}
-            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition"
+            className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 flex items-center justify-center transition"
           >
-            <X className="w-4 h-4" />
+            <X className="w-3.5 h-3.5 text-white/80" />
           </button>
         </div>
 
         {/* 4:5 (1080 x 1350) Viewport */}
-        <div className="relative w-full aspect-[4/5] bg-black overflow-hidden">
+        <div className="relative w-full aspect-[4/5] bg-black overflow-hidden flex items-center justify-center">
           {cameraError ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center gap-3">
               <Camera className="w-10 h-10 text-white/40" />
@@ -268,11 +272,17 @@ export const MemoryCameraModal: React.FC<MemoryCameraModalProps> = ({
               </button>
             </div>
           ) : capturedDataUrl ? (
-            <img
-              src={capturedDataUrl}
-              alt="Captured memory"
-              className="w-full h-full object-cover"
-            />
+            <div className="relative w-full h-full">
+              <img
+                src={capturedDataUrl}
+                alt="Captured memory"
+                className="w-full h-full object-cover"
+              />
+              {/* Show restaurant branding watermark badge if no logo uploaded */}
+              <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-full bg-black/50 backdrop-blur-md border border-white/15 text-[10px] font-bold text-white flex items-center gap-1 shadow-lg pointer-events-none">
+                <span>{businessName}</span>
+              </div>
+            </div>
           ) : (
             <>
               <video
@@ -286,12 +296,16 @@ export const MemoryCameraModal: React.FC<MemoryCameraModalProps> = ({
                 }}
                 className="w-full h-full object-cover"
               />
-              {customOverlayLogo && (
+              {customOverlayLogo ? (
                 <img
                   src={customOverlayLogo}
                   alt={businessName}
-                  className={`absolute ${overlayClass} max-w-[84px] max-h-[84px] object-contain drop-shadow-lg pointer-events-none`}
+                  className={`absolute ${overlayClass} max-w-[76px] max-h-[76px] object-contain drop-shadow-lg pointer-events-none`}
                 />
+              ) : (
+                <div className={`absolute ${overlayClass} px-2.5 py-1 rounded-full bg-black/50 backdrop-blur-md border border-white/15 text-[10px] font-bold text-white flex items-center gap-1 shadow-lg pointer-events-none`}>
+                  <span>{businessName}</span>
+                </div>
               )}
             </>
           )}
@@ -299,9 +313,9 @@ export const MemoryCameraModal: React.FC<MemoryCameraModalProps> = ({
 
         {/* Controls */}
         {!capturedDataUrl ? (
-          <div className="p-4 space-y-4 bg-[#111113]">
+          <div className="p-3 sm:p-4 space-y-3 bg-[#111113]">
             {/* Filter Strip */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
               {FILTERS.map((f) => (
                 <button
                   key={f.id}
@@ -309,7 +323,7 @@ export const MemoryCameraModal: React.FC<MemoryCameraModalProps> = ({
                   onClick={() => setActiveFilter(f)}
                   className={`px-3 py-1.5 rounded-full text-[11px] font-medium whitespace-nowrap transition ${
                     activeFilter.id === f.id
-                      ? "bg-white text-black"
+                      ? "bg-white text-black shadow-sm font-bold"
                       : "bg-white/10 text-white/75 hover:bg-white/20"
                   }`}
                 >
@@ -319,33 +333,33 @@ export const MemoryCameraModal: React.FC<MemoryCameraModalProps> = ({
             </div>
 
             {/* Shutter & Switch */}
-            <div className="flex items-center justify-between px-4">
+            <div className="flex items-center justify-between px-3 pt-1">
               <div className="w-10" />
               <button
                 type="button"
                 onClick={handleCapture}
                 disabled={isCapturing || !!cameraError}
-                className="w-16 h-16 rounded-full border-4 border-white flex items-center justify-center active:scale-95 transition disabled:opacity-40"
+                className="w-14 h-14 rounded-full border-4 border-white flex items-center justify-center active:scale-95 transition disabled:opacity-40"
                 title="Capture 1080x1350 Photo"
               >
-                <div className="w-12 h-12 rounded-full bg-white" />
+                <div className="w-10 h-10 rounded-full bg-white" />
               </button>
               <button
                 type="button"
                 onClick={() => setFacingMode((m) => (m === "user" ? "environment" : "user"))}
-                className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition"
+                className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center transition"
                 title="Switch Camera"
               >
-                <SwitchCamera className="w-5 h-5" />
+                <SwitchCamera className="w-4 h-4" />
               </button>
             </div>
           </div>
         ) : (
-          <div className="p-4 flex items-center gap-2.5 bg-[#111113]">
+          <div className="p-3 sm:p-4 flex items-center gap-2 bg-[#111113]">
             <button
               type="button"
               onClick={() => setCapturedDataUrl(null)}
-              className="px-4 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-xs font-semibold flex items-center gap-1.5 transition"
+              className="px-3 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-xs font-semibold flex items-center gap-1 transition shrink-0"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               Retake
@@ -353,15 +367,15 @@ export const MemoryCameraModal: React.FC<MemoryCameraModalProps> = ({
             <button
               type="button"
               onClick={handleDownload}
-              className="flex-1 py-3 rounded-2xl bg-white text-black hover:bg-white/90 text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+              className="flex-1 py-2.5 rounded-xl bg-white text-black hover:bg-white/90 active:scale-95 text-xs font-bold flex items-center justify-center gap-1.5 transition shadow-sm"
             >
               <Download className="w-3.5 h-3.5" />
-              Save to Gallery
+              Save
             </button>
             <button
               type="button"
               onClick={handleShare}
-              className="flex-1 py-3 rounded-2xl bg-[#0071E3] hover:bg-[#0077ED] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+              className="flex-1 py-2.5 rounded-xl bg-[#0071E3] hover:bg-[#0077ED] active:scale-95 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition shadow-sm"
             >
               <Share2 className="w-3.5 h-3.5" />
               Share
