@@ -357,11 +357,13 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
           if (stored && stored !== "teatime") bId = stored;
         }
 
-        // 6. First-time OAuth user auto-provisioning (2-Day Free Trial) so redirect OAuth never falls back to Tea Time
+        // 6. First-time OAuth / registered user auto-provisioning (2-Day Free Trial)
+        // If the user has authenticated (e.g. via Google OAuth or Email signup) but has no business attached yet,
+        // automatically create their 2-day free trial workspace immediately.
         if (!bId && user.email) {
-          const provider = user.appMetadata?.provider;
-          if (provider === "google" || provider === "apple") {
-            const bizName = user.displayName ? `${user.displayName}'s Restaurant` : "My Restaurant";
+          try {
+            const rawName = user.displayName || user.email.split("@")[0] || "My Restaurant";
+            const bizName = rawName.includes("Restaurant") || rawName.includes("Cafe") ? rawName : `${rawName}'s Kitchen`;
             const provisioned = await provisionTrialWorkspaceForExistingUser({
               uid: user.uid,
               email: user.email,
@@ -369,6 +371,8 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
               businessName: bizName,
             });
             bId = provisioned.businessId;
+          } catch (provErr) {
+            console.warn("Failed to auto-provision trial workspace for user:", provErr);
           }
         }
 

@@ -271,9 +271,17 @@ export const BusinessDashboardPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
+      // If returning from OAuth (e.g. Supabase sets hash #access_token=...), ensure session is hydrated
+      if (typeof window !== "undefined" && window.location.hash && window.location.hash.includes("access_token")) {
+        try {
+          const sb = getSupabase();
+          await sb.auth.getSession();
+        } catch { }
+      }
+
       const session = await platformApi.getSessionContext();
       if (session.claims.role === "SUPER_ADMIN" && !businessSlug) {
-        navigate("/super-admin");
+        navigate("/super-admin", { replace: true });
         return;
       }
       if (!session.business && !businessSlug) {
@@ -313,6 +321,12 @@ export const BusinessDashboardPage: React.FC = () => {
       }
       if (!b) {
         throw new Error(`Business "${businessSlug}" could not be found.`);
+      }
+
+      // If user landed on /admin without a businessSlug in the URL, redirect to their tenant URL /:slug/admin
+      if (!businessSlug && b.slug && b.slug !== "teatime") {
+        navigate(`/${b.slug}/admin`, { replace: true });
+        return;
       }
 
       setCurrentUser(session.user);
