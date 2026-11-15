@@ -420,6 +420,8 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
               slug: bizData?.slug || bId,
               ownerEmail: user.email || "",
               phone: bizData?.phone || "",
+              country: bizData?.country || "",
+              setupCompleted: Boolean(bizData?.setupCompleted),
               whatsapp: bizData?.whatsapp || "",
               address: bizData?.address || "",
               googleReviewUrl: bizData?.googleReviewUrl || "",

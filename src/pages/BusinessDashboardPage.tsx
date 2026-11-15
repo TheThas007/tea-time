@@ -326,23 +326,21 @@ export const BusinessDashboardPage: React.FC = () => {
       // If user landed on /admin without a businessSlug in the URL, redirect to their tenant URL /:slug/admin
       if (!businessSlug && b.slug && b.slug !== "teatime") {
         navigate(`/${b.slug}/admin`, { replace: true });
+        // Don't early return if setup modal needs to be rendered, but in React Router navigate will remount /:slug/admin
         return;
       }
 
       setCurrentUser(session.user);
       setBusiness(b);
       const isAlreadySetup = Boolean(
-        (b as any).setupCompleted ||
-        localStorage.getItem(`menyo_setup_done_${b.id}`) === "1" ||
+        (b as any).setupCompleted === true ||
+        (b as any).isSetupCompleted === true ||
         ((b as any).country &&
           String((b as any).country).trim() !== "" &&
           b.phone &&
           String(b.phone).trim() !== "" &&
           b.phone !== "076 484 7081" &&
-          b.name &&
-          b.name !== "My Business" &&
-          b.name !== "My Cafe" &&
-          b.name !== "My Restaurant")
+          (b as any).setupCompleted)
       );
       if (b.slug !== "teatime" && !isAlreadySetup) {
         setSetupBusinessName(b.name && b.name !== "My Business" && b.name !== "My Cafe" && b.name !== "My Restaurant" ? b.name : "");
