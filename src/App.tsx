@@ -8,6 +8,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { SuperAdminPage } from "./pages/SuperAdminPage";
 import { BusinessDashboardPage } from "./pages/BusinessDashboardPage";
 import { CustomerMenuPage } from "./pages/CustomerMenuPage";
+import { LegalPoliciesPage } from "./pages/LegalPoliciesPage";
 
 export const App: React.FC = () => {
   return (
@@ -35,6 +36,14 @@ export const App: React.FC = () => {
               {/* Platform Owner Super Admin Console */}
               <Route path="/super-admin" element={<SuperAdminPage />} />
               <Route path="/superadmin" element={<SuperAdminPage />} />
+
+              {/* Legal & PayHere Merchant Compliance Policies */}
+              <Route path="/terms" element={<LegalPoliciesPage initialSection="terms" />} />
+              <Route path="/terms-and-conditions" element={<LegalPoliciesPage initialSection="terms" />} />
+              <Route path="/privacy" element={<LegalPoliciesPage initialSection="privacy" />} />
+              <Route path="/privacy-policy" element={<LegalPoliciesPage initialSection="privacy" />} />
+              <Route path="/refund-policy" element={<LegalPoliciesPage initialSection="refund" />} />
+              <Route path="/return-policy" element={<LegalPoliciesPage initialSection="refund" />} />
 
               {/* Dedicated Tea Time Customer Menu Route */}
               <Route path="/teatime/menu" element={<CustomerMenuPage />} />

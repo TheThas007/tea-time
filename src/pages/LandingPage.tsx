@@ -907,6 +907,15 @@ export const LandingPage: React.FC = () => {
             <Link to="/login" className="hover:text-white transition-colors">
               Client Portal
             </Link>
+            <Link to="/terms" className="hover:text-white transition-colors">
+              Terms
+            </Link>
+            <Link to="/privacy" className="hover:text-white transition-colors">
+              Privacy
+            </Link>
+            <Link to="/refund-policy" className="hover:text-white transition-colors">
+              Refund Policy
+            </Link>
             <a
               href="https://wa.me/94764847081"
               target="_blank"
