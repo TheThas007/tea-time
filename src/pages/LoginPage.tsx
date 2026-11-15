@@ -167,11 +167,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
 
     const contactVal = signupContact.trim();
     const isEmail = contactVal.includes("@");
-    const digitsOnly = contactVal.replace(/[^0-9]/g, "");
-    const isPhone = digitsOnly.length >= 9;
 
-    if (!isEmail && !isPhone) {
-      setError("Please enter a valid Phone number (e.g. 0771234567) or Email.");
+    if (!isEmail) {
+      setError("Please enter a valid email address.");
       setLoading(false);
       return;
     }
@@ -192,8 +190,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
         ownerName: ownerName.trim(),
         email: contactVal,
         password: signupPassword,
-        phone: signupPhone.trim() || (isPhone ? contactVal : ""),
-        whatsapp: signupPhone.trim() || (isPhone ? contactVal : ""),
+        phone: "",
+        whatsapp: "",
       });
 
       localStorage.setItem("menyo_auth_role", "BUSINESS_OWNER");
@@ -646,12 +644,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
 
               <div>
                 <input
-                  type="text"
+                  type="email"
                   required
                   value={signupContact}
                   onChange={(e) => setSignupContact(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] text-xs text-gray-900 placeholder-gray-400 outline-none transition"
-                  placeholder="Email or phone number"
+                  placeholder="Email address"
+                  autoComplete="email"
                 />
               </div>
 
@@ -691,16 +690,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
                 >
                   {showSignupConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
-              </div>
-
-              <div>
-                <input
-                  type="tel"
-                  value={signupPhone}
-                  onChange={(e) => setSignupPhone(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] text-xs text-gray-900 placeholder-gray-400 outline-none transition"
-                  placeholder="WhatsApp number (optional)"
-                />
               </div>
 
               {/* Solid Navy Blue Create Account Button (Matching Menyo Brand Color) */}
