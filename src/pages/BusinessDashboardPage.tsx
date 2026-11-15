@@ -1338,13 +1338,29 @@ export const BusinessDashboardPage: React.FC = () => {
                             const file = e.target.files?.[0];
                             if (!file) return;
                             const reader = new FileReader();
-                            reader.onload = () => {
+                            reader.onload = async () => {
                               const res = String(reader.result || "");
                               setMemoryLogoUrl(res);
-                              localStorage.setItem(
-                                `menyo_memory_logo_url_${business?.id || "teatime"}`,
-                                res
-                              );
+                              const bId = business?.id || "teatime";
+                              const bSlug = business?.slug || "";
+                              localStorage.setItem(`menyo_memory_logo_url_${bId}`, res);
+                              if (bSlug) {
+                                localStorage.setItem(`menyo_memory_logo_url_${bSlug}`, res);
+                              }
+                              // Also sync to cloud business settings so all mobile customers see the logo!
+                              try {
+                                await platformApi.ownerUpdateSettings({
+                                  businessId: bId,
+                                  memoryLogoUrl: res,
+                                  branding: {
+                                    ...(business?.branding || {}),
+                                    memoryLogoUrl: res,
+                                    logoUrl: business?.branding?.logoUrl || res,
+                                  },
+                                } as any);
+                              } catch (err) {
+                                console.warn("Failed to sync memory logo to cloud:", err);
+                              }
                             };
                             reader.readAsDataURL(file);
                           }}
@@ -1375,13 +1391,27 @@ export const BusinessDashboardPage: React.FC = () => {
                           ? localStorage.getItem(`menyo_memory_logo_pos_${business?.id || "teatime"}`) || memoryLogoPos
                           : memoryLogoPos
                       }
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const val = e.target.value;
                         setMemoryLogoPos(val);
-                        localStorage.setItem(
-                          `menyo_memory_logo_pos_${business?.id || "teatime"}`,
-                          val
-                        );
+                        const bId = business?.id || "teatime";
+                        const bSlug = business?.slug || "";
+                        localStorage.setItem(`menyo_memory_logo_pos_${bId}`, val);
+                        if (bSlug) {
+                          localStorage.setItem(`menyo_memory_logo_pos_${bSlug}`, val);
+                        }
+                        try {
+                          await platformApi.ownerUpdateSettings({
+                            businessId: bId,
+                            memoryLogoPos: val,
+                            branding: {
+                              ...(business?.branding || {}),
+                              memoryLogoPos: val,
+                            },
+                          } as any);
+                        } catch (err) {
+                          console.warn("Failed to sync memory logo pos:", err);
+                        }
                       }}
                       className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] text-xs font-semibold text-[#050F2A] focus:outline-none"
                     >

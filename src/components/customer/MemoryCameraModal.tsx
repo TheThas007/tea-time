@@ -240,13 +240,7 @@ export const MemoryCameraModal: React.FC<MemoryCameraModalProps> = ({
       {/* Centered Modal Container that fits completely in view */}
       <div className="w-full max-w-[400px] mx-auto my-auto bg-[#111113] text-white rounded-[28px] overflow-hidden border border-white/10 shadow-2xl flex flex-col shrink-0">
         {/* Top Bar */}
-        <div className="px-4 py-3 flex items-center justify-between border-b border-white/10">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-[#7BBBFF]" />
-            <span className="text-xs font-bold tracking-tight text-white">
-              Memory Studio
-            </span>
-          </div>
+        <div className="px-4 py-3 flex items-center justify-end border-b border-white/10">
           <button
             type="button"
             onClick={() => {

@@ -1338,6 +1338,14 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
     if (mergedBranding.qrSubtitle !== undefined) updatePayload.qrSubtitle = mergedBranding.qrSubtitle;
     if (mergedBranding.qrFooterNote !== undefined) updatePayload.qrFooterNote = mergedBranding.qrFooterNote;
     if (mergedBranding.qrLogoSize !== undefined) updatePayload.qrLogoSize = mergedBranding.qrLogoSize;
+    if ((data as any).memoryLogoUrl !== undefined || (mergedBranding as any).memoryLogoUrl !== undefined) {
+      updatePayload.memoryLogoUrl = (data as any).memoryLogoUrl || (mergedBranding as any).memoryLogoUrl;
+      mergedBranding.memoryLogoUrl = updatePayload.memoryLogoUrl;
+    }
+    if ((data as any).memoryLogoPos !== undefined || (mergedBranding as any).memoryLogoPos !== undefined) {
+      updatePayload.memoryLogoPos = (data as any).memoryLogoPos || (mergedBranding as any).memoryLogoPos;
+      mergedBranding.memoryLogoPos = updatePayload.memoryLogoPos;
+    }
 
     try {
       await setDoc(doc(db, "businesses", bId), updatePayload, { merge: true });
