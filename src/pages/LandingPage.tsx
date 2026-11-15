@@ -347,6 +347,7 @@ export const LandingPage: React.FC = () => {
                   loop
                   muted
                   playsInline
+                  preload="metadata"
                   controls={false}
                   disablePictureInPicture
                   disableRemotePlayback
