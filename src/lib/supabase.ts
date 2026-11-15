@@ -251,17 +251,64 @@ export function onAuthStateChanged(
 function normalizeSupabaseAuthError(error: any): Error & { code?: string } {
   const msg = String(error?.message || "Authentication failed.");
   const lower = msg.toLowerCase();
-  const wrapped = new Error(msg) as Error & { code?: string };
 
   if (lower.includes("invalid login credentials") || lower.includes("invalid_credentials")) {
+    const wrapped = new Error(
+      "Incorrect email or password. Please check your email and password and try again."
+    ) as Error & { code?: string };
     wrapped.code = "auth/invalid-credential";
-  } else if (lower.includes("already registered") || lower.includes("already exists")) {
-    wrapped.code = "auth/email-already-in-use";
-  } else if (lower.includes("email not confirmed")) {
-    wrapped.code = "auth/email-not-confirmed";
-  } else {
-    wrapped.code = error?.code || "auth/error";
+    return wrapped;
   }
+  if (
+    lower.includes("already registered") ||
+    lower.includes("already exists") ||
+    lower.includes("user_already_exists")
+  ) {
+    const wrapped = new Error(
+      "This email is already registered. Please sign in instead."
+    ) as Error & { code?: string };
+    wrapped.code = "auth/email-already-in-use";
+    return wrapped;
+  }
+  if (lower.includes("email not confirmed")) {
+    const wrapped = new Error(
+      "Your email address is not confirmed yet. Please check your email inbox."
+    ) as Error & { code?: string };
+    wrapped.code = "auth/email-not-confirmed";
+    return wrapped;
+  }
+  if (
+    lower.includes("rate limit") ||
+    lower.includes("too many requests") ||
+    lower.includes("over_email_send_rate_limit")
+  ) {
+    const wrapped = new Error(
+      "Too many attempts. Please wait a moment and try again."
+    ) as Error & { code?: string };
+    wrapped.code = "auth/too-many-requests";
+    return wrapped;
+  }
+  if (lower.includes("password should be at least") || lower.includes("weak_password")) {
+    const wrapped = new Error(
+      "Password is too weak. Please enter at least 8 characters."
+    ) as Error & { code?: string };
+    wrapped.code = "auth/weak-password";
+    return wrapped;
+  }
+  if (
+    lower.includes("invalid format") ||
+    lower.includes("unable to validate email") ||
+    lower.includes("invalid email")
+  ) {
+    const wrapped = new Error(
+      "Invalid email address. Please check your email and try again."
+    ) as Error & { code?: string };
+    wrapped.code = "auth/invalid-email";
+    return wrapped;
+  }
+
+  const wrapped = new Error(msg) as Error & { code?: string };
+  wrapped.code = error?.code || "auth/error";
   return wrapped;
 }
 
@@ -302,6 +349,13 @@ export async function createUserWithEmailAndPassword(
   });
   if (error || !data.user) {
     throw normalizeSupabaseAuthError(error);
+  }
+  if (Array.isArray((data.user as any).identities) && (data.user as any).identities.length === 0) {
+    const existsErr = new Error(
+      "This email is already registered. Please sign in instead."
+    ) as Error & { code?: string };
+    existsErr.code = "auth/email-already-in-use";
+    throw existsErr;
   }
   const mapped = mapSupabaseUser(data.user, data.session)!;
   if (!options?.customClient && data.session) {

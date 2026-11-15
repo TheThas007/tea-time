@@ -1987,7 +1987,19 @@ export const platformApi = {
     }
 
     // Sign in directly with Supabase Auth
-    const cred = await signInWithEmailAndPassword(auth, targetEmail, params.password);
+    let cred: { user: User };
+    try {
+      cred = await signInWithEmailAndPassword(auth, targetEmail, params.password);
+    } catch (signInErr: any) {
+      if (signInErr?.code === "auth/invalid-credential") {
+        const wrongPassErr = new Error(
+          "Incorrect password. Please check your email and password and try again, or click 'Forgot password?' below."
+        ) as Error & { code?: string };
+        wrongPassErr.code = "auth/wrong-password";
+        throw wrongPassErr;
+      }
+      throw signInErr;
+    }
     const emailLower = (cred.user.email || targetEmail).toLowerCase();
     const isSuperAdmin =
       emailLower === "admin@aevonix.lk" || cred.user.appMetadata?.role === "SUPER_ADMIN";
@@ -2092,7 +2104,7 @@ export const platformApi = {
       const sExistingBiz = await getDocs(qExistingBiz);
       if (!sExistingBiz.empty) {
         const existsErr = new Error(
-          "An account with this email or phone already exists. Please Sign in instead."
+          "This email is already registered. Please Sign in with your password instead."
         ) as Error & { code?: string };
         existsErr.code = "auth/account-already-exists";
         throw existsErr;
@@ -2111,8 +2123,16 @@ export const platformApi = {
       user = cred.user;
     } catch (err: any) {
       if (err?.code === "auth/email-already-in-use") {
-        const cred = await signInWithEmailAndPassword(auth, email, password);
-        user = cred.user;
+        try {
+          const cred = await signInWithEmailAndPassword(auth, email, password);
+          user = cred.user;
+        } catch {
+          const existsErr = new Error(
+            "This email is already registered. Please Sign in with your password instead (or use 'Forgot password?' to reset it)."
+          ) as Error & { code?: string };
+          existsErr.code = "auth/account-already-exists";
+          throw existsErr;
+        }
       } else {
         throw err;
       }

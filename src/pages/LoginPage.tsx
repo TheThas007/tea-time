@@ -155,31 +155,36 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
     setLoading(true);
 
     if (!restaurantName.trim()) {
+      setErrorCode("validation/business-name");
       setError("Please enter your business name.");
       setLoading(false);
       return;
     }
     if (!ownerName.trim()) {
+      setErrorCode("validation/owner-name");
       setError("Please enter your owner / manager name.");
       setLoading(false);
       return;
     }
 
     const contactVal = signupContact.trim();
-    const isEmail = contactVal.includes("@");
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactVal);
 
     if (!isEmail) {
-      setError("Please enter a valid email address.");
+      setErrorCode("validation/invalid-email");
+      setError("Please check your email address and enter a valid email (e.g. name@example.com).");
       setLoading(false);
       return;
     }
     if (signupPassword.length < 8) {
-      setError("Password must be at least 8 characters.");
+      setErrorCode("validation/password-length");
+      setError("Password must be at least 8 characters long.");
       setLoading(false);
       return;
     }
     if (signupPassword !== signupConfirmPassword) {
-      setError("Passwords do not match. Please enter the same password twice.");
+      setErrorCode("validation/password-mismatch");
+      setError("Passwords do not match. Please enter the exact same password twice.");
       setLoading(false);
       return;
     }
@@ -370,17 +375,34 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
           {/* Error Banner */}
           {error && (
             <div className="mb-4 p-3.5 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs leading-relaxed animate-fadeIn">
-              <div>{error}</div>
+              <div className="font-bold text-red-800 mb-0.5">
+                {errorCode === "auth/account-not-created"
+                  ? "Account not found"
+                  : errorCode === "auth/wrong-password" || errorCode === "auth/invalid-credential"
+                  ? "Incorrect email or password"
+                  : errorCode === "auth/account-already-exists" || errorCode === "auth/email-already-in-use"
+                  ? "Account already registered"
+                  : errorCode === "validation/password-mismatch"
+                  ? "Passwords do not match"
+                  : errorCode === "validation/password-length" || errorCode === "auth/weak-password"
+                  ? "Password too short"
+                  : errorCode === "validation/invalid-email" || errorCode === "auth/invalid-email"
+                  ? "Invalid email address"
+                  : errorCode === "auth/too-many-requests"
+                  ? "Too many attempts"
+                  : "Please check your details"}
+              </div>
+              <div className="text-red-600">{error}</div>
               {errorCode === "auth/account-not-created" && (
                 <div className="mt-2.5 pt-2.5 border-t border-red-200/80 flex items-center justify-between">
                   <span className="text-[11px] font-medium text-red-600">
-                    New to Menyo?
+                    Not registered yet?
                   </span>
                   <button
                     type="button"
                     onClick={() => {
                       const trimmedId = identifier.trim();
-                      if (trimmedId && !signupContact) {
+                      if (trimmedId && trimmedId.includes("@") && !signupContact) {
                         setSignupContact(trimmedId);
                       }
                       setError(null);
@@ -394,11 +416,48 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
                   </button>
                 </div>
               )}
-              {errorCode === "auth/account-already-exists" && (
+              {(errorCode === "auth/wrong-password" || errorCode === "auth/invalid-credential") && (
                 <div className="mt-2.5 pt-2.5 border-t border-red-200/80 flex items-center justify-between">
                   <span className="text-[11px] font-medium text-red-600">
-                    Already registered?
+                    Forgot your password?
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (identifier.includes("@")) {
+                        setResetEmail(identifier.trim());
+                      }
+                      setError(null);
+                      setErrorCode(null);
+                      setResetSuccessMsg(null);
+                      setResetSent(false);
+                      setResetMode("request");
+                    }}
+                    className="px-3 py-1.5 rounded-md bg-white border border-red-200 hover:bg-red-100/50 text-red-700 font-bold text-[11px] transition cursor-pointer"
+                  >
+                    Reset password →
+                  </button>
+                </div>
+              )}
+              {(errorCode === "auth/account-already-exists" || errorCode === "auth/email-already-in-use") && (
+                <div className="mt-2.5 pt-2.5 border-t border-red-200/80 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const trimmedContact = signupContact.trim();
+                      if (trimmedContact.includes("@")) {
+                        setResetEmail(trimmedContact);
+                      }
+                      setError(null);
+                      setErrorCode(null);
+                      setResetSuccessMsg(null);
+                      setResetSent(false);
+                      setResetMode("request");
+                    }}
+                    className="text-[11px] font-bold text-red-700 hover:underline cursor-pointer"
+                  >
+                    Forgot password?
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
