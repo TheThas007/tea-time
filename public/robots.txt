@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /super-admin
+
+# Sitemap indexing
+Sitemap: https://menyo.org/sitemap.xml
+Sitemap: https://tea-time.thethas007.workers.dev/sitemap.xml
