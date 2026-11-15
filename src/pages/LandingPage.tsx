@@ -267,7 +267,7 @@ export const LandingPage: React.FC = () => {
         {/* Device Showcase Area */}
         <div className="relative mb-12 sm:mb-14">
           <div className="flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-8 max-w-6xl mx-auto">
-            
+
             {/* Left: Transparent iPad Mockup directly displaying the Admin Menu Management Dashboard */}
             <div className="flex-1 w-full max-w-[640px] lg:max-w-[680px] xl:max-w-[720px] flex items-center justify-center relative">
               <img
@@ -803,11 +803,10 @@ export const LandingPage: React.FC = () => {
           {packages.map((pkg) => (
             <div
               key={pkg.id}
-              className={`rounded-3xl p-7 flex flex-col justify-between transition-all bg-white relative ${
-                pkg.isPopular
+              className={`rounded-3xl p-7 flex flex-col justify-between transition-all bg-white relative ${pkg.isPopular
                   ? "border-2 border-[#B8A9FF] shadow-lg shadow-[#B8A9FF]/15"
                   : "border border-[#050F2A]/10 shadow-sm"
-              }`}
+                }`}
             >
               {/* Popular Badge */}
               {pkg.isPopular && (

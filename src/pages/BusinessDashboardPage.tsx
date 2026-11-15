@@ -326,8 +326,6 @@ export const BusinessDashboardPage: React.FC = () => {
       // If user landed on /admin without a businessSlug in the URL, redirect to their tenant URL /:slug/admin
       if (!businessSlug && b.slug && b.slug !== "teatime") {
         navigate(`/${b.slug}/admin`, { replace: true });
-        // Don't early return if setup modal needs to be rendered, but in React Router navigate will remount /:slug/admin
-        return;
       }
 
       setCurrentUser(session.user);
@@ -2762,44 +2760,7 @@ export const BusinessDashboardPage: React.FC = () => {
                   }
                   newSlug = finalSlug;
 
-                  // Update Supabase businesses table with country & phone
-                  const { data: updatedRows, error: bizUpdateErr } = await getSupabase()
-                    .from("businesses")
-                    .update({
-                      name: cleanName,
-                      slug: newSlug,
-                      country: setupCountry,
-                      phone: fullPhone,
-                      branding: {
-                        ...(business.branding || {}),
-                        phone: fullPhone,
-                        country: setupCountry,
-                      },
-                    })
-                    .eq("id", business.id)
-                    .select("id");
-                  if (bizUpdateErr) throw bizUpdateErr;
-
-                  if (!updatedRows || updatedRows.length === 0) {
-                    const { error: bizInsertErr } = await getSupabase()
-                      .from("businesses")
-                      .insert({
-                        id: business.id,
-                        name: cleanName,
-                        slug: newSlug,
-                        country: setupCountry,
-                        phone: fullPhone,
-                        owner_uid: currentUser?.uid || null,
-                        branding: {
-                          ...(business.branding || {}),
-                          phone: fullPhone,
-                          country: setupCountry,
-                        },
-                      });
-                    if (bizInsertErr) throw bizInsertErr;
-                  }
-
-                  // Also persist directly to Firestore/Supabase document store
+                  // Persist to Supabase document store (updates name, slug, branding, and JSONB data with country, phone, setupCompleted)
                   await setDoc(
                     storeDoc(db, "businesses", business.id),
                     {
@@ -2815,7 +2776,7 @@ export const BusinessDashboardPage: React.FC = () => {
                       },
                     },
                     { merge: true }
-                  ).catch(() => {});
+                  );
 
                   await setDoc(
                     storeDoc(db, "businessSlugs", newSlug),
@@ -2829,8 +2790,9 @@ export const BusinessDashboardPage: React.FC = () => {
 
                   localStorage.setItem(`menyo_setup_done_${business.id}`, "1");
                   localStorage.setItem("menyo_auth_businessId", business.id);
+                  localStorage.setItem("menyo_auth_businessSlug", newSlug);
 
-                  setBusiness((prev: any) => (prev ? { ...prev, name: cleanName, country: setupCountry, phone: fullPhone, slug: newSlug } : prev));
+                  setBusiness((prev: any) => (prev ? { ...prev, name: cleanName, country: setupCountry, phone: fullPhone, slug: newSlug, setupCompleted: true } : prev));
                   setSettingsForm((prev) => ({ ...prev, name: cleanName, phone: fullPhone }));
                   setShowBusinessSetupModal(false);
                   navigate(`/${newSlug}/admin`, { replace: true });
