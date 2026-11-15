@@ -357,25 +357,6 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
           if (stored && stored !== "teatime") bId = stored;
         }
 
-        // 6. First-time OAuth / registered user auto-provisioning (2-Day Free Trial)
-        // If the user has authenticated (e.g. via Google OAuth or Email signup) but has no business attached yet,
-        // automatically create their 2-day free trial workspace immediately.
-        if (!bId && user.email) {
-          try {
-            const rawName = user.displayName || user.email.split("@")[0] || "My Restaurant";
-            const bizName = rawName.includes("Restaurant") || rawName.includes("Cafe") ? rawName : `${rawName}'s Kitchen`;
-            const provisioned = await provisionTrialWorkspaceForExistingUser({
-              uid: user.uid,
-              email: user.email,
-              ownerName: user.displayName || "Restaurant Owner",
-              businessName: bizName,
-            });
-            bId = provisioned.businessId;
-          } catch (provErr) {
-            console.warn("Failed to auto-provision trial workspace for user:", provErr);
-          }
-        }
-
         if (bId) {
           if (typeof window !== "undefined") {
             localStorage.setItem("menyo_auth_businessId", bId);
@@ -1939,9 +1920,10 @@ export const platformApi = {
   // Authentication & Session
   async loginWithIdentifier(params: { identifier: string; password: string }) {
     const rawId = params.identifier.trim();
-    let targetEmail = rawId;
+    const lowerId = rawId.toLowerCase();
+    let targetEmail = lowerId;
+
     if (!rawId.includes("@")) {
-      const lowerId = rawId.toLowerCase();
       // Check if phone number (e.g. 0771234567 or +94771234567)
       const digitsOnly = lowerId.replace(/[^0-9]/g, "");
       if (digitsOnly.length >= 9) {
@@ -1951,13 +1933,56 @@ export const platformApi = {
       } else if (lowerId === "teatime") {
         targetEmail = "admin@teatime.lk";
       } else {
+        let resolvedEmail: string | null = null;
         try {
-          const qU = query(collection(db, "userProfiles"), where("username", "==", lowerId));
-          const sU = await getDocs(qU);
-          if (!sU.empty && sU.docs[0].data()?.email) {
-            targetEmail = sU.docs[0].data().email;
+          const qBizSlug = query(collection(db, "businesses"), where("slug", "==", lowerId));
+          const sBizSlug = await getDocs(qBizSlug);
+          if (!sBizSlug.empty && sBizSlug.docs[0].data()?.ownerEmail) {
+            resolvedEmail = String(sBizSlug.docs[0].data().ownerEmail).toLowerCase();
+          }
+          if (!resolvedEmail) {
+            const qU = query(collection(db, "userProfiles"), where("username", "==", lowerId));
+            const sU = await getDocs(qU);
+            if (!sU.empty && sU.docs[0].data()?.email) {
+              resolvedEmail = String(sU.docs[0].data().email).toLowerCase();
+            }
           }
         } catch { }
+        if (!resolvedEmail) {
+          const notCreatedErr = new Error(
+            "No account found. Please create an account first before signing in."
+          ) as Error & { code?: string };
+          notCreatedErr.code = "auth/account-not-created";
+          throw notCreatedErr;
+        }
+        targetEmail = resolvedEmail;
+      }
+    }
+
+    const normalizedEmail = targetEmail.toLowerCase();
+    const isSystemAccount =
+      normalizedEmail === "admin@aevonix.lk" || normalizedEmail === "admin@teatime.lk";
+
+    // Block Sign In if no account has been created yet
+    if (!isSystemAccount) {
+      let hasRegisteredBusiness = false;
+      try {
+        const qCheckBiz = query(
+          collection(db, "businesses"),
+          where("ownerEmail", "==", normalizedEmail)
+        );
+        const sCheckBiz = await getDocs(qCheckBiz);
+        if (!sCheckBiz.empty) {
+          hasRegisteredBusiness = true;
+        }
+      } catch { }
+
+      if (!hasRegisteredBusiness) {
+        const notCreatedErr = new Error(
+          "No account found. Please create an account first before signing in."
+        ) as Error & { code?: string };
+        notCreatedErr.code = "auth/account-not-created";
+        throw notCreatedErr;
       }
     }
 
@@ -2011,6 +2036,15 @@ export const platformApi = {
           }
         }
       } catch { }
+
+      if (!businessId) {
+        await signOut(auth).catch(() => { });
+        const notCreatedErr = new Error(
+          "No account found. Please create an account first before signing in."
+        ) as Error & { code?: string };
+        notCreatedErr.code = "auth/account-not-created";
+        throw notCreatedErr;
+      }
     }
 
     if (typeof window !== "undefined") {
@@ -2051,6 +2085,23 @@ export const platformApi = {
     const password = params.password || "MenyoTrial2026!";
     const businessName = params.businessName.trim();
     const ownerName = params.ownerName.trim();
+
+    // Prevent duplicate account creation if an account already exists for this email/phone
+    try {
+      const qExistingBiz = query(collection(db, "businesses"), where("ownerEmail", "==", email));
+      const sExistingBiz = await getDocs(qExistingBiz);
+      if (!sExistingBiz.empty) {
+        const existsErr = new Error(
+          "An account with this email or phone already exists. Please Sign in instead."
+        ) as Error & { code?: string };
+        existsErr.code = "auth/account-already-exists";
+        throw existsErr;
+      }
+    } catch (checkErr: any) {
+      if (checkErr?.code === "auth/account-already-exists") {
+        throw checkErr;
+      }
+    }
 
     let user: User;
     try {

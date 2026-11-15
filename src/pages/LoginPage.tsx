@@ -93,6 +93,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<"google" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
 
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -101,6 +102,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setErrorCode(null);
     setLoading(true);
 
     try {
@@ -138,6 +140,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
       }
     } catch (err: any) {
       console.error("Sign in error:", err);
+      setErrorCode(err?.code || null);
       setError(err?.message || "Invalid credentials. Please verify and try again.");
     } finally {
       setLoading(false);
@@ -148,6 +151,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setErrorCode(null);
     setLoading(true);
 
     if (!restaurantName.trim()) {
@@ -202,6 +206,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
       }
     } catch (err: any) {
       console.error("Signup error:", err);
+      setErrorCode(err?.code || null);
       setError(err?.message || "Failed to create account. Please try again.");
     } finally {
       setLoading(false);
@@ -334,6 +339,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
                 onClick={() => {
                   setActiveTab("signin");
                   setError(null);
+                  setErrorCode(null);
                   setResetSuccessMsg(null);
                 }}
                 className={`flex-1 pb-2.5 text-xs font-bold text-center transition-all relative ${
@@ -349,6 +355,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
                 onClick={() => {
                   setActiveTab("signup");
                   setError(null);
+                  setErrorCode(null);
                   setResetSuccessMsg(null);
                 }}
                 className={`flex-1 pb-2.5 text-xs font-bold text-center transition-all relative ${
@@ -364,8 +371,54 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
 
           {/* Error Banner */}
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-xs leading-relaxed animate-fadeIn">
-              {error}
+            <div className="mb-4 p-3.5 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs leading-relaxed animate-fadeIn">
+              <div>{error}</div>
+              {errorCode === "auth/account-not-created" && (
+                <div className="mt-2.5 pt-2.5 border-t border-red-200/80 flex items-center justify-between">
+                  <span className="text-[11px] font-medium text-red-600">
+                    New to Menyo?
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const trimmedId = identifier.trim();
+                      if (trimmedId && !signupContact) {
+                        setSignupContact(trimmedId);
+                      }
+                      setError(null);
+                      setErrorCode(null);
+                      setResetMode("none");
+                      setActiveTab("signup");
+                    }}
+                    className="px-3 py-1.5 rounded-md bg-[#050F2A] hover:bg-[#0b1739] text-white font-bold text-[11px] transition cursor-pointer shadow-2xs"
+                  >
+                    Create account →
+                  </button>
+                </div>
+              )}
+              {errorCode === "auth/account-already-exists" && (
+                <div className="mt-2.5 pt-2.5 border-t border-red-200/80 flex items-center justify-between">
+                  <span className="text-[11px] font-medium text-red-600">
+                    Already registered?
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const trimmedContact = signupContact.trim();
+                      if (trimmedContact) {
+                        setIdentifier(trimmedContact);
+                      }
+                      setError(null);
+                      setErrorCode(null);
+                      setResetMode("none");
+                      setActiveTab("signin");
+                    }}
+                    className="px-3 py-1.5 rounded-md bg-[#050F2A] hover:bg-[#0b1739] text-white font-bold text-[11px] transition cursor-pointer shadow-2xs"
+                  >
+                    Sign in →
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
