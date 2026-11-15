@@ -317,13 +317,25 @@ export const BusinessDashboardPage: React.FC = () => {
 
       setCurrentUser(session.user);
       setBusiness(b);
+      const isConfigured = Boolean(
+        (b as any).country &&
+        String((b as any).country).trim() &&
+        (b as any).country !== "" &&
+        b.phone &&
+        String(b.phone).trim() &&
+        b.phone !== "076 484 7081" &&
+        b.name &&
+        b.name !== "My Business" &&
+        b.name !== "My Cafe" &&
+        b.name !== "My Restaurant"
+      );
       if (
         b.slug !== "teatime" &&
-        (!(b as any).country || !String((b as any).country).trim() || !b.phone || !String(b.phone).trim() || !b.name || b.name === "My Business" || b.name === "My Cafe" || b.name === "My Restaurant") &&
-        localStorage.getItem(`menyo_setup_done_${b.id}`) !== "1"
+        (!isConfigured || localStorage.getItem(`menyo_setup_done_${b.id}`) !== "1")
       ) {
         setSetupBusinessName(b.name && b.name !== "My Business" && b.name !== "My Cafe" && b.name !== "My Restaurant" ? b.name : "");
-        setSetupPhone(b.phone || "");
+        setSetupPhone(b.phone && b.phone !== "076 484 7081" ? b.phone : "");
+        if ((b as any).country) setSetupCountry((b as any).country);
         setShowBusinessSetupModal(true);
       }
       if ((b as any).rewardPointValueRupees && Number((b as any).rewardPointValueRupees) > 0) {
