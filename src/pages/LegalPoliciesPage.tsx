@@ -270,3 +270,4 @@ export const LegalPoliciesPage: React.FC<{ initialSection?: "terms" | "privacy" 
     </div>
   );
 };
+
