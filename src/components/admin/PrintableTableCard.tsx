@@ -374,95 +374,75 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
 
         {/* Printable Cardstock Container */}
         <div className="p-6 sm:p-8 bg-zinc-100/70 flex items-center justify-center print:p-0 print:m-0 print:bg-transparent">
-          {/* Card: Exact Replica of uploaded Acrylic Stand photo */}
+          {/* Card: Exact Replica matching user reference image */}
           <div
             id="printable-tent-card"
-            className="w-[280px] sm:w-[310px] rounded-3xl p-6 pt-7 pb-6 shadow-xl flex flex-col items-center text-center space-y-4 border border-zinc-200/80 transition-all select-none print-card-exact"
+            className="w-[280px] sm:w-[310px] rounded-[28px] p-6 pt-7 pb-6 shadow-2xl flex flex-col items-center text-center space-y-4 border transition-all select-none print-card-exact"
             style={{
               backgroundColor: bgCardColor,
               color: txtCardColor,
-              fontFamily:
-                '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "SF Pro", "Helvetica Neue", sans-serif',
+              borderColor: badgeColor,
             }}
           >
-            {/* Top Brand Logo & Subtitle */}
-            <div className="flex flex-col items-center space-y-1">
+            {/* Prominent Brand Logo */}
+            <div className="pt-1 pb-1 flex flex-col items-center justify-center">
               {effectiveQrLogo ? (
-                <div className="h-[95px] w-full flex items-center justify-center overflow-hidden">
-                  <img
-                    src={effectiveQrLogo}
-                    alt={businessName}
-                    style={{
-                      height: `${logoHeight}px`,
-                      maxHeight: "95px",
-                    }}
-                    className="w-auto max-w-[240px] object-contain drop-shadow-xs"
-                  />
-                </div>
+                <img
+                  src={effectiveQrLogo}
+                  alt={businessName}
+                  style={{
+                    height: `${logoHeight}px`,
+                  }}
+                  className="max-w-[220px] w-auto object-contain select-none drop-shadow-md transition-all"
+                />
               ) : (
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-[#050F2A] text-white flex items-center justify-center font-black text-sm">
-                    {businessName.charAt(0) || "M"}
-                  </div>
-                  <span className="font-extrabold text-lg text-[#050F2A] tracking-tight">
-                    {businessName}
-                  </span>
+                <div
+                  className="text-2xl font-black tracking-wider uppercase"
+                  style={{ color: badgeColor }}
+                >
+                  {businessName}
                 </div>
               )}
-              <span className="text-[10px] font-bold tracking-[0.22em] uppercase text-zinc-500 pt-0.5">
-                YOUR DIGITAL MENU
-              </span>
             </div>
 
-            {/* Headline & Subhead */}
-            <div className="space-y-1 pt-1 max-w-[240px]">
-              <h2 className="text-xl sm:text-[22px] font-black leading-tight tracking-tight" style={{ color: txtCardColor }}>
-                {headline}
-              </h2>
-              <p className="text-xs font-medium opacity-80" style={{ color: txtCardColor }}>
-                {subtext}
+            {/* QR Code in High-contrast Rounded Container */}
+            <div className="p-3.5 rounded-2xl shadow-xl bg-white border border-black/10">
+              <QRCodeSVG
+                id={`qr-svg-${table.id || table.token}`}
+                value={qrUrl}
+                size={148}
+                level="H"
+                includeMargin={false}
+                fgColor={bgCardColor === "#FFFFFF" ? "#050F2A" : (bgCardColor || "#2C190E")}
+                bgColor="#FFFFFF"
+              />
+            </div>
+
+            {/* Table Details */}
+            <div className="space-y-0.5">
+              <h4
+                className="text-2xl font-black tracking-wide"
+                style={{ color: txtCardColor }}
+              >
+                {tableBadge}
+              </h4>
+              <p
+                className="text-xs font-black uppercase tracking-widest"
+                style={{ color: badgeColor }}
+              >
+                {subtext || "SCAN TO ORDER"}
               </p>
             </div>
 
-            {/* Center QR Code with 4 corner boundary brackets */}
-            <div className="relative p-2 rounded-xl flex items-center justify-center" style={{ backgroundColor: bgCardColor }}>
-              <QrCornerBrackets color={badgeColor} />
-              <div className="p-1 rounded-lg" style={{ backgroundColor: bgCardColor }}>
-                <QRCodeSVG
-                  id={`qr-svg-${table.id || table.token}`}
-                  value={qrUrl}
-                  size={148}
-                  level="H"
-                  includeMargin={false}
-                  fgColor={txtCardColor}
-                  bgColor={bgCardColor}
-                />
-              </div>
-            </div>
-
-            {/* Action Row: Scan • Choose • Enjoy */}
-            <QrActionGuide textColor={txtCardColor} />
-
-            {/* Table Number Capsule / Pill Badge */}
-            <div className="pt-1">
-              <div
-                className="px-8 py-2 rounded-full font-black text-xs sm:text-sm tracking-wider uppercase text-white shadow-md inline-block"
-                style={{ backgroundColor: badgeColor }}
-              >
-                {tableBadge}
-              </div>
-            </div>
-
-            {/* Optional Sweet Message (if set) */}
-            {sweetMsg && sweetMsg.trim().length > 0 && (
-              <div className="text-[11px] text-zinc-600 font-medium italic pt-0.5">
-                {sweetMsg}
-              </div>
-            )}
-
-            {/* Footer: Powered by menyo.org */}
-            <div className="pt-1 text-[9.5px] font-medium text-zinc-400 tracking-wider">
-              Powered by <span className="font-bold text-[#050F2A]">menyo.org</span>
+            {/* Footer Slogan / Tagline with Gold Divider Line */}
+            <div
+              className="pt-2.5 border-t w-full text-[11px] italic leading-tight"
+              style={{
+                borderColor: `${txtCardColor}33`,
+                color: `${txtCardColor}CC`,
+              }}
+            >
+              <span>{sweetMsg || "☕ Good tea brings people together."}</span>
             </div>
           </div>
         </div>
@@ -527,6 +507,8 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
   businessSlug,
   tables,
   primaryColor = "#050F2A",
+  cardBgColor = "#2C190E",
+  cardTextColor = "#FFFCF6",
   logoUrl,
   qrLogoUrl,
   qrHeaderTitle,
@@ -553,6 +535,8 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
   );
   const [sweetMsg, setSweetMsg] = useState<string>("Enjoy your visit!");
   const [badgeColor, setBadgeColor] = useState<string>(primaryColor || "#050F2A");
+  const [bgCardColor, setBgCardColor] = useState<string>(cardBgColor || "#2C190E");
+  const [txtCardColor, setTxtCardColor] = useState<string>(cardTextColor || "#FFFCF6");
   const [showEditor, setShowEditor] = useState<boolean>(false);
 
   const handlePrint = () => {
@@ -669,89 +653,71 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
             return (
               <div
                 key={table.id}
-                className="w-full bg-white rounded-3xl p-6 shadow-md flex flex-col items-center text-center space-y-3.5 border border-zinc-200 select-none print:break-inside-avoid print:shadow-none"
+                className="w-full rounded-[24px] p-5 shadow-lg flex flex-col items-center text-center space-y-3.5 border print:break-inside-avoid select-none"
                 style={{
-                  fontFamily:
-                    '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "SF Pro", "Helvetica Neue", sans-serif',
+                  backgroundColor: bgCardColor,
+                  color: txtCardColor,
+                  borderColor: badgeColor,
                 }}
               >
-                {/* Logo & Subtitle */}
-                <div className="flex flex-col items-center space-y-0.5">
+                {/* Logo */}
+                <div className="pt-1 flex flex-col items-center justify-center">
                   {effectiveQrLogo ? (
-                    <div className="h-[75px] w-full flex items-center justify-center overflow-hidden">
-                      <img
-                        src={effectiveQrLogo}
-                        alt={businessName}
-                        style={{
-                          height: `${Math.round(logoHeight * 0.9)}px`,
-                          maxHeight: "75px",
-                        }}
-                        className="w-auto max-w-[170px] object-contain drop-shadow-xs"
-                      />
-                    </div>
+                    <img
+                      src={effectiveQrLogo}
+                      alt={businessName}
+                      style={{
+                        height: `${Math.round(logoHeight * 0.85)}px`,
+                      }}
+                      className="max-w-[170px] w-auto object-contain select-none drop-shadow"
+                    />
                   ) : (
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-6 h-6 rounded-lg bg-[#050F2A] text-white flex items-center justify-center font-black text-xs">
-                        {businessName.charAt(0) || "M"}
-                      </div>
-                      <span className="font-extrabold text-base text-[#050F2A]">
-                        {businessName}
-                      </span>
+                    <div
+                      className="text-lg font-black tracking-wider uppercase"
+                      style={{ color: badgeColor }}
+                    >
+                      {businessName}
                     </div>
                   )}
-                  <span className="text-[9px] font-bold tracking-[0.2em] uppercase text-zinc-400 pt-0.5">
-                    YOUR DIGITAL MENU
-                  </span>
                 </div>
 
-                {/* Headline & Subhead */}
+                {/* QR Code in Container */}
+                <div className="bg-white p-3 rounded-2xl shadow-md border border-black/10">
+                  <QRCodeSVG
+                    value={qrUrl}
+                    size={130}
+                    level="H"
+                    includeMargin={false}
+                    fgColor={bgCardColor === "#FFFFFF" ? "#050F2A" : (bgCardColor || "#2C190E")}
+                    bgColor="#FFFFFF"
+                  />
+                </div>
+
+                {/* Table Details */}
                 <div className="space-y-0.5">
-                  <h3 className="text-base font-black text-[#050F2A] leading-tight">
-                    {headline}
-                  </h3>
-                  <p className="text-[11px] text-zinc-500 font-medium">
-                    {subtext}
+                  <h4
+                    className="text-xl font-black tracking-wide"
+                    style={{ color: txtCardColor }}
+                  >
+                    {tableBadge}
+                  </h4>
+                  <p
+                    className="text-[10px] font-black uppercase tracking-widest"
+                    style={{ color: badgeColor }}
+                  >
+                    {subtext || "SCAN TO ORDER"}
                   </p>
                 </div>
 
-                {/* QR Code Container with Corner Brackets */}
-                <div className="relative p-2 bg-white flex items-center justify-center">
-                  <QrCornerBrackets color={badgeColor} />
-                  <div className="p-1 bg-white">
-                    <QRCodeSVG
-                      value={qrUrl}
-                      size={128}
-                      level="H"
-                      includeMargin={false}
-                      fgColor="#050F2A"
-                      bgColor="#FFFFFF"
-                    />
-                  </div>
-                </div>
-
-                {/* 3 Step Guide */}
-                <QrActionGuide textColor="#050F2A" />
-
-                {/* Table Badge */}
-                <div className="pt-0.5">
-                  <div
-                    className="px-6 py-1.5 rounded-full font-black text-xs tracking-wider uppercase text-white shadow-sm inline-block"
-                    style={{ backgroundColor: badgeColor }}
-                  >
-                    {tableBadge}
-                  </div>
-                </div>
-
-                {/* Sweet Message */}
-                {sweetMsg && (
-                  <div className="text-[10px] text-zinc-500 italic">
-                    {sweetMsg}
-                  </div>
-                )}
-
-                {/* Footer: Powered by menyo.org */}
-                <div className="text-[9px] text-zinc-400 tracking-wider">
-                  Powered by <span className="font-semibold text-[#050F2A]">menyo.org</span>
+                {/* Footer Quote */}
+                <div
+                  className="pt-2 border-t w-full text-[10px] italic leading-tight"
+                  style={{
+                    borderColor: `${txtCardColor}33`,
+                    color: `${txtCardColor}CC`,
+                  }}
+                >
+                  <span>{sweetMsg || "☕ Good tea brings people together."}</span>
                 </div>
               </div>
             );

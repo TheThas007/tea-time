@@ -463,10 +463,10 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
       const fbLink = currentSocialLinks.find((l) => l.platform === "facebook" && l.isActive);
 
       const activeBizId = typeof window !== "undefined"
-        ? localStorage.getItem("menyo_auth_businessId") || "teatime"
-        : "teatime";
+        ? localStorage.getItem("menyo_auth_businessId") || businessId || (businessSlug === "teatime" ? "biz_teatime_nfue" : businessSlug) || "biz_teatime_nfue"
+        : (businessId || "biz_teatime_nfue");
 
-      const targetId = activeBizId || businessSlug || "teatime";
+      const targetId = activeBizId || (businessSlug === "teatime" ? "biz_teatime_nfue" : businessSlug) || "biz_teatime_nfue";
 
       // 1. Primary Save via platformApi RPC (Bypasses table RLS restrictions safely using server-side business scope)
       try {
@@ -484,17 +484,17 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
           qrLogoUrl: settings.qrLogoUrl || null,
           navbarLogoHeight: settings.navbarLogoHeight || 48,
           qrLogoSize: settings.qrLogoSize || 112,
-          qrCardBgColor: settings.qrCardBgColor || "#FFFFFF",
-          qrCardTextColor: settings.qrCardTextColor || "#050F2A",
+          qrCardBgColor: settings.qrCardBgColor || "#2C190E",
+          qrCardTextColor: settings.qrCardTextColor || "#FFFCF6",
           qrHeaderTitle: settings.qrHeaderTitle,
           qrSubtitle: settings.qrSubtitle,
           qrFooterNote: settings.qrFooterNote,
-          primaryColor: settings.primaryColor || "#050F2A",
-          accentColor: settings.accentColor || "#7BBBFF",
-          backgroundColor: settings.backgroundColor || "#F8F9FA",
+          primaryColor: settings.primaryColor || "#2C190E",
+          accentColor: settings.accentColor || "#E8B64F",
+          backgroundColor: settings.backgroundColor || "#fefaec",
           textColor: settings.textColor || "#050F2A",
-          headerBackgroundColor: settings.headerBackgroundColor || settings.primaryColor || "#050F2A",
-          headerTextColor: settings.headerTextColor || "#F8F9FA",
+          headerBackgroundColor: settings.headerBackgroundColor || settings.primaryColor || "#2C190E",
+          headerTextColor: settings.headerTextColor || "#FFFCF6",
           googleReviewUrl: gLink?.url || settings.googleReviewUrl || "",
           instagramUrl: igLink?.url || settings.instagramUrl || "",
           facebookUrl: fbLink?.url || settings.facebookUrl || "",
@@ -542,17 +542,17 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
             qrLogoUrl: settings.qrLogoUrl || null,
             navbarLogoHeight: settings.navbarLogoHeight || 48,
             qrLogoSize: settings.qrLogoSize || 112,
-            qrCardBgColor: settings.qrCardBgColor || "#FFFFFF",
-            qrCardTextColor: settings.qrCardTextColor || "#050F2A",
+            qrCardBgColor: settings.qrCardBgColor || "#2C190E",
+            qrCardTextColor: settings.qrCardTextColor || "#FFFCF6",
             qrHeaderTitle: settings.qrHeaderTitle,
             qrSubtitle: settings.qrSubtitle,
             qrFooterNote: settings.qrFooterNote,
-            primaryColor: settings.primaryColor || "#050F2A",
-            accentColor: settings.accentColor || "#7BBBFF",
-            backgroundColor: settings.backgroundColor || "#F8F9FA",
+            primaryColor: settings.primaryColor || "#2C190E",
+            accentColor: settings.accentColor || "#E8B64F",
+            backgroundColor: settings.backgroundColor || "#fefaec",
             textColor: settings.textColor || "#050F2A",
-            headerBackgroundColor: settings.headerBackgroundColor || settings.primaryColor || "#050F2A",
-            headerTextColor: settings.headerTextColor || "#F8F9FA",
+            headerBackgroundColor: settings.headerBackgroundColor || settings.primaryColor || "#2C190E",
+            headerTextColor: settings.headerTextColor || "#FFFCF6",
           },
           updatedAt: serverTimestamp(),
         }, { merge: true });
@@ -2155,101 +2155,78 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
                   </div>
                 </div>
               ) : (
-                /* TABLE QR TENT CARD MOCKUP - Clean White Acrylic Stand Style */
+                /* TABLE QR TENT CARD MOCKUP - Matches Classic Tea Time Dark Cardstock */
                 <div
-                  className="w-[260px] sm:w-[275px] h-[480px] rounded-3xl p-5 pt-6 pb-5 shadow-xl flex flex-col items-center justify-between text-center border border-zinc-200/90 transition-all select-none overflow-hidden"
+                  className="w-[260px] sm:w-[275px] min-h-[490px] rounded-3xl p-5 pt-6 pb-5 shadow-2xl flex flex-col items-center justify-between text-center border transition-all select-none overflow-hidden relative"
                   style={{
-                    backgroundColor: settings.qrCardBgColor || "#FFFFFF",
-                    color: settings.qrCardTextColor || "#050F2A",
+                    backgroundColor: settings.qrCardBgColor || "#2C190E",
+                    borderColor: `${settings.accentColor || "#E8B64F"}44`,
+                    color: settings.qrCardTextColor || "#FFFCF6",
                     fontFamily:
                       '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "SF Pro", "Helvetica Neue", sans-serif',
                   }}
                 >
-                  {/* Top Brand Logo & Subtitle */}
-                  <div className="flex flex-col items-center space-y-1 w-full shrink-0">
+                  {/* Top Brand Logo */}
+                  <div className="flex flex-col items-center justify-center w-full shrink-0 pt-1">
                     {(settings.qrLogoUrl || settings.logoUrl) ? (
-                      <div className="h-[75px] w-full flex items-center justify-center overflow-hidden">
+                      <div className="h-[95px] w-full flex items-center justify-center overflow-hidden">
                         <img
                           src={settings.qrLogoUrl || settings.logoUrl}
                           alt={settings.cafeName || "Logo"}
                           style={{
-                            height: `${Math.min(getQrLogoHeight(settings.qrLogoSize), 75)}px`,
-                            maxHeight: "75px",
+                            height: `${Math.min(getQrLogoHeight(settings.qrLogoSize), 95)}px`,
+                            maxHeight: "95px",
                           }}
-                          className="max-w-[200px] w-auto object-contain drop-shadow-xs transition-all"
+                          className="max-w-[210px] w-auto object-contain transition-all"
                         />
                       </div>
                     ) : (
-                      <div className="flex items-center gap-1.5">
-                        <div
-                          className="w-7 h-7 rounded-lg text-white flex items-center justify-center font-black text-xs"
-                          style={{ backgroundColor: previewColors.primary }}
-                        >
-                          {(settings.cafeName || "M").charAt(0)}
-                        </div>
-                        <span className="font-extrabold text-base tracking-tight" style={{ color: settings.qrCardTextColor || "#050F2A" }}>
-                          {settings.cafeName || "Tea Time"}
-                        </span>
+                      <div
+                        className="text-xl font-black tracking-wider uppercase"
+                        style={{ color: settings.accentColor || "#E8B64F" }}
+                      >
+                        {settings.cafeName || "TEA TIME"}
                       </div>
                     )}
-                    <span className="text-[9px] font-bold tracking-[0.2em] uppercase opacity-60 pt-0.5">
-                      YOUR DIGITAL MENU
-                    </span>
                   </div>
 
-                  {/* Headline & Subhead */}
-                  <div className="space-y-0.5 max-w-[220px]">
-                    <h3 className="text-base sm:text-lg font-black leading-tight tracking-tight" style={{ color: settings.qrCardTextColor || "#050F2A" }}>
-                      {settings.qrHeaderTitle && settings.qrHeaderTitle.trim().length > 0
-                        ? settings.qrHeaderTitle
-                        : "Good food. One scan away."}
-                    </h3>
-                    <p className="text-[11px] font-medium opacity-70">
-                      {settings.qrSubtitle || "Scan to explore our menu"}
+                  {/* QR Code in High-contrast Rounded White Container */}
+                  <div className="p-3 rounded-2xl shadow-xl bg-white border border-black/10 my-1">
+                    <QRCodeSVG
+                      value={`https://menyo.aevonix.lk/teatime/menu?table=tbl_07`}
+                      size={135}
+                      level="H"
+                      includeMargin={false}
+                      fgColor={settings.qrCardBgColor === "#FFFFFF" ? "#050F2A" : (settings.qrCardBgColor || "#2C190E")}
+                      bgColor="#FFFFFF"
+                    />
+                  </div>
+
+                  {/* Table Details */}
+                  <div className="space-y-0.5">
+                    <h4
+                      className="text-xl font-black tracking-wide"
+                      style={{ color: settings.qrCardTextColor || "#FFFCF6" }}
+                    >
+                      {formatTableBadgeText("07")}
+                    </h4>
+                    <p
+                      className="text-[10px] font-black uppercase tracking-widest"
+                      style={{ color: settings.accentColor || "#E8B64F" }}
+                    >
+                      {settings.qrSubtitle || "SCAN TO ORDER"}
                     </p>
                   </div>
 
-                  {/* QR Code Container with Corner Brackets */}
+                  {/* Footer Slogan / Tagline with Gold Divider Line */}
                   <div
-                    className="relative p-2 rounded-2xl flex items-center justify-center transition-colors"
-                    style={{ backgroundColor: settings.qrCardBgColor === "#050F2A" || settings.qrCardBgColor === "#000000" ? "#FFFFFF" : "transparent" }}
+                    className="pt-2 border-t w-full text-[10px] italic leading-tight"
+                    style={{
+                      borderColor: `${settings.qrCardTextColor || "#FFFCF6"}33`,
+                      color: `${settings.qrCardTextColor || "#FFFCF6"}CC`,
+                    }}
                   >
-                    <QrCornerBrackets color={previewColors.primary} />
-                    <div className="p-1 rounded-xl bg-white">
-                      <QRCodeSVG
-                        value={`https://menyo.aevonix.lk/teatime/menu?table=tbl_07`}
-                        size={120}
-                        level="H"
-                        includeMargin={false}
-                        fgColor="#050F2A"
-                        bgColor="#FFFFFF"
-                      />
-                    </div>
-                  </div>
-
-                  {/* 3 Step Action Guide */}
-                  <QrActionGuide textColor={settings.qrCardTextColor || "#050F2A"} />
-
-                  {/* Table details pill badge */}
-                  <div className="pt-0.5">
-                    <div
-                      className="px-6 py-1.5 rounded-full font-black text-xs tracking-wider uppercase text-white shadow-sm inline-block"
-                      style={{ backgroundColor: previewColors.primary }}
-                    >
-                      {formatTableBadgeText("07")}
-                    </div>
-                  </div>
-
-                  {/* Slogan / Footer note */}
-                  <div className="text-[10px] italic max-w-[210px] truncate opacity-70">
-                    {settings.qrFooterNote && !settings.qrFooterNote.includes("tea brings")
-                      ? settings.qrFooterNote
-                      : "Enjoy your visit!"}
-                  </div>
-
-                  {/* Powered by menyo.org */}
-                  <div className="text-[9px] opacity-60 pt-0.5 tracking-wider">
-                    Powered by <span className="font-semibold" style={{ color: settings.qrCardTextColor || "#050F2A" }}>menyo.org</span>
+                    <span>{settings.qrFooterNote || "☕ Good tea brings people together."}</span>
                   </div>
                 </div>
               )}
