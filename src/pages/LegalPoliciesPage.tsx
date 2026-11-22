@@ -6,7 +6,7 @@ import { MenyoWordmark } from "../components/common/MenyoLogo";
 export const LegalPoliciesPage: React.FC<{ initialSection?: "terms" | "privacy" | "refund" }> = ({
   initialSection = "terms",
 }) => {
-  const [activeTab, setActiveTab] = React.useState<"terms" | "privacy" | "refund">(initialSection);
+  const activeTab = initialSection;
 
   React.useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -46,8 +46,9 @@ export const LegalPoliciesPage: React.FC<{ initialSection?: "terms" | "privacy" 
 
           {/* Navigation Pills */}
           <div className="flex flex-wrap items-center justify-center gap-2 mt-8">
-            <button
-              onClick={() => setActiveTab("terms")}
+            <Link
+              to="/terms"
+              aria-current={activeTab === "terms" ? "page" : undefined}
               className={`px-5 py-2 rounded-full text-xs font-bold transition flex items-center gap-2 ${
                 activeTab === "terms"
                   ? "bg-[#7BBBFF] text-[#050F2A] shadow-md"
@@ -56,9 +57,10 @@ export const LegalPoliciesPage: React.FC<{ initialSection?: "terms" | "privacy" 
             >
               <FileText className="w-3.5 h-3.5" />
               <span>Terms &amp; Conditions</span>
-            </button>
-            <button
-              onClick={() => setActiveTab("privacy")}
+            </Link>
+            <Link
+              to="/privacy"
+              aria-current={activeTab === "privacy" ? "page" : undefined}
               className={`px-5 py-2 rounded-full text-xs font-bold transition flex items-center gap-2 ${
                 activeTab === "privacy"
                   ? "bg-[#7BBBFF] text-[#050F2A] shadow-md"
@@ -67,9 +69,10 @@ export const LegalPoliciesPage: React.FC<{ initialSection?: "terms" | "privacy" 
             >
               <Shield className="w-3.5 h-3.5" />
               <span>Privacy Policy</span>
-            </button>
-            <button
-              onClick={() => setActiveTab("refund")}
+            </Link>
+            <Link
+              to="/refund-policy"
+              aria-current={activeTab === "refund" ? "page" : undefined}
               className={`px-5 py-2 rounded-full text-xs font-bold transition flex items-center gap-2 ${
                 activeTab === "refund"
                   ? "bg-[#7BBBFF] text-[#050F2A] shadow-md"
@@ -78,7 +81,7 @@ export const LegalPoliciesPage: React.FC<{ initialSection?: "terms" | "privacy" 
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>Refund &amp; Cancellation Policy</span>
-            </button>
+            </Link>
           </div>
         </div>
       </div>
@@ -260,11 +263,11 @@ export const LegalPoliciesPage: React.FC<{ initialSection?: "terms" | "privacy" 
       <footer className="bg-[#050F2A] text-[#F2FDFF]/70 py-8 px-6 text-xs text-center border-t border-[#050F2A]/20">
         <p>&copy; {new Date().getFullYear()} Menyo &mdash; by AEVONIX. All rights reserved.</p>
         <div className="flex items-center justify-center gap-4 mt-2">
-          <button onClick={() => setActiveTab("terms")} className="hover:text-white transition">Terms &amp; Conditions</button>
+          <Link to="/terms" className="hover:text-white transition">Terms &amp; Conditions</Link>
           <span>&bull;</span>
-          <button onClick={() => setActiveTab("privacy")} className="hover:text-white transition">Privacy Policy</button>
+          <Link to="/privacy" className="hover:text-white transition">Privacy Policy</Link>
           <span>&bull;</span>
-          <button onClick={() => setActiveTab("refund")} className="hover:text-white transition">Refund Policy</button>
+          <Link to="/refund-policy" className="hover:text-white transition">Refund Policy</Link>
         </div>
       </footer>
     </div>
