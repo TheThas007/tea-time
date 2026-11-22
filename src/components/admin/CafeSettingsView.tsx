@@ -196,41 +196,62 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
     const fetchSettings = async () => {
       try {
         let loaded = false;
-        // 1. Try business doc first if specific business
-        if (activeBizId && activeBizId !== "teatime") {
-          const bizSnap = await getDoc(doc(db, "businesses", activeBizId));
-          if (bizSnap.exists()) {
-            const b = bizSnap.data();
-            const br = b.branding || {};
-            setSettings({
-              ...INITIAL_SETTINGS,
-              cafeName: b.name || INITIAL_SETTINGS.cafeName,
-              tagline: b.tagline || INITIAL_SETTINGS.tagline,
-              phone: b.phone || INITIAL_SETTINGS.phone,
-              whatsapp: b.whatsapp || INITIAL_SETTINGS.whatsapp,
-              address: b.address || INITIAL_SETTINGS.address,
-              openingHours: b.openingHours || INITIAL_SETTINGS.openingHours,
-              currencySymbol: b.currencySymbol || INITIAL_SETTINGS.currencySymbol,
-              isOrderingPaused: Boolean(b.isOrderingPaused),
-              pauseMessage: b.pauseMessage || INITIAL_SETTINGS.pauseMessage,
-              socialLinks: b.socialLinks || INITIAL_SETTINGS.socialLinks,
-              logoUrl: br.logoUrl || b.logoUrl || null,
-              primaryColor: br.primaryColor || b.primaryColor || INITIAL_SETTINGS.primaryColor,
-              accentColor: br.accentColor || b.accentColor || INITIAL_SETTINGS.accentColor,
-              backgroundColor: br.backgroundColor || b.backgroundColor || INITIAL_SETTINGS.backgroundColor,
-              textColor: br.textColor || b.textColor || INITIAL_SETTINGS.textColor,
-              headerBackgroundColor: br.headerBackgroundColor || b.headerBackgroundColor || br.primaryColor || INITIAL_SETTINGS.headerBackgroundColor,
-              headerTextColor: br.headerTextColor || b.headerTextColor || INITIAL_SETTINGS.headerTextColor,
-            } as CafeSettings);
-            loaded = true;
-          }
+        const targetBizId = activeBizId || "teatime";
+        
+        // 1. Try business doc first by activeBizId or teatime
+        const tryIds = [targetBizId];
+        if (targetBizId === "teatime") tryIds.push("biz_teatime_nfue");
+        else if (targetBizId === "biz_teatime_nfue") tryIds.push("teatime");
+
+        for (const bId of tryIds) {
+          try {
+            const bizSnap = await getDoc(doc(db, "businesses", bId));
+            if (bizSnap.exists()) {
+              const b = bizSnap.data();
+              const br = b.branding || {};
+              setSettings({
+                ...INITIAL_SETTINGS,
+                cafeName: b.name || INITIAL_SETTINGS.cafeName,
+                tagline: b.tagline || INITIAL_SETTINGS.tagline,
+                phone: b.phone || INITIAL_SETTINGS.phone,
+                whatsapp: b.whatsapp || INITIAL_SETTINGS.whatsapp,
+                address: b.address || INITIAL_SETTINGS.address,
+                openingHours: b.openingHours || INITIAL_SETTINGS.openingHours,
+                currencySymbol: b.currencySymbol || INITIAL_SETTINGS.currencySymbol,
+                isOrderingPaused: Boolean(b.isOrderingPaused),
+                pauseMessage: b.pauseMessage || INITIAL_SETTINGS.pauseMessage,
+                socialLinks: b.socialLinks || br.socialLinks || INITIAL_SETTINGS.socialLinks,
+                logoUrl: br.logoUrl || b.logoUrl || null,
+                qrLogoUrl: br.qrLogoUrl || b.qrLogoUrl || null,
+                navbarLogoHeight: br.navbarLogoHeight || b.navbarLogoHeight || 48,
+                qrLogoSize: br.qrLogoSize || b.qrLogoSize || 112,
+                qrCardBgColor: br.qrCardBgColor || b.qrCardBgColor || "#FFFFFF",
+                qrCardTextColor: br.qrCardTextColor || b.qrCardTextColor || "#050F2A",
+                qrHeaderTitle: br.qrHeaderTitle ?? b.qrHeaderTitle ?? "",
+                qrSubtitle: br.qrSubtitle ?? b.qrSubtitle ?? "",
+                qrFooterNote: br.qrFooterNote ?? b.qrFooterNote ?? "",
+                primaryColor: br.primaryColor || b.primaryColor || INITIAL_SETTINGS.primaryColor,
+                accentColor: br.accentColor || b.accentColor || INITIAL_SETTINGS.accentColor,
+                backgroundColor: br.backgroundColor || b.backgroundColor || INITIAL_SETTINGS.backgroundColor,
+                textColor: br.textColor || b.textColor || INITIAL_SETTINGS.textColor,
+                headerBackgroundColor: br.headerBackgroundColor || b.headerBackgroundColor || br.primaryColor || INITIAL_SETTINGS.headerBackgroundColor,
+                headerTextColor: br.headerTextColor || b.headerTextColor || INITIAL_SETTINGS.headerTextColor,
+              } as CafeSettings);
+              loaded = true;
+              break;
+            }
+          } catch {}
         }
 
-        if (!loaded) {
-          const docRef = doc(db, "settings", "cafe");
-          const snap = await getDoc(docRef);
-          if (snap.exists()) {
-            setSettings({ ...INITIAL_SETTINGS, ...snap.data() } as CafeSettings);
+        // 2. Local storage fallback if offline/RLS
+        if (!loaded && typeof window !== "undefined") {
+          const localStr = localStorage.getItem(`menyo_settings_${targetBizId}`) || localStorage.getItem(`menyo_settings_teatime`);
+          if (localStr) {
+            try {
+              const parsed = JSON.parse(localStr);
+              setSettings({ ...INITIAL_SETTINGS, ...parsed });
+              loaded = true;
+            } catch {}
           }
         }
       } catch (err) {
@@ -1970,19 +1991,19 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
                   >
                     {/* CUSTOM NAVBAR */}
                     <div
-                      className="px-3.5 py-2.5 flex items-center justify-between border-b border-black/10 transition-colors shadow-xs"
+                      className="px-3.5 py-1.5 flex items-center justify-between border-b border-black/10 transition-colors shadow-xs h-12"
                       style={{
                         backgroundColor: previewColors.headerBg,
                         color: previewColors.headerText,
                       }}
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 h-full">
                         {settings.logoUrl ? (
                           <img
                             src={settings.logoUrl}
                             alt="Logo"
-                            style={{ height: `${Number(settings.navbarLogoHeight) || 48}px` }}
-                            className="w-auto object-contain transition-all"
+                            style={{ height: `${Number(settings.navbarLogoHeight) || 40}px`, maxHeight: "100%" }}
+                            className="w-auto object-contain transition-all max-h-full"
                           />
                         ) : (
                           <span className="font-black text-xs uppercase tracking-tight">
@@ -2136,7 +2157,7 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
               ) : (
                 /* TABLE QR TENT CARD MOCKUP - Clean White Acrylic Stand Style */
                 <div
-                  className="w-[260px] sm:w-[275px] rounded-3xl p-5 pt-6 pb-5 shadow-xl flex flex-col items-center text-center space-y-3.5 border border-zinc-200/90 transition-all select-none"
+                  className="w-[260px] sm:w-[275px] h-[480px] rounded-3xl p-5 pt-6 pb-5 shadow-xl flex flex-col items-center justify-between text-center border border-zinc-200/90 transition-all select-none overflow-hidden"
                   style={{
                     backgroundColor: settings.qrCardBgColor || "#FFFFFF",
                     color: settings.qrCardTextColor || "#050F2A",
@@ -2145,17 +2166,17 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
                   }}
                 >
                   {/* Top Brand Logo & Subtitle */}
-                  <div className="flex flex-col items-center space-y-1">
+                  <div className="flex flex-col items-center space-y-1 w-full shrink-0">
                     {(settings.qrLogoUrl || settings.logoUrl) ? (
-                      <div className="h-[90px] w-full flex items-center justify-center overflow-hidden">
+                      <div className="h-[75px] w-full flex items-center justify-center overflow-hidden">
                         <img
                           src={settings.qrLogoUrl || settings.logoUrl}
                           alt={settings.cafeName || "Logo"}
                           style={{
-                            height: `${getQrLogoHeight(settings.qrLogoSize)}px`,
-                            maxHeight: "90px",
+                            height: `${Math.min(getQrLogoHeight(settings.qrLogoSize), 75)}px`,
+                            maxHeight: "75px",
                           }}
-                          className="max-w-[220px] w-auto object-contain drop-shadow-xs transition-all"
+                          className="max-w-[200px] w-auto object-contain drop-shadow-xs transition-all"
                         />
                       </div>
                     ) : (
