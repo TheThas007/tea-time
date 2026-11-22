@@ -1581,7 +1581,16 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
 
   // 10. Owner Update Order Status
   if (action === "ownerUpdateOrderStatus") {
-    let bId = data.businessId || (typeof window !== "undefined" ? localStorage.getItem("menyo_auth_businessId") : null) || "teatime";
+    let bId = data.businessId || (typeof window !== "undefined" ? localStorage.getItem("menyo_auth_businessId") : null) || "";
+    if (!bId || !bId.startsWith("biz_")) {
+      try {
+        const slugSnap = await getDoc(doc(db, "businessSlugs", (bId || "teatime").toLowerCase().trim()));
+        if (slugSnap.exists() && slugSnap.data()?.businessId) {
+          bId = slugSnap.data()?.businessId;
+        }
+      } catch {}
+    }
+    if (!bId) bId = "teatime";
     const orderId = data.orderId;
     const status = data.status;
     if (orderId && status) {

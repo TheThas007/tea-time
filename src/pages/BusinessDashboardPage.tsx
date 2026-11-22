@@ -917,10 +917,7 @@ export const BusinessDashboardPage: React.FC = () => {
     );
   }
 
-  // Dedicated dashboard view for legacy TEA TIME client if email is admin@teatime.lk
-  if (currentUser?.email === "admin@teatime.lk") {
-    return <AdminDashboardPage />;
-  }
+  // Always render the full 10-tab Business Dashboard (never fall back to legacy 4-tab AdminDashboardPage)
 
   // Handle Suspended accounts
   const subStatus = business?.subscription?.effectiveStatus || business?.status;
