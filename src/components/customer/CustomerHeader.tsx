@@ -32,22 +32,31 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
       brandName.toLowerCase() === "tea time" ||
       brandName.toLowerCase() === "teatime") && !logoUrl;
 
-  const parsedLogoH = typeof logoHeight === "number" ? `${logoHeight}px` : (logoHeight || undefined);
+  const numericLogoH = typeof logoHeight === "number"
+    ? logoHeight
+    : (logoHeight ? parseInt(String(logoHeight), 10) : NaN);
+  const logoScale = !isNaN(numericLogoH) && numericLogoH > 0
+    ? Math.min(Math.max(numericLogoH / 44, 0.65), 3.0)
+    : 1.25;
 
   return (
     <header
-      className="sticky top-0 z-30 text-white shadow-md border-b border-white/10"
+      className="sticky top-0 z-30 text-white shadow-md border-b border-white/10 overflow-hidden"
       style={{ backgroundColor: primaryColor }}
     >
-      <div className="max-w-md md:max-w-3xl lg:max-w-6xl xl:max-w-7xl mx-auto px-4 md:px-6 lg:px-8 py-2 md:py-2.5 flex items-center justify-between gap-2 min-h-16 md:min-h-20">
+      <div className="max-w-md md:max-w-3xl lg:max-w-6xl xl:max-w-7xl mx-auto px-4 md:px-6 lg:px-8 flex items-center justify-between gap-2 h-16 md:h-[72px]">
         {/* Left: Brand Logo */}
         {logoUrl ? (
-          <div className="flex items-center py-0.5">
+          <div className="flex items-center h-full">
             <img
               src={logoUrl}
               alt={brandName || "Logo"}
-              style={parsedLogoH ? { height: parsedLogoH } : undefined}
-              className={parsedLogoH ? "w-auto object-contain select-none transition-all" : "h-12 sm:h-14 md:h-16 w-auto object-contain select-none transition-all"}
+              style={{
+                height: "44px",
+                transform: `scale(${logoScale})`,
+                transformOrigin: "left center",
+              }}
+              className="w-auto object-contain select-none transition-transform duration-200"
             />
           </div>
         ) : isDemo ? (
