@@ -36,8 +36,8 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
     ? logoHeight
     : (logoHeight ? parseInt(String(logoHeight), 10) : NaN);
   const logoScale = !isNaN(numericLogoH) && numericLogoH > 0
-    ? Math.min(Math.max(numericLogoH / 36, 1.0), 4.5)
-    : 2.0;
+    ? Math.min(Math.max(numericLogoH / 48, 0.5), 3.0)
+    : 1.0;
 
   return (
     <header
@@ -52,11 +52,11 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
               src={logoUrl}
               alt={brandName || "Logo"}
               style={{
-                height: "60px",
+                height: "48px",
                 transform: `scale(${logoScale})`,
                 transformOrigin: "left center",
               }}
-              className="w-auto object-contain select-none transition-transform duration-200"
+              className="w-auto object-contain select-none"
             />
           </div>
         ) : isDemo ? (
