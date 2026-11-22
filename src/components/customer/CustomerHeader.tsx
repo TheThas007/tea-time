@@ -42,12 +42,12 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
       <div className="max-w-md md:max-w-3xl lg:max-w-6xl xl:max-w-7xl mx-auto px-4 md:px-6 lg:px-8 py-2 md:py-3 flex items-center justify-between gap-2">
         {/* Left: Brand Logo */}
         {logoUrl ? (
-          <div className="flex items-center">
+          <div className="flex items-center min-h-[44px]">
             <img
               src={logoUrl}
               alt={brandName || "Logo"}
-              style={parsedLogoH ? { height: parsedLogoH, maxHeight: "90px" } : undefined}
-              className={parsedLogoH ? "w-auto object-contain select-none" : "h-11 sm:h-12 md:h-[52px] w-auto object-contain select-none"}
+              style={parsedLogoH ? { height: parsedLogoH, maxHeight: "120px" } : undefined}
+              className={parsedLogoH ? "w-auto object-contain select-none" : "h-11 sm:h-12 md:h-[54px] w-auto object-contain select-none"}
             />
           </div>
         ) : isDemo ? (

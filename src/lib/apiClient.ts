@@ -421,6 +421,8 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
                 headerBackgroundColor: branding.headerBackgroundColor || bizData?.headerBackgroundColor || "#050F2A",
                 headerTextColor: branding.headerTextColor || bizData?.headerTextColor || "#F2FDFF",
                 logoUrl: branding.logoUrl || bizData?.logoUrl || null,
+                qrLogoUrl: branding.qrLogoUrl || bizData?.qrLogoUrl || null,
+                navbarLogoHeight: branding.navbarLogoHeight || bizData?.navbarLogoHeight || 48,
                 qrHeaderTitle: branding.qrHeaderTitle ?? bizData?.qrHeaderTitle ?? (bizData?.slug === "teatime" ? "SCAN TO ORDER • TEA TIME" : ""),
                 qrSubtitle: branding.qrSubtitle || bizData?.qrSubtitle || "SCAN TO ORDER",
                 qrFooterNote: (branding.qrFooterNote && !branding.qrFooterNote.includes("Good tea brings people together"))
@@ -1302,6 +1304,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
     const mergedBranding = {
       ...(data.branding || {}),
       logoUrl: data.logoUrl !== undefined ? data.logoUrl : bInput.logoUrl,
+      qrLogoUrl: (data as any).qrLogoUrl !== undefined ? (data as any).qrLogoUrl : bInput.qrLogoUrl,
       navbarLogoHeight: (data as any).navbarLogoHeight || bInput.navbarLogoHeight,
       qrCardBgColor: (data as any).qrCardBgColor || bInput.qrCardBgColor,
       qrCardTextColor: (data as any).qrCardTextColor || bInput.qrCardTextColor,
@@ -1326,6 +1329,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
     if (mergedBranding.headerBackgroundColor) updatePayload.headerBackgroundColor = mergedBranding.headerBackgroundColor;
     if (mergedBranding.headerTextColor) updatePayload.headerTextColor = mergedBranding.headerTextColor;
     if (mergedBranding.logoUrl !== undefined) updatePayload.logoUrl = mergedBranding.logoUrl;
+    if (mergedBranding.qrLogoUrl !== undefined) updatePayload.qrLogoUrl = mergedBranding.qrLogoUrl;
     if (mergedBranding.navbarLogoHeight !== undefined) updatePayload.navbarLogoHeight = mergedBranding.navbarLogoHeight;
     if (mergedBranding.qrHeaderTitle !== undefined) updatePayload.qrHeaderTitle = mergedBranding.qrHeaderTitle;
     if (mergedBranding.qrSubtitle !== undefined) updatePayload.qrSubtitle = mergedBranding.qrSubtitle;
@@ -2602,6 +2606,7 @@ export const platformApi = {
     isOrderingPaused?: boolean;
     pauseMessage?: string;
     logoUrl?: string | null;
+    qrLogoUrl?: string | null;
     primaryColor?: string | null;
     accentColor?: string | null;
     backgroundColor?: string | null;

@@ -298,6 +298,7 @@ export const TableManager: React.FC = () => {
           headerBackgroundColor={settings.headerBackgroundColor || "#050F2A"}
           headerTextColor={settings.headerTextColor || "#FFFFFF"}
           logoUrl={settings.logoUrl || null}
+          qrLogoUrl={settings.qrLogoUrl || null}
           qrHeaderTitle={settings.qrHeaderTitle ?? ""}
           qrSubtitle={settings.qrSubtitle || "Scan to explore our menu"}
           qrFooterNote={settings.qrFooterNote || "Good food. One scan away."}

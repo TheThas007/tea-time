@@ -255,6 +255,44 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
   };
 
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingQrLogo, setUploadingQrLogo] = useState(false);
+
+  const handleQrLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("QR Logo image size must be under 5MB.");
+      return;
+    }
+
+    setUploadingQrLogo(true);
+    try {
+      const ext = file.name.split(".").pop() || "png";
+      const fileName = `logos/qr/${activeBizId || "teatime"}_${Date.now()}_qr_logo.${ext}`;
+      const storageRef = ref(storage, fileName);
+      await uploadBytes(storageRef, file);
+      const downloadUrl = await getDownloadURL(storageRef);
+      setSettings((prev) => ({
+        ...prev,
+        qrLogoUrl: downloadUrl,
+      }));
+    } catch (err: any) {
+      console.warn("Direct QR logo upload fallback to base64:", err);
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          setSettings((prev) => ({
+            ...prev,
+            qrLogoUrl: reader.result as string,
+          }));
+        }
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setUploadingQrLogo(false);
+    }
+  };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -422,6 +460,7 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
           isOrderingPaused: settings.isOrderingPaused,
           pauseMessage: settings.pauseMessage,
           logoUrl: settings.logoUrl || null,
+          qrLogoUrl: settings.qrLogoUrl || null,
           navbarLogoHeight: settings.navbarLogoHeight || 48,
           qrLogoSize: settings.qrLogoSize || 112,
           qrCardBgColor: settings.qrCardBgColor || "#FFFFFF",
@@ -479,6 +518,7 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
           facebookUrl: fbLink?.url || settings.facebookUrl || "",
           branding: {
             logoUrl: settings.logoUrl || null,
+            qrLogoUrl: settings.qrLogoUrl || null,
             navbarLogoHeight: settings.navbarLogoHeight || 48,
             qrLogoSize: settings.qrLogoSize || 112,
             qrCardBgColor: settings.qrCardBgColor || "#FFFFFF",
@@ -1037,20 +1077,21 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
                     <input
                       type="range"
                       min="32"
-                      max="80"
+                      max="120"
                       step="2"
                       value={Number(settings.navbarLogoHeight) || 48}
                       onChange={(e) => setSettings({ ...settings, navbarLogoHeight: Number(e.target.value) })}
                       className="flex-1 h-2 bg-[#E2E8F0] rounded-lg appearance-none cursor-pointer accent-[#050F2A]"
                     />
-                    <span className="text-[10px] text-[#64748B] font-bold">80px</span>
+                    <span className="text-[10px] text-[#64748B] font-bold">120px</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {[
-                      { label: "Standard (44px)", val: 44 },
-                      { label: "Medium (52px)", val: 52 },
-                      { label: "Large (64px)", val: 64 },
-                      { label: "Extra Big (76px)", val: 76 },
+                      { label: "Standard (48px)", val: 48 },
+                      { label: "Medium (56px)", val: 56 },
+                      { label: "Large (68px)", val: 68 },
+                      { label: "Extra Big (84px)", val: 84 },
+                      { label: "Massive (104px)", val: 104 },
                     ].map((p) => (
                       <button
                         key={p.val}
@@ -1369,6 +1410,53 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
                         />
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                {/* DEDICATED TABLE QR LOGO (Separate from Store Logo) */}
+                <div className="p-3 bg-[#F8F9FA] rounded-xl border border-[#E2E8F0] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-[#050F2A] flex items-center gap-1.5">
+                      <ImageIcon className="w-3.5 h-3.5 text-[#7BBBFF]" />
+                      <span>Dedicated Table QR Card Logo</span>
+                    </label>
+                    {settings.qrLogoUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setSettings({ ...settings, qrLogoUrl: "" })}
+                        className="text-[10px] text-rose-600 hover:text-rose-700 font-bold"
+                      >
+                        Reset to Store Logo
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-[#64748B]">
+                    Upload a separate square badge, round emblem or banner specifically for printed table QR stands.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={settings.qrLogoUrl || ""}
+                      onChange={(e) => setSettings({ ...settings, qrLogoUrl: e.target.value })}
+                      placeholder="Use default store logo or paste URL"
+                      className="flex-1 text-xs px-3 py-2 rounded-xl border border-[#E2E8F0] bg-white text-[#050F2A] focus:border-[#7BBBFF] outline-none"
+                    />
+                    <label className="bg-[#050F2A] hover:bg-[#0b1739] text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer shrink-0 transition active:scale-95 shadow-sm">
+                      <Upload className="w-3.5 h-3.5 text-[#7BBBFF]" />
+                      <span>{uploadingQrLogo ? "..." : "Upload"}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleQrLogoUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1 text-[11px]">
+                    <span className="text-[#64748B]">Active QR Card Logo:</span>
+                    <span className="font-bold text-[#050F2A]">
+                      {settings.qrLogoUrl ? "Custom Dedicated QR Logo" : "Using Store Logo"}
+                    </span>
                   </div>
                 </div>
 
@@ -2058,15 +2146,18 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
                 >
                   {/* Top Brand Logo & Subtitle */}
                   <div className="flex flex-col items-center space-y-1">
-                    {settings.logoUrl ? (
-                      <img
-                        src={settings.logoUrl}
-                        alt={settings.cafeName || "Logo"}
-                        style={{
-                          height: `${getQrLogoHeight(settings.qrLogoSize)}px`,
-                        }}
-                        className="max-w-[220px] w-auto object-contain drop-shadow-xs transition-all"
-                      />
+                    {(settings.qrLogoUrl || settings.logoUrl) ? (
+                      <div className="h-[90px] w-full flex items-center justify-center overflow-hidden">
+                        <img
+                          src={settings.qrLogoUrl || settings.logoUrl}
+                          alt={settings.cafeName || "Logo"}
+                          style={{
+                            height: `${getQrLogoHeight(settings.qrLogoSize)}px`,
+                            maxHeight: "90px",
+                          }}
+                          className="max-w-[220px] w-auto object-contain drop-shadow-xs transition-all"
+                        />
+                      </div>
                     ) : (
                       <div className="flex items-center gap-1.5">
                         <div

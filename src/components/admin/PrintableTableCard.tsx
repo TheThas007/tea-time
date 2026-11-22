@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Printer, X, Scan, List, UtensilsCrossed, Edit3 } from "lucide-react";
+import { Printer, X, Scan, List, UtensilsCrossed, Edit3, Download } from "lucide-react";
 import { TableItem } from "../../types";
 
 interface SingleProps {
@@ -14,6 +14,7 @@ interface SingleProps {
   cardBgColor?: string;
   cardTextColor?: string;
   logoUrl?: string | null;
+  qrLogoUrl?: string | null;
   qrHeaderTitle?: string;
   qrSubtitle?: string;
   qrFooterNote?: string;
@@ -121,6 +122,7 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
   cardBgColor = "#FFFFFF",
   cardTextColor = "#050F2A",
   logoUrl,
+  qrLogoUrl,
   qrHeaderTitle,
   qrSubtitle = "Scan to explore our menu",
   qrFooterNote = "Good food. One scan away.",
@@ -129,6 +131,42 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
 }) => {
   const origin = window.location.origin;
   const qrUrl = `${origin}/${businessSlug}/menu?table=${table.token}`;
+  const effectiveQrLogo = qrLogoUrl || logoUrl;
+
+  const [downloading, setDownloading] = useState<boolean>(false);
+
+  const handleDownloadQrPng = () => {
+    try {
+      setDownloading(true);
+      const svg = document.getElementById(`qr-svg-${table.id || table.token}`);
+      if (!svg) {
+        alert("QR element could not be found.");
+        return;
+      }
+      const svgData = new XMLSerializer().serializeToString(svg);
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      const img = new Image();
+      img.onload = () => {
+        canvas.width = 600;
+        canvas.height = 600;
+        if (ctx) {
+          ctx.fillStyle = bgCardColor || "#FFFFFF";
+          ctx.fillRect(0, 0, 600, 600);
+          ctx.drawImage(img, 40, 40, 520, 520);
+        }
+        const a = document.createElement("a");
+        a.download = `${businessSlug}_${tableBadge.replace(/\s+/g, "_")}_QR.png`;
+        a.href = canvas.toDataURL("image/png");
+        a.click();
+        setDownloading(false);
+      };
+      img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
+    } catch (e) {
+      console.error(e);
+      setDownloading(false);
+    }
+  };
 
   // Live editable state for quick customization right before printing
   const [headline, setHeadline] = useState<string>(
@@ -349,15 +387,18 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
           >
             {/* Top Brand Logo & Subtitle */}
             <div className="flex flex-col items-center space-y-1">
-              {logoUrl ? (
-                <img
-                  src={logoUrl}
-                  alt={businessName}
-                  style={{
-                    height: `${logoHeight}px`,
-                  }}
-                  className="w-auto max-w-[240px] object-contain drop-shadow-xs"
-                />
+              {effectiveQrLogo ? (
+                <div className="h-[95px] w-full flex items-center justify-center overflow-hidden">
+                  <img
+                    src={effectiveQrLogo}
+                    alt={businessName}
+                    style={{
+                      height: `${logoHeight}px`,
+                      maxHeight: "95px",
+                    }}
+                    className="w-auto max-w-[240px] object-contain drop-shadow-xs"
+                  />
+                </div>
               ) : (
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-xl bg-[#050F2A] text-white flex items-center justify-center font-black text-sm">
@@ -388,6 +429,7 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
               <QrCornerBrackets color={badgeColor} />
               <div className="p-1 rounded-lg" style={{ backgroundColor: bgCardColor }}>
                 <QRCodeSVG
+                  id={`qr-svg-${table.id || table.token}`}
                   value={qrUrl}
                   size={148}
                   level="H"
@@ -433,6 +475,15 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
 
           <div className="flex gap-2">
             <button
+              onClick={handleDownloadQrPng}
+              disabled={downloading}
+              className="bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold px-4 py-2.5 rounded-full flex items-center gap-1.5 border border-zinc-300 transition active:scale-95"
+              title="Download QR code PNG for printing"
+            >
+              <Download className="w-4 h-4 text-zinc-700" />
+              <span>{downloading ? "Saving..." : "Download QR"}</span>
+            </button>
+            <button
               onClick={handlePrint}
               className="bg-[#050F2A] hover:bg-[#0b1739] text-white font-bold px-5 py-2.5 rounded-full flex items-center gap-1.5 shadow-md transition active:scale-95"
             >
@@ -463,6 +514,7 @@ interface BatchProps {
   cardBgColor?: string;
   cardTextColor?: string;
   logoUrl?: string | null;
+  qrLogoUrl?: string | null;
   qrHeaderTitle?: string;
   qrSubtitle?: string;
   qrFooterNote?: string;
@@ -476,6 +528,7 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
   tables,
   primaryColor = "#050F2A",
   logoUrl,
+  qrLogoUrl,
   qrHeaderTitle,
   qrSubtitle = "Scan to explore our menu",
   qrFooterNote = "Good food. One scan away.",
@@ -483,6 +536,7 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
   onClose,
 }) => {
   const origin = window.location.origin;
+  const effectiveQrLogo = qrLogoUrl || logoUrl;
 
   // Live editable state
   const [headline, setHeadline] = useState<string>(
@@ -623,16 +677,18 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
               >
                 {/* Logo & Subtitle */}
                 <div className="flex flex-col items-center space-y-0.5">
-                  {logoUrl ? (
-                    <img
-                      src={logoUrl}
-                      alt={businessName}
-                      style={{
-                        height: `${Math.round(logoHeight * 0.9)}px`,
-                        maxHeight: `${Math.round(logoHeight * 0.9) + 10}px`,
-                      }}
-                      className="w-auto max-w-[170px] object-contain drop-shadow-xs"
-                    />
+                  {effectiveQrLogo ? (
+                    <div className="h-[75px] w-full flex items-center justify-center overflow-hidden">
+                      <img
+                        src={effectiveQrLogo}
+                        alt={businessName}
+                        style={{
+                          height: `${Math.round(logoHeight * 0.9)}px`,
+                          maxHeight: "75px",
+                        }}
+                        className="w-auto max-w-[170px] object-contain drop-shadow-xs"
+                      />
+                    </div>
                   ) : (
                     <div className="flex items-center gap-1.5">
                       <div className="w-6 h-6 rounded-lg bg-[#050F2A] text-white flex items-center justify-center font-black text-xs">

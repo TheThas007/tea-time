@@ -130,6 +130,7 @@ export interface BusinessPublicProfile {
   headerTextColor?: string; // Header text and icon hex
   branding?: {
     logoUrl?: string | null;
+    qrLogoUrl?: string | null;
     primaryColor?: string;
     accentColor?: string;
     backgroundColor?: string;
@@ -448,6 +449,7 @@ export interface CafeSettings {
   isOrderingPaused: boolean;
   pauseMessage: string;
   logoUrl?: string;
+  qrLogoUrl?: string | null;
   primaryColor?: string;
   accentColor?: string;
   backgroundColor?: string;
