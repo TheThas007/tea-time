@@ -551,8 +551,8 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
       console.warn("Super admin businesses fetch notice:", err);
     }
 
-    // Exclude demo-only Tea Time from Super Admin tenant list
-    businessList = businessList.filter((b) => b.id !== "teatime" && b.slug !== "teatime");
+    // Exclude legacy hardcoded demo id "teatime" if any, but do NOT filter out genuine registered businesses with slug teatime
+    businessList = businessList.filter((b) => b.id !== "teatime");
 
     const activeCount = businessList.filter((b) => b.effectiveStatus === "ACTIVE").length;
     const expiredCount = businessList.filter((b) => b.effectiveStatus === "EXPIRED").length;
