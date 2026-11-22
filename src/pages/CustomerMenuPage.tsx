@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useSearchParams, useParams, Link } from "react-router-dom";
-import { Search, AlertTriangle, Globe, Star, Wallet } from "lucide-react";
+import { Search, AlertTriangle, Globe, Star, Wallet, Clock } from "lucide-react";
 import { getCustomerRewardByPhone, CustomerRewardRecord } from "../lib/rewards";
 import {
   db,
@@ -62,8 +62,8 @@ export const CustomerMenuPage: React.FC<CustomerMenuPageProps> = ({ isExplicitDe
     customerOrderIds,
   } = useCart();
 
-  const [categories, setCategories] = useState<Category[]>(() => (isTeaTime ? INITIAL_CATEGORIES : []));
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(() => (isTeaTime ? INITIAL_MENU_ITEMS : []));
+  const [categories, setCategories] = useState<Category[]>(() => (isDemoMode ? INITIAL_CATEGORIES : []));
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(() => (isDemoMode ? INITIAL_MENU_ITEMS : []));
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const [showWalletCheck, setShowWalletCheck] = useState(false);
   const [walletPhone, setWalletPhone] = useState(() =>
@@ -94,18 +94,18 @@ export const CustomerMenuPage: React.FC<CustomerMenuPageProps> = ({ isExplicitDe
 
   // Reset or initialize menu and categories whenever the business slug changes
   useEffect(() => {
-    if (!isTeaTime) {
+    if (!isDemoMode) {
       setCategories([]);
       setMenuItems([]);
     } else {
       setCategories(INITIAL_CATEGORIES);
       setMenuItems(INITIAL_MENU_ITEMS);
     }
-  }, [businessSlug, isTeaTime]);
+  }, [businessSlug, isDemoMode]);
 
   // Real-time listener for cafe settings or multi-tenant business settings
   useEffect(() => {
-    if (isTeaTime) {
+    if (isDemoMode) {
       const unsub = onSnapshot(
         doc(db, "settings", "cafe"),
         (snap) => {
@@ -228,7 +228,7 @@ export const CustomerMenuPage: React.FC<CustomerMenuPageProps> = ({ isExplicitDe
           }
         }
 
-        if (!isTeaTime) {
+        if (!isDemoMode) {
           const bId = res.business?.id || businessSlug;
           let localCats: any[] = [];
           let localProds: any[] = [];
@@ -428,7 +428,7 @@ export const CustomerMenuPage: React.FC<CustomerMenuPageProps> = ({ isExplicitDe
 
   // Real-time listener for Menu Items
   useEffect(() => {
-    if (!isTeaTime) {
+    if (!isDemoMode) {
       let isSubActive = true;
       let innerUnsub: (() => void) | null = null;
 
@@ -518,7 +518,7 @@ export const CustomerMenuPage: React.FC<CustomerMenuPageProps> = ({ isExplicitDe
       };
     }
 
-    if (isTeaTime) {
+    if (isDemoMode) {
       const unsub = onSnapshot(
         collection(db, "menu"),
         (snap) => {
@@ -532,11 +532,11 @@ export const CustomerMenuPage: React.FC<CustomerMenuPageProps> = ({ isExplicitDe
       );
       return () => unsub();
     }
-  }, [isTeaTime, tenantBusiness?.id, businessSlug]);
+  }, [isDemoMode, tenantBusiness?.id, businessSlug]);
 
   // Real-time listener for Categories
   useEffect(() => {
-    if (!isTeaTime) {
+    if (!isDemoMode) {
       let isSubActive = true;
       let innerUnsub: (() => void) | null = null;
 
@@ -614,7 +614,7 @@ export const CustomerMenuPage: React.FC<CustomerMenuPageProps> = ({ isExplicitDe
       };
     }
 
-    if (isTeaTime) {
+    if (isDemoMode) {
       const unsub = onSnapshot(
         collection(db, "categories"),
         (snap) => {
@@ -628,7 +628,7 @@ export const CustomerMenuPage: React.FC<CustomerMenuPageProps> = ({ isExplicitDe
       );
       return () => unsub();
     }
-  }, [isTeaTime, tenantBusiness?.id, businessSlug]);
+  }, [isDemoMode, tenantBusiness?.id, businessSlug]);
 
   // Read locally saved settings for this business if present (instant fallback)
   const localSavedTheme = useMemo(() => {
@@ -1062,8 +1062,22 @@ export const CustomerMenuPage: React.FC<CustomerMenuPageProps> = ({ isExplicitDe
         <div className="bg-[#FFFCF6]/95 backdrop-blur-sm rounded-2xl border border-[#DFC9AC] p-4 md:p-5 shadow-warm flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex flex-col items-center gap-3 py-1 w-full">
 
-            {/* Uniform Grid Apple-style Social + Reward Wallet Cards */}
+            {/* Uniform Grid Apple-style Social + Reward Wallet + Active Order Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 w-full max-w-md">
+              {customerOrderIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTrackerOrderId(customerOrderIds[0])}
+                  style={{
+                    backgroundColor: isTeaTime ? "#E8B64F" : tenantTheme.primary,
+                    color: isTeaTime ? "#1A0F08" : "#FFFFFF",
+                  }}
+                  className="flex flex-col items-center justify-center gap-1 rounded-xl px-2.5 py-2 h-14 text-[11px] font-bold ring-2 ring-amber-400 shadow-md transition hover:opacity-95 active:scale-[0.97] animate-pulse"
+                >
+                  <Clock className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate max-w-full">Track Live Order</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setShowWalletCheck((s) => !s)}

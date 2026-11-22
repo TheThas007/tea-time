@@ -53,6 +53,8 @@ export const MemoryCameraModal: React.FC<MemoryCameraModalProps> = ({
         (businessId ? localStorage.getItem(`menyo_memory_logo_url_${businessId.replace(/^biz_/, "")}`) : null)
       : null) || logoUrl;
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const stopStream = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
@@ -64,23 +66,96 @@ export const MemoryCameraModal: React.FC<MemoryCameraModalProps> = ({
     stopStream();
     setCameraError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: mode,
-          width: { ideal: 1080 },
-          height: { ideal: 1350 },
-        },
-        audio: false,
-      });
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Camera API is not supported on this browser or connection. You can take or choose a photo below!");
+      }
+      // Try with preferred constraints first, fall back to basic video if mobile browser blocks resolution
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: mode,
+            width: { ideal: 1080 },
+            height: { ideal: 1350 },
+          },
+          audio: false,
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: mode },
+          audio: false,
+        });
+      }
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(() => {});
       }
     } catch (err: any) {
+      console.warn("Live camera start failed:", err);
       setCameraError(
-        err?.message || "Camera access denied. Please allow camera permissions to capture your memory."
+        "Camera permission is blocked by your browser settings. Please tap 'Allow' in your browser URL bar or use your device camera below."
       );
     }
+  };
+
+  const handleDeviceCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      if (typeof reader.result !== "string") return;
+      const rawImg = new Image();
+      rawImg.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 1080;
+        canvas.height = 1350;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        // Cover fill aspect ratio
+        const srcAspect = rawImg.width / rawImg.height;
+        const targetAspect = 1080 / 1350;
+        let sx = 0, sy = 0, sw = rawImg.width, sh = rawImg.height;
+        if (srcAspect > targetAspect) {
+          sw = rawImg.height * targetAspect;
+          sx = (rawImg.width - sw) / 2;
+        } else {
+          sh = rawImg.width / targetAspect;
+          sy = (rawImg.height - sh) / 2;
+        }
+        ctx.filter = activeFilter.css;
+        ctx.drawImage(rawImg, sx, sy, sw, sh, 0, 0, 1080, 1350);
+        ctx.filter = "none";
+
+        // Overlay Logo if exists
+        if (customOverlayLogo) {
+          const logoImg = new Image();
+          logoImg.crossOrigin = "anonymous";
+          logoImg.onload = () => {
+            const logoW = 160;
+            const logoH = (logoImg.height / logoImg.width) * logoW;
+            const pad = 48;
+            let lx = 1080 - logoW - pad;
+            let ly = 1350 - logoH - pad;
+            if (overlayPos === "top-left") { lx = pad; ly = pad; }
+            else if (overlayPos === "top-right") { lx = 1080 - logoW - pad; ly = pad; }
+            else if (overlayPos === "bottom-left") { lx = pad; ly = 1350 - logoH - pad; }
+            else if (overlayPos === "bottom-center") { lx = (1080 - logoW) / 2; ly = 1350 - logoH - pad; }
+            ctx.drawImage(logoImg, lx, ly, logoW, logoH);
+            setCapturedDataUrl(canvas.toDataURL("image/jpeg", 0.92));
+          };
+          logoImg.onerror = () => {
+            setCapturedDataUrl(canvas.toDataURL("image/jpeg", 0.92));
+          };
+          logoImg.src = customOverlayLogo;
+        } else {
+          setCapturedDataUrl(canvas.toDataURL("image/jpeg", 0.92));
+        }
+      };
+      rawImg.src = reader.result;
+    };
+    reader.readAsDataURL(file);
   };
 
   useEffect(() => {
@@ -253,19 +328,39 @@ export const MemoryCameraModal: React.FC<MemoryCameraModalProps> = ({
           </button>
         </div>
 
+        {/* Hidden Native Device Camera Input Fallback */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handleDeviceCameraCapture}
+          className="hidden"
+        />
+
         {/* 4:5 (1080 x 1350) Viewport */}
         <div className="relative w-full aspect-[4/5] bg-black overflow-hidden flex items-center justify-center">
           {cameraError ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center gap-3">
               <Camera className="w-10 h-10 text-white/40" />
-              <p className="text-xs text-white/70">{cameraError}</p>
-              <button
-                type="button"
-                onClick={() => startCamera(facingMode)}
-                className="px-4 py-2 rounded-full bg-white text-black text-xs font-semibold"
-              >
-                Try Again
-              </button>
+              <p className="text-xs text-white/70 max-w-[260px] leading-relaxed">{cameraError}</p>
+              <div className="flex flex-col gap-2 w-full max-w-[220px] pt-1">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full px-4 py-2.5 rounded-full bg-[#0071E3] hover:bg-[#0077ED] text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>Open Phone Camera</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => startCamera(facingMode)}
+                  className="w-full px-4 py-2 rounded-full bg-white/15 hover:bg-white/25 text-white text-xs font-semibold active:scale-95 transition"
+                >
+                  Try Live Camera Again
+                </button>
+              </div>
             </div>
           ) : capturedDataUrl ? (
             <div className="relative w-full h-full">

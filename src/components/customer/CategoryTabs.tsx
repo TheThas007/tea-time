@@ -75,7 +75,7 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
                     onError={() =>
                       setFailedImages((prev) => ({ ...prev, [cat.name]: true }))
                     }
-                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                    className={`w-full h-full ${isAllTab ? "object-contain p-1.5" : "object-cover"} transition-transform duration-300 group-hover:scale-110`}
                   />
                 ) : (
                   getFallbackCategoryIcon(cat.name, isActive)
