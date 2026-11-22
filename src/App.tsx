@@ -73,8 +73,8 @@ export const App: React.FC = () => {
               {/* Legacy Tea Time Backward Compatibility Routes */}
               <Route path="/menu" element={<CustomerMenuPage />} />
 
-              {/* Clean Shop-Name Root URL (e.g. menyo.org/examplecafe) */}
-              <Route path="/:businessSlug" element={<CustomerMenuPage />} />
+              {/* Clean Shop-Name Root URL -> Business Admin Panel (e.g. menyo.org/teatime) */}
+              <Route path="/:businessSlug" element={<BusinessDashboardPage />} />
 
               {/* Fallback */}
               <Route path="*" element={<Navigate to="/" replace />} />
