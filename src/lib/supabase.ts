@@ -80,7 +80,7 @@ function buildClaimsFromSupabaseUser(sbUser: SupabaseAuthUser): Record<string, a
   const emailLower = (sbUser.email || "").toLowerCase();
   const isAnon = Boolean((sbUser as any).is_anonymous);
   const isSuperAdmin =
-    !isAnon && (appMeta.role === "SUPER_ADMIN" || emailLower === "admin@aevonix.lk");
+    !isAnon && (appMeta.role === "SUPER_ADMIN" || emailLower === "admin@aevonix.lk" || emailLower === "thasmilan0@gmail.com");
   const isTeaTimeAdmin =
     !isAnon && (emailLower === "admin@teatime.lk" || appMeta.businessId === "teatime");
 

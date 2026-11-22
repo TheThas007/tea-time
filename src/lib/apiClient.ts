@@ -283,8 +283,10 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
 
     const isSuperAdmin =
       user?.email?.toLowerCase() === "admin@aevonix.lk" ||
+      user?.email?.toLowerCase() === "thasmilan0@gmail.com" ||
       storedRole === "SUPER_ADMIN" ||
-      storedEmail?.toLowerCase() === "admin@aevonix.lk";
+      storedEmail?.toLowerCase() === "admin@aevonix.lk" ||
+      storedEmail?.toLowerCase() === "thasmilan0@gmail.com";
 
     if (isSuperAdmin) {
       return {
@@ -2082,9 +2084,11 @@ export const platformApi = {
 
     const normalizedEmail = targetEmail.toLowerCase();
     const isSystemAccount =
-      normalizedEmail === "admin@aevonix.lk" || normalizedEmail === "admin@teatime.lk";
+      normalizedEmail === "admin@aevonix.lk" ||
+      normalizedEmail === "thasmilan0@gmail.com" ||
+      normalizedEmail === "admin@teatime.lk";
 
-    // Block Sign In if no account has been created yet
+    // Block Sign In if no account has been created yet (except for Super Admins)
     if (!isSystemAccount) {
       let hasRegisteredBusiness = false;
       try {
@@ -2095,6 +2099,16 @@ export const platformApi = {
         const sCheckBiz = await getDocs(qCheckBiz);
         if (!sCheckBiz.empty) {
           hasRegisteredBusiness = true;
+        } else {
+          // Check userProfiles
+          const qCheckProf = query(
+            collection(db, "userProfiles"),
+            where("email", "==", normalizedEmail)
+          );
+          const sCheckProf = await getDocs(qCheckProf);
+          if (!sCheckProf.empty) {
+            hasRegisteredBusiness = true;
+          }
         }
       } catch { }
 
@@ -2123,7 +2137,9 @@ export const platformApi = {
     }
     const emailLower = (cred.user.email || targetEmail).toLowerCase();
     const isSuperAdmin =
-      emailLower === "admin@aevonix.lk" || cred.user.appMetadata?.role === "SUPER_ADMIN";
+      emailLower === "admin@aevonix.lk" ||
+      emailLower === "thasmilan0@gmail.com" ||
+      cred.user.appMetadata?.role === "SUPER_ADMIN";
 
     let role: "SUPER_ADMIN" | "BUSINESS_OWNER" = isSuperAdmin ? "SUPER_ADMIN" : "BUSINESS_OWNER";
     let businessId: string | null = isSuperAdmin
