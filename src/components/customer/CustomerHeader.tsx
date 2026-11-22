@@ -39,15 +39,15 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
       className="sticky top-0 z-30 text-white shadow-md border-b border-white/10"
       style={{ backgroundColor: primaryColor }}
     >
-      <div className="max-w-md md:max-w-3xl lg:max-w-6xl xl:max-w-7xl mx-auto px-4 md:px-6 lg:px-8 py-2 md:py-2.5 flex items-center justify-between gap-2 h-16 md:h-20">
+      <div className="max-w-md md:max-w-3xl lg:max-w-6xl xl:max-w-7xl mx-auto px-4 md:px-6 lg:px-8 py-2 md:py-2.5 flex items-center justify-between gap-2 min-h-16 md:min-h-20">
         {/* Left: Brand Logo */}
         {logoUrl ? (
-          <div className="flex items-center h-full max-h-full py-0.5">
+          <div className="flex items-center py-0.5">
             <img
               src={logoUrl}
               alt={brandName || "Logo"}
-              style={parsedLogoH ? { height: parsedLogoH, maxHeight: "100%" } : undefined}
-              className={parsedLogoH ? "w-auto object-contain select-none max-h-full" : "h-12 sm:h-14 md:h-16 w-auto object-contain select-none max-h-full"}
+              style={parsedLogoH ? { height: parsedLogoH } : undefined}
+              className={parsedLogoH ? "w-auto object-contain select-none transition-all" : "h-12 sm:h-14 md:h-16 w-auto object-contain select-none transition-all"}
             />
           </div>
         ) : isDemo ? (
