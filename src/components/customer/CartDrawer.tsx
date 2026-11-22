@@ -210,8 +210,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
         console.warn("Falling back to direct Supabase order placement:", tenantErr);
 
-        let tenantBizId: string | null = null;
-        if (businessSlug && businessSlug !== "teatime") {
+        let tenantBizId: string | null = businessId || null;
+        if (!tenantBizId && businessSlug) {
           try {
             const slugDoc = await getDoc(doc(db, "businessSlugs", businessSlug.toLowerCase().trim()));
             if (slugDoc.exists()) {
