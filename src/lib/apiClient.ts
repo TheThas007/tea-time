@@ -1501,9 +1501,17 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
 
   // 8. Owner Archive Category
   if (action === "ownerArchiveCategory") {
-    let bId = data.businessId || (typeof window !== "undefined" ? localStorage.getItem("menyo_auth_businessId") : null) || "teatime";
+    let bId = data.businessId || (typeof window !== "undefined" ? localStorage.getItem("menyo_auth_businessId") : null) || "demo";
     const categoryId = data.categoryId;
     if (categoryId) {
+      if (typeof window !== "undefined") {
+        try {
+          const key = `menyo_categories_${bId}`;
+          const existing: any[] = JSON.parse(localStorage.getItem(key) || "[]");
+          const filtered = existing.filter((c) => c.id !== categoryId);
+          localStorage.setItem(key, JSON.stringify(filtered));
+        } catch {}
+      }
       try {
         await deleteDoc(doc(db, "businesses", bId, "categories", categoryId));
         if (bId === "teatime" || bId === "biz_teatime") {

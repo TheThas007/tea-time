@@ -2650,7 +2650,18 @@ export const BusinessDashboardPage: React.FC = () => {
           categories={categories}
           products={products}
           onClose={() => setArchivingCategory(null)}
-          onSuccess={() => setArchivingCategory(null)}
+          onSuccess={() => {
+            const catId = archivingCategory.id;
+            setCategories((prev) => prev.filter((c) => c.id !== catId));
+            if (business?.id && typeof window !== "undefined") {
+              try {
+                const key = `menyo_categories_${business.id}`;
+                const existing: any[] = JSON.parse(localStorage.getItem(key) || "[]");
+                localStorage.setItem(key, JSON.stringify(existing.filter((c) => c.id !== catId)));
+              } catch {}
+            }
+            setArchivingCategory(null);
+          }}
         />
       )}
 
