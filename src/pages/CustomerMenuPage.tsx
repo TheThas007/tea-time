@@ -31,13 +31,18 @@ import {
 } from "../lib/utils";
 import { platformApi } from "../lib/apiClient";
 
-export const CustomerMenuPage: React.FC = () => {
+interface CustomerMenuPageProps {
+  isExplicitDemoRoute?: boolean;
+}
+
+export const CustomerMenuPage: React.FC<CustomerMenuPageProps> = ({ isExplicitDemoRoute = false }) => {
   const { businessSlug: rawSlug } = useParams<{ businessSlug?: string }>();
-  const businessSlug = rawSlug ? rawSlug.toLowerCase().trim() : "teatime";
-  const isTeaTime = !rawSlug || businessSlug === "teatime" || businessSlug === "biz_teatime";
+  const isDemoUrl = isExplicitDemoRoute || rawSlug?.toLowerCase().trim() === "demo";
+  const businessSlug = isDemoUrl ? "teatime" : (rawSlug ? rawSlug.toLowerCase().trim() : "teatime");
+  const isTeaTime = isDemoUrl || !rawSlug || businessSlug === "teatime" || businessSlug === "biz_teatime";
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const isDemoMode = searchParams.get("demo") === "true";
+  const isDemoMode = isDemoUrl || searchParams.get("demo") === "true";
   const rawTableToken = searchParams.get("table") || localStorage.getItem("teatime_table_token") || "tbl_07_k8j3m";
 
   const [tenantBusiness, setTenantBusiness] = useState<any | null>(null);

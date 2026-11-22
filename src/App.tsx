@@ -1,9 +1,10 @@
-import React, { lazy, Suspense } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import React, { lazy, Suspense, useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { CartProvider } from "./context/CartContext";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { Loader2 } from "lucide-react";
+import { updatePageSeo } from "./shared/siteSeo";
 
 // Lazy load pages for fast initial page load and split bundles
 const LandingPage = lazy(() => import("./pages/LandingPage").then((m) => ({ default: m.LandingPage })));
@@ -19,10 +20,17 @@ const PageLoader = () => (
   </div>
 );
 
+const RouteSeo = () => {
+  const { pathname, search } = useLocation();
+  useEffect(() => updatePageSeo(pathname, search), [pathname, search]);
+  return null;
+};
+
 export const App: React.FC = () => {
   return (
     <ErrorBoundary fallbackTitle="Menyo Menu Encountered an Error">
       <BrowserRouter>
+        <RouteSeo />
         <AuthProvider>
           <CartProvider>
             <Suspense fallback={<PageLoader />}>
@@ -54,6 +62,10 @@ export const App: React.FC = () => {
                 <Route path="/privacy-policy" element={<LegalPoliciesPage initialSection="privacy" />} />
                 <Route path="/refund-policy" element={<LegalPoliciesPage initialSection="refund" />} />
                 <Route path="/return-policy" element={<LegalPoliciesPage initialSection="refund" />} />
+
+                {/* Dedicated Demo Routes */}
+                <Route path="/demo" element={<CustomerMenuPage isExplicitDemoRoute={true} />} />
+                <Route path="/demo/menu" element={<CustomerMenuPage isExplicitDemoRoute={true} />} />
 
                 {/* Dedicated Tea Time Customer Menu Route */}
                 <Route path="/teatime/menu" element={<CustomerMenuPage />} />

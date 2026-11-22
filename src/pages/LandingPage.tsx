@@ -174,7 +174,7 @@ export const LandingPage: React.FC = () => {
               Pricing
             </a>
             <Link
-              to="/teatime/menu?table=tbl_07_k8j3m&demo=true"
+              to="/demo"
               target="_blank"
               rel="noopener noreferrer"
               className="text-[#050F2A] font-bold hover:text-[#7BBBFF] transition-colors flex items-center gap-1.5"
@@ -235,11 +235,11 @@ export const LandingPage: React.FC = () => {
               Pricing
             </a>
             <Link
-              to="/teatime/menu?table=tbl_07_k8j3m&demo=true"
+              to="/demo"
               onClick={() => setMobileMenuOpen(false)}
               className="block px-3 py-2 text-xs font-bold text-[#050F2A] hover:bg-[#F2FDFF] rounded-xl"
             >
-              Live Demo (Tea Time)
+              Live Demo
             </Link>
             <div className="pt-2 border-t border-[#050F2A]/10 flex items-center justify-between">
               <Link
@@ -277,7 +277,7 @@ export const LandingPage: React.FC = () => {
                 height={485}
                 className="w-full h-auto object-contain select-none pointer-events-none drop-shadow-sm"
                 loading="eager"
-                fetchPriority="high"
+                {...{ fetchpriority: "high" }}
               />
             </div>
 
@@ -300,7 +300,7 @@ export const LandingPage: React.FC = () => {
 
               {/* Central QR Code Card */}
               <Link
-                to="/teatime/menu?table=tbl_07_k8j3m&demo=true"
+                to="/demo"
                 target="_blank"
                 rel="noopener noreferrer"
                 title="Click to open Live Demo"
@@ -325,7 +325,7 @@ export const LandingPage: React.FC = () => {
             <div className="flex lg:hidden items-center justify-center gap-3 my-1 select-none">
               <div className="h-px w-10 bg-[#7BBBFF]/50 border-t border-dashed border-[#7BBBFF]" />
               <Link
-                to="/teatime/menu?table=tbl_07_k8j3m&demo=true"
+                to="/demo"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="bg-white border border-[#050F2A]/10 hover:border-[#7BBBFF] rounded-2xl px-3 py-1.5 shadow-sm flex items-center gap-2"
@@ -367,12 +367,12 @@ export const LandingPage: React.FC = () => {
         {/* Centered Headline, Subtitle and Pill Actions (Below Demonstration) */}
         <div className="text-center max-w-3xl mx-auto space-y-4">
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-[#050F2A] tracking-tight leading-[1.08]">
-            Your menu. Every table.<br />
-            One scan.
+            QR Menus &amp; Restaurant POS <br />
+            in Sri Lanka
           </h1>
 
           <p className="text-base sm:text-lg text-[#050F2A]/70 max-w-xl mx-auto font-medium">
-            A beautiful digital menu for your café or restaurant.
+            Let guests scan a table QR code to browse and order. Manage your digital menu, live kitchen orders, and cashier billing with Menyo.
           </p>
 
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -384,7 +384,7 @@ export const LandingPage: React.FC = () => {
             </Link>
 
             <Link
-              to="/teatime/menu?table=tbl_07_k8j3m&demo=true"
+              to="/demo"
               target="_blank"
               rel="noopener noreferrer"
               className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-white hover:bg-[#F2FDFF] border border-[#050F2A]/30 text-[#050F2A] text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
@@ -403,7 +403,7 @@ export const LandingPage: React.FC = () => {
       <section id="features" className="py-20 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto w-full border-t border-[#050F2A]/10">
         <div className="text-center max-w-2xl mx-auto mb-14">
           <h2 className="text-3xl sm:text-4xl font-black text-[#050F2A] tracking-tight">
-            Everything your café needs.
+            Digital menu, table ordering &amp; POS features
           </h2>
           <p className="text-sm text-[#050F2A]/70 mt-2">
             Engineered for fast table service, zero app downloads, and complete menu control.
@@ -793,7 +793,7 @@ export const LandingPage: React.FC = () => {
       <section id="pricing" className="py-20 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto w-full border-t border-[#050F2A]/10">
         <div className="text-center max-w-2xl mx-auto mb-14">
           <h2 className="text-3xl sm:text-4xl font-black text-[#050F2A] tracking-tight">
-            Simple plans. Same powerful features.
+            QR menu &amp; restaurant POS pricing
           </h2>
           <p className="text-sm text-[#050F2A]/70 mt-2">
             Transparent pricing in Sri Lankan Rupees. All plans include the full platform suite.
@@ -874,6 +874,30 @@ export const LandingPage: React.FC = () => {
         </div>
       </section>
 
+      <section id="faq" className="py-16 px-4 sm:px-6 lg:px-8 max-w-3xl mx-auto w-full border-t border-[#050F2A]/10">
+        <h2 className="text-3xl sm:text-4xl font-black text-center tracking-tight">Frequently asked questions</h2>
+        <div className="mt-8 space-y-3">
+          <details className="rounded-2xl border border-[#050F2A]/10 bg-white p-5">
+            <summary className="cursor-pointer text-sm font-bold">How does QR table ordering work?</summary>
+            <p className="mt-3 text-sm text-[#050F2A]/70">
+              Each table gets its own QR code. Guests scan it with their phone camera, open the menu in their browser, and send their order to your kitchen. Guests can order without downloading an app.
+            </p>
+          </details>
+          <details className="rounded-2xl border border-[#050F2A]/10 bg-white p-5">
+            <summary className="cursor-pointer text-sm font-bold">Can I change prices without printing new QR codes?</summary>
+            <p className="mt-3 text-sm text-[#050F2A]/70">
+              Yes. Change prices, add items, or mark items as sold out in the Menyo dashboard. Guests see the updated menu when they scan the same code.
+            </p>
+          </details>
+          <details className="rounded-2xl border border-[#050F2A]/10 bg-white p-5">
+            <summary className="cursor-pointer text-sm font-bold">Is cashier billing included with the digital menu?</summary>
+            <p className="mt-3 text-sm text-[#050F2A]/70">
+              Yes. The plans above include the restaurant POS, thermal bill printing, and live order management. Pricing is listed in Sri Lankan rupees for one branch.
+            </p>
+          </details>
+        </div>
+      </section>
+
       {/* 6. FINAL SPACIOUS CTA SECTION */}
       <section className="py-20 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto w-full text-center border-t border-[#050F2A]/10">
         <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-[#050F2A] tracking-tight">
@@ -893,12 +917,12 @@ export const LandingPage: React.FC = () => {
             Get Started with Menyo
           </a>
           <Link
-            to="/teatime/menu?table=tbl_07_k8j3m&demo=true"
+            to="/demo"
             target="_blank"
             rel="noopener noreferrer"
             className="px-8 py-3.5 rounded-full bg-white hover:bg-[#F2FDFF] border border-[#050F2A]/20 text-[#050F2A] text-sm font-bold transition-all shadow-sm active:scale-95"
           >
-            Explore Tea Time Live Menu
+            Explore Live Demo Menu
           </Link>
         </div>
       </section>
