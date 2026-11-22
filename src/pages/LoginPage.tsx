@@ -124,7 +124,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
       } else {
         if (res.role === "SUPER_ADMIN") {
           localStorage.setItem("menyo_auth_role", "SUPER_ADMIN");
-          localStorage.setItem("menyo_auth_email", "admin@aevonix.lk");
+          localStorage.setItem("menyo_auth_email", identifier.trim() || "admin@aevonix.lk");
           navigate("/super-admin");
         } else {
           localStorage.setItem("menyo_auth_role", "BUSINESS_OWNER");
