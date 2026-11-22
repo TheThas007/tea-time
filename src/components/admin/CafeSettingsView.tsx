@@ -2246,15 +2246,16 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
                   {/* Top Brand Logo */}
                   <div className="flex flex-col items-center justify-center w-full shrink-0 pt-1">
                     {(settings.qrLogoUrl || settings.logoUrl) ? (
-                      <div className="h-[95px] w-full flex items-center justify-center overflow-hidden">
+                      <div className="h-[100px] w-full flex items-center justify-center overflow-hidden">
                         <img
                           src={settings.qrLogoUrl || settings.logoUrl}
                           alt={settings.cafeName || "Logo"}
                           style={{
-                            height: `${Math.min(getQrLogoHeight(settings.qrLogoSize), 95)}px`,
-                            maxHeight: "95px",
+                            height: "64px",
+                            transform: `scale(${Math.min(Math.max(getQrLogoHeight(settings.qrLogoSize) / 70, 0.7), 3.4)})`,
+                            transformOrigin: "center center",
                           }}
-                          className="max-w-[210px] w-auto object-contain transition-all"
+                          className="w-auto object-contain transition-transform duration-200"
                         />
                       </div>
                     ) : (

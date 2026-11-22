@@ -421,15 +421,17 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
             }}
           >
             {/* Prominent Brand Logo */}
-            <div className="pt-1 pb-1 flex flex-col items-center justify-center">
+            <div className="h-[105px] w-full flex flex-col items-center justify-center overflow-hidden">
               {effectiveQrLogo ? (
                 <img
                   src={effectiveQrLogo}
                   alt={businessName}
                   style={{
-                    height: `${curLogoHeight}px`,
+                    height: "64px",
+                    transform: `scale(${Math.min(Math.max(curLogoHeight / 70, 0.7), 3.4)})`,
+                    transformOrigin: "center center",
                   }}
-                  className="max-w-[240px] w-auto object-contain select-none drop-shadow-md transition-all"
+                  className="w-auto object-contain select-none drop-shadow-md transition-transform duration-200"
                 />
               ) : (
                 <div
@@ -748,9 +750,11 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
                       src={effectiveQrLogo}
                       alt={businessName}
                       style={{
-                        height: `${Math.round(curLogoHeight * 0.85)}px`,
+                        height: "56px",
+                        transform: `scale(${Math.min(Math.max(curLogoHeight / 70, 0.7), 3.4)})`,
+                        transformOrigin: "center center",
                       }}
-                      className="max-w-[190px] w-auto object-contain select-none drop-shadow"
+                      className="w-auto object-contain select-none drop-shadow transition-transform duration-200"
                     />
                   ) : (
                     <div
