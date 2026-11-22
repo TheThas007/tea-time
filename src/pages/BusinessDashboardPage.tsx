@@ -1217,7 +1217,8 @@ export const BusinessDashboardPage: React.FC = () => {
           <div className="p-3 bg-white/5 rounded-xl border border-white/10 text-[11px] text-white/70">
             <p className="font-bold text-white truncate">{business?.name || "Restaurant"} Kitchen</p>
             <p className="text-[10px] text-white/50 mt-0.5">Real-time Order System</p>
-            {(business?.isTrial || business?.subscription?.packageId === "2_days_trial") && (
+            {!Boolean(business?.packageId && !["2_days_trial", "free_trial", "trial", "free"].includes(String(business.packageId).toLowerCase())) &&
+              (business?.isTrial || business?.subscription?.packageId === "2_days_trial") && (
               <span className="mt-1.5 inline-block text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
                 Trial: {daysRemaining ?? 0}d left
               </span>
@@ -1343,7 +1344,18 @@ export const BusinessDashboardPage: React.FC = () => {
                     Current Subscription
                   </span>
                   <h3 className="text-2xl font-black text-[#050F2A]">
-                    {business?.packageName || (business?.isTrial ? "2-Day Free Trial" : business?.packageId || "Free Trial")}
+                    {(() => {
+                      const pkgId = String(business?.packageId || business?.subscription?.packageId || "").toLowerCase();
+                      if (pkgId === "lifetime") return "Lifetime Pro Plan";
+                      if (pkgId === "yearly" || pkgId === "annual") return "Yearly Pro Plan";
+                      if (pkgId === "monthly" || pkgId === "pro") return "Monthly Pro Plan";
+                      if (pkgId && !["2_days_trial", "free_trial", "trial", "free"].includes(pkgId)) {
+                        return business?.packageName && !business.packageName.toLowerCase().includes("trial")
+                          ? business.packageName
+                          : pkgId.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+                      }
+                      return business?.packageName || (business?.isTrial ? "2-Day Free Trial" : "Free Trial");
+                    })()}
                   </h3>
                   <p className="text-xs text-[#64748B]">
                     Status:{" "}
@@ -2531,6 +2543,7 @@ export const BusinessDashboardPage: React.FC = () => {
                     <thead className="bg-[#F2FDFF] text-[#050F2A]/70 border-b border-[#050F2A]/10 uppercase tracking-wider text-[10px] font-bold">
                       <tr>
                         <th className="px-5 py-3.5">Customer Name</th>
+                        <th className="px-5 py-3.5">Birthday</th>
                         <th className="px-5 py-3.5">Mobile Number</th>
                         <th className="px-5 py-3.5">Total Orders</th>
                         <th className="px-5 py-3.5">Claimed Orders</th>
@@ -2557,6 +2570,7 @@ export const BusinessDashboardPage: React.FC = () => {
                           .map((c) => (
                           <tr key={c.phone} className="hover:bg-[#F2FDFF]/50 transition-colors">
                             <td className="px-5 py-3.5 font-bold text-[#050F2A]">{c.name}</td>
+                            <td className="px-5 py-3.5 text-[#050F2A]/75 text-[11px] font-medium">{c.birthday || "—"}</td>
                             <td className="px-5 py-3.5 font-mono text-[11px] text-[#050F2A]/80">{c.phone}</td>
                             <td className="px-5 py-3.5 font-semibold">{c.totalOrders || 1}</td>
                             <td className="px-5 py-3.5 font-semibold">

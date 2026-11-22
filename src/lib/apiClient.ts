@@ -1875,6 +1875,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
     const record = {
       phone,
       name: String(data?.name || existing?.name || "Guest").trim(),
+      birthday: String(data?.birthday || existing?.birthday || "").trim() || undefined,
       points: currentPoints,
       totalSpentRupees: (existing?.totalSpentRupees || 0) + netSpent,
       totalOrders: (existing?.totalOrders || 0) + 1,
@@ -2048,6 +2049,7 @@ export const platformApi = {
     businessSlug?: string;
     phone: string;
     name: string;
+    birthday?: string;
     orderAmountRupees: number;
     pointsRedeemed?: number;
     rupeePerPoint?: number;

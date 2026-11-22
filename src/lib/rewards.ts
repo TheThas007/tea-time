@@ -4,6 +4,7 @@ import { platformApi } from "./apiClient";
 export interface CustomerRewardRecord {
   phone: string;
   name: string;
+  birthday?: string;
   points: number;
   totalSpentRupees: number;
   totalOrders: number;
@@ -138,6 +139,7 @@ export async function saveCustomerRewardPoints(params: {
   businessId: string | null | undefined;
   phone: string;
   name: string;
+  birthday?: string;
   orderAmountRupees: number;
   pointsRedeemed?: number;
   rupeePerPoint?: number;
@@ -155,6 +157,7 @@ export async function saveCustomerRewardPoints(params: {
       businessId: canonicalBizId,
       phone: phoneDigits,
       name: params.name,
+      birthday: params.birthday,
       orderAmountRupees: params.orderAmountRupees,
       pointsRedeemed: params.pointsRedeemed,
       rupeePerPoint: params.rupeePerPoint,
@@ -201,6 +204,7 @@ export async function saveCustomerRewardPoints(params: {
   const record: CustomerRewardRecord = {
     phone: phoneDigits,
     name: params.name.trim() || existing?.name || "Guest",
+    birthday: params.birthday?.trim() || existing?.birthday || undefined,
     points: currentPoints,
     totalSpentRupees: (existing?.totalSpentRupees || 0) + netSpent,
     totalOrders: (existing?.totalOrders || 0) + 1,

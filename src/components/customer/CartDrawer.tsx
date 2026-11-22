@@ -270,7 +270,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             await saveCustomerRewardPoints({
               businessId: businessId || businessSlug,
               phone: rewardPhone.trim(),
-              name: rewardRecord?.name || "Guest",
+              name: customerName.trim() || rewardRecord?.name || "Guest",
+              birthday: customerDob.trim() || undefined,
               orderAmountRupees: totalRupees,
               pointsRedeemed: pointsToRedeem,
               rupeePerPoint,
