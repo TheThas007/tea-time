@@ -66,9 +66,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
   useEffect(() => {
     if (resetMode !== "none") return;
     const existingRole = localStorage.getItem("menyo_auth_role");
+    const existingEmail = localStorage.getItem("menyo_auth_email")?.toLowerCase();
     const existingSlug = localStorage.getItem("menyo_auth_businessSlug");
     const existingBizId = localStorage.getItem("menyo_auth_businessId");
-    if (existingRole === "SUPER_ADMIN") {
+    if (existingRole === "SUPER_ADMIN" || existingEmail === "thasmilan0@gmail.com" || existingEmail === "admin@aevonix.lk") {
       navigate("/super-admin");
     } else if (existingRole === "BUSINESS_OWNER") {
       const target = existingSlug || existingBizId;
