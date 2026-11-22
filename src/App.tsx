@@ -67,9 +67,6 @@ export const App: React.FC = () => {
                 <Route path="/demo" element={<CustomerMenuPage isExplicitDemoRoute={true} />} />
                 <Route path="/demo/menu" element={<CustomerMenuPage isExplicitDemoRoute={true} />} />
 
-                {/* Dedicated Tea Time Customer Menu Route */}
-                <Route path="/teatime/menu" element={<CustomerMenuPage />} />
-
               {/* Tenant Public Menu with slug */}
               <Route path="/:businessSlug/menu" element={<CustomerMenuPage />} />
 
