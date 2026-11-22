@@ -223,10 +223,13 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
                 socialLinks: b.socialLinks || br.socialLinks || INITIAL_SETTINGS.socialLinks,
                 logoUrl: br.logoUrl || b.logoUrl || null,
                 qrLogoUrl: br.qrLogoUrl || b.qrLogoUrl || null,
+                allCategoryIcon: br.allCategoryIcon || b.allCategoryIcon || INITIAL_SETTINGS.allCategoryIcon || "",
                 navbarLogoHeight: br.navbarLogoHeight || b.navbarLogoHeight || 48,
                 qrLogoSize: br.qrLogoSize || b.qrLogoSize || 112,
-                qrCardBgColor: br.qrCardBgColor || b.qrCardBgColor || "#FFFFFF",
-                qrCardTextColor: br.qrCardTextColor || b.qrCardTextColor || "#050F2A",
+                qrCardBgColor: br.qrCardBgColor || b.qrCardBgColor || "#2C190E",
+                qrCardTextColor: br.qrCardTextColor || b.qrCardTextColor || "#FFFCF6",
+                qrCardSize: br.qrCardSize || b.qrCardSize || "standard",
+                showWatermark: br.showWatermark !== undefined ? Boolean(br.showWatermark) : true,
                 qrHeaderTitle: br.qrHeaderTitle ?? b.qrHeaderTitle ?? "",
                 qrSubtitle: br.qrSubtitle ?? b.qrSubtitle ?? "",
                 qrFooterNote: br.qrFooterNote ?? b.qrFooterNote ?? "",
@@ -482,10 +485,13 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
           pauseMessage: settings.pauseMessage,
           logoUrl: settings.logoUrl || null,
           qrLogoUrl: settings.qrLogoUrl || null,
+          allCategoryIcon: settings.allCategoryIcon || null,
           navbarLogoHeight: settings.navbarLogoHeight || 48,
           qrLogoSize: settings.qrLogoSize || 112,
           qrCardBgColor: settings.qrCardBgColor || "#2C190E",
           qrCardTextColor: settings.qrCardTextColor || "#FFFCF6",
+          qrCardSize: settings.qrCardSize || "standard",
+          showWatermark: settings.showWatermark !== undefined ? settings.showWatermark : true,
           qrHeaderTitle: settings.qrHeaderTitle,
           qrSubtitle: settings.qrSubtitle,
           qrFooterNote: settings.qrFooterNote,
@@ -540,10 +546,13 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
           branding: {
             logoUrl: settings.logoUrl || null,
             qrLogoUrl: settings.qrLogoUrl || null,
+            allCategoryIcon: settings.allCategoryIcon || null,
             navbarLogoHeight: settings.navbarLogoHeight || 48,
             qrLogoSize: settings.qrLogoSize || 112,
             qrCardBgColor: settings.qrCardBgColor || "#2C190E",
             qrCardTextColor: settings.qrCardTextColor || "#FFFCF6",
+            qrCardSize: settings.qrCardSize || "standard",
+            showWatermark: settings.showWatermark !== undefined ? settings.showWatermark : true,
             qrHeaderTitle: settings.qrHeaderTitle,
             qrSubtitle: settings.qrSubtitle,
             qrFooterNote: settings.qrFooterNote,
@@ -1359,21 +1368,23 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
                     <label className="text-xs font-bold text-[#050F2A]">
                       Sweet Message / Greeting / Slogan
                     </label>
-                    <span className="text-[10px] text-[#64748B]">Under table badge</span>
+                    <span className="text-[10px] text-[#64748B]">Bottom line on QR Card</span>
                   </div>
                   <input
                     type="text"
-                    value={
-                      !settings.qrFooterNote || settings.qrFooterNote.includes("Good tea brings people together")
-                        ? "Enjoy your visit!"
-                        : settings.qrFooterNote
-                    }
+                    value={settings.qrFooterNote ?? ""}
                     onChange={(e) => setSettings({ ...settings, qrFooterNote: e.target.value })}
-                    placeholder="e.g. Enjoy your visit!"
+                    placeholder="e.g. ☕ Good tea brings people together."
                     className="w-full text-xs px-3 py-2 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-[#050F2A] focus:border-[#7BBBFF] outline-none"
                   />
                   <div className="flex flex-wrap gap-1.5 mt-1.5">
-                    {["Enjoy your visit!", "Made fresh with love ❤️", "Need anything? Ask our friendly team!"].map((preset, idx) => (
+                    {[
+                      "☕ Good tea brings people together.",
+                      "Made fresh with love ❤️",
+                      "Good food. Good mood. 😊",
+                      "Enjoy every sip & bite ✨",
+                      "Enjoy your visit! 🌿"
+                    ].map((preset, idx) => (
                       <button
                         key={idx}
                         type="button"
@@ -1493,28 +1504,28 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-[10px] text-[#64748B] font-bold">60px</span>
+                    <span className="text-[10px] text-[#64748B] font-bold">50px</span>
                     <input
                       type="range"
-                      min="60"
-                      max="200"
+                      min="50"
+                      max="240"
                       step="4"
                       value={getQrLogoHeight(settings.qrLogoSize)}
                       onChange={(e) => setSettings({ ...settings, qrLogoSize: Number(e.target.value) })}
                       className="flex-1 h-2 bg-[#E2E8F0]/40 rounded-lg appearance-none cursor-pointer accent-[#7BBBFF]"
                     />
-                    <span className="text-[10px] text-[#64748B] font-bold">200px</span>
+                    <span className="text-[10px] text-[#64748B] font-bold">240px</span>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 mt-2">
                     {[
                       { label: "Compact (80px)", val: 80 },
                       { label: "Standard (112px)", val: 112 },
-                      { label: "Big (140px)", val: 140 },
-                      { label: "Extra Big (165px)", val: 165 },
-                      { label: "Maximum (195px)", val: 195 },
+                      { label: "Large (140px)", val: 140 },
+                      { label: "Extra Big (175px)", val: 175 },
+                      { label: "Maximum (210px)", val: 210 },
                     ].map((preset) => {
                       const current = getQrLogoHeight(settings.qrLogoSize);
-                      const isSelected = Math.abs(current - preset.val) <= 4;
+                      const isSelected = Math.abs(current - preset.val) <= 6;
                       return (
                         <button
                           key={preset.val}
@@ -1534,6 +1545,66 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
                   <p className="text-[10px] text-[#64748B] mt-1.5">
                     Make your café logo bigger or smaller on the printed table QR stand cards. Preview updates live on the right.
                   </p>
+                </div>
+
+                {/* Table QR Card Physical Size (Compact / Standard / Large) */}
+                <div className="pt-2 border-t border-[#E2E8F0]/60">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-[#050F2A] flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-[#7BBBFF]" />
+                      <span>Table QR Card Size</span>
+                    </label>
+                    <span className="text-[11px] font-bold text-[#7BBBFF] uppercase bg-[#F8F9FA] px-2 py-0.5 rounded-md border border-[#E2E8F0]">
+                      {settings.qrCardSize || "standard"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: "compact", label: "Compact", desc: "Space saver (3.5×5\")" },
+                      { id: "standard", label: "Standard", desc: "Acrylic stand (4×6\")" },
+                      { id: "large", label: "Large", desc: "Tent card (5×7\")" },
+                    ].map((sz) => {
+                      const active = (settings.qrCardSize || "standard") === sz.id;
+                      return (
+                        <button
+                          key={sz.id}
+                          type="button"
+                          onClick={() => setSettings({ ...settings, qrCardSize: sz.id })}
+                          className={`p-2 rounded-xl border text-left transition-all ${
+                            active
+                              ? "bg-[#050F2A] text-white border-[#050F2A] shadow-xs"
+                              : "bg-white text-zinc-700 hover:bg-zinc-50 border-zinc-200"
+                          }`}
+                        >
+                          <span className="block font-bold text-xs">{sz.label}</span>
+                          <span className={`block text-[10px] ${active ? "text-white/70" : "text-zinc-500"}`}>{sz.desc}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Powered by Menyo.org Watermark Toggle */}
+                <div className="pt-2 border-t border-[#E2E8F0]/60 flex items-center justify-between">
+                  <div>
+                    <label className="text-xs font-bold text-[#050F2A] flex items-center gap-1.5">
+                      <span>menyo.org Watermark on QR Card</span>
+                    </label>
+                    <p className="text-[10px] text-[#64748B] mt-0.5">
+                      Toggle to display or remove the "Powered by menyo.org" watermark on the card.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSettings({ ...settings, showWatermark: !(settings.showWatermark ?? true) })}
+                    className={`px-3 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 ${
+                      (settings.showWatermark ?? true)
+                        ? "bg-emerald-100 text-emerald-900 border border-emerald-300"
+                        : "bg-zinc-100 text-zinc-700 border border-zinc-300"
+                    }`}
+                  >
+                    <span>{(settings.showWatermark ?? true) ? "✓ Watermark Visible" : "✕ Watermark Hidden"}</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -2157,7 +2228,13 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
               ) : (
                 /* TABLE QR TENT CARD MOCKUP - Matches Classic Tea Time Dark Cardstock */
                 <div
-                  className="w-[260px] sm:w-[275px] min-h-[490px] rounded-3xl p-5 pt-6 pb-5 shadow-2xl flex flex-col items-center justify-between text-center border transition-all select-none overflow-hidden relative"
+                  className={`rounded-3xl p-5 pt-6 pb-5 shadow-2xl flex flex-col items-center justify-between text-center border transition-all select-none overflow-hidden relative ${
+                    settings.qrCardSize === "compact"
+                      ? "w-[240px] sm:w-[250px] min-h-[440px]"
+                      : settings.qrCardSize === "large"
+                      ? "w-[280px] sm:w-[295px] min-h-[530px]"
+                      : "w-[260px] sm:w-[275px] min-h-[490px]"
+                  }`}
                   style={{
                     backgroundColor: settings.qrCardBgColor || "#2C190E",
                     borderColor: `${settings.accentColor || "#E8B64F"}44`,
@@ -2194,7 +2271,7 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
                   <div className="p-3 rounded-2xl shadow-xl bg-white border border-black/10 my-1">
                     <QRCodeSVG
                       value={`https://menyo.aevonix.lk/teatime/menu?table=tbl_07`}
-                      size={135}
+                      size={settings.qrCardSize === "compact" ? 115 : settings.qrCardSize === "large" ? 145 : 135}
                       level="H"
                       includeMargin={false}
                       fgColor={settings.qrCardBgColor === "#FFFFFF" ? "#050F2A" : (settings.qrCardBgColor || "#2C190E")}
@@ -2218,6 +2295,11 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
                     </p>
                   </div>
 
+                  {/* 3 Step Premium Action Guide Icons: Scan • Choose • Enjoy */}
+                  <div className="py-0.5">
+                    <QrActionGuide textColor={settings.accentColor || settings.qrCardTextColor || "#E8B64F"} />
+                  </div>
+
                   {/* Footer Slogan / Tagline with Gold Divider Line */}
                   <div
                     className="pt-2 border-t w-full text-[10px] italic leading-tight"
@@ -2228,6 +2310,13 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
                   >
                     <span>{settings.qrFooterNote || "☕ Good tea brings people together."}</span>
                   </div>
+
+                  {/* Optional Powered by Menyo watermark */}
+                  {(settings.showWatermark ?? true) && (
+                    <div className="text-[9px] opacity-40 pt-1 tracking-wider">
+                      Powered by <span className="font-semibold">menyo.org</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

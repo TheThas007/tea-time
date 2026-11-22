@@ -293,16 +293,20 @@ export const TableManager: React.FC = () => {
           table={previewTable}
           businessSlug="teatime"
           businessName={settings.cafeName || "Tea Time"}
-          primaryColor={settings.primaryColor || "#050F2A"}
-          accentColor={settings.accentColor || "#050F2A"}
-          headerBackgroundColor={settings.headerBackgroundColor || "#050F2A"}
-          headerTextColor={settings.headerTextColor || "#FFFFFF"}
+          primaryColor={settings.primaryColor || "#2C190E"}
+          accentColor={settings.accentColor || "#E8B64F"}
+          headerBackgroundColor={settings.headerBackgroundColor || "#2C190E"}
+          headerTextColor={settings.headerTextColor || "#FFFCF6"}
+          cardBgColor={settings.qrCardBgColor || "#2C190E"}
+          cardTextColor={settings.qrCardTextColor || "#FFFCF6"}
+          cardSize={settings.qrCardSize || "standard"}
+          showWatermark={settings.showWatermark !== undefined ? settings.showWatermark : true}
           logoUrl={settings.logoUrl || null}
           qrLogoUrl={settings.qrLogoUrl || null}
           qrHeaderTitle={settings.qrHeaderTitle ?? ""}
-          qrSubtitle={settings.qrSubtitle || "Scan to explore our menu"}
-          qrFooterNote={settings.qrFooterNote || "Good food. One scan away."}
-          qrLogoSize={settings.qrLogoSize || 60}
+          qrSubtitle={settings.qrSubtitle || "SCAN TO ORDER"}
+          qrFooterNote={settings.qrFooterNote || "☕ Good tea brings people together."}
+          qrLogoSize={settings.qrLogoSize || 130}
           onClose={() => setPreviewTable(null)}
         />
       )}

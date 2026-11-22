@@ -38,8 +38,8 @@ interface CustomerMenuPageProps {
 export const CustomerMenuPage: React.FC<CustomerMenuPageProps> = ({ isExplicitDemoRoute = false }) => {
   const { businessSlug: rawSlug } = useParams<{ businessSlug?: string }>();
   const isDemoUrl = isExplicitDemoRoute || rawSlug?.toLowerCase().trim() === "demo";
-  const businessSlug = isDemoUrl ? "demo" : (rawSlug ? rawSlug.toLowerCase().trim() : "demo");
-  const isTeaTime = false;
+  const businessSlug = isDemoUrl ? "demo" : (rawSlug ? rawSlug.toLowerCase().trim() : "teatime");
+  const isTeaTime = businessSlug === "teatime";
 
   const [searchParams, setSearchParams] = useSearchParams();
   const isDemoMode = isDemoUrl || searchParams.get("demo") === "true";

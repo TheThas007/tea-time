@@ -498,6 +498,33 @@ export const BusinessDashboardPage: React.FC = () => {
       (snap) => {
         const list: Order[] = [];
         snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() } as Order));
+        // Also fetch from root orders if teatime has legacy orders
+        if (bId === "biz_teatime_nfue" || bId === "teatime") {
+          try {
+            getDocs(query(collection(db, "orders"), orderBy("createdAt", "desc"))).then((rootSnap) => {
+              if (rootSnap && !rootSnap.empty) {
+                const combinedMap = new Map<string, Order>();
+                list.forEach((o) => combinedMap.set(o.id, o));
+                rootSnap.docs.forEach((d) => {
+                  const ord = { id: d.id, ...d.data() } as Order;
+                  combinedMap.set(d.id, ord);
+                });
+                const combined = Array.from(combinedMap.values());
+                combined.sort((a, b) => {
+                  const tA = new Date(a.createdAt || 0).getTime() || (a as any).createdAtMs || 0;
+                  const tB = new Date(b.createdAt || 0).getTime() || (b as any).createdAtMs || 0;
+                  return tB - tA;
+                });
+                setOrders(combined.filter((o) => !(o as any).isDemo && !o.id.startsWith("demo_")));
+              } else {
+                setOrders(list.filter((o) => !(o as any).isDemo && !o.id.startsWith("demo_")));
+              }
+            }).catch(() => {
+              setOrders(list.filter((o) => !(o as any).isDemo && !o.id.startsWith("demo_")));
+            });
+            return;
+          } catch {}
+        }
         // Filter out any demo orders so the live café kitchen queue remains 100% genuine
         setOrders(list.filter((o) => !(o as any).isDemo && !o.id.startsWith("demo_")));
       },

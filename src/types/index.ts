@@ -145,6 +145,8 @@ export interface BusinessPublicProfile {
     allCategoryIcon?: string;
     qrCardBgColor?: string;
     qrCardTextColor?: string;
+    qrCardSize?: string;
+    showWatermark?: boolean;
   };
   phone: string;
   whatsapp: string;
@@ -464,6 +466,8 @@ export interface CafeSettings {
   allCategoryIcon?: string;
   qrCardBgColor?: string;
   qrCardTextColor?: string;
+  qrCardSize?: "compact" | "standard" | "large" | string;
+  showWatermark?: boolean;
   phone?: string;
   whatsapp?: string;
   address?: string;

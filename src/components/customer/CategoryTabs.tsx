@@ -38,9 +38,10 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
     <div className="flex items-start gap-4 md:gap-6 lg:gap-7 overflow-x-auto no-scrollbar py-2.5 md:py-3 px-1.5 md:px-2">
       {categories.map((cat) => {
         const isActive = activeCategory.toLowerCase() === cat.name.toLowerCase();
+        const isAllTab = cat.name.toLowerCase() === "all";
         const resolvedIcon =
           cat.iconUrl?.trim() ||
-          DEFAULT_CATEGORY_ICONS[cat.name.toLowerCase()] ||
+          (!isAllTab ? DEFAULT_CATEGORY_ICONS[cat.name.toLowerCase()] : "") ||
           "";
         const showImage = Boolean(resolvedIcon) && !failedImages[cat.name];
 

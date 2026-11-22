@@ -13,6 +13,8 @@ interface SingleProps {
   headerTextColor?: string;
   cardBgColor?: string;
   cardTextColor?: string;
+  cardSize?: "compact" | "standard" | "large" | string;
+  showWatermark?: boolean;
   logoUrl?: string | null;
   qrLogoUrl?: string | null;
   qrHeaderTitle?: string;
@@ -118,15 +120,17 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
   businessSlug,
   table,
   primaryColor = "#050F2A",
-  accentColor = "#050F2A",
-  cardBgColor = "#FFFFFF",
-  cardTextColor = "#050F2A",
+  accentColor = "#E8B64F",
+  cardBgColor = "#2C190E",
+  cardTextColor = "#FFFCF6",
+  cardSize = "standard",
+  showWatermark = true,
   logoUrl,
   qrLogoUrl,
   qrHeaderTitle,
-  qrSubtitle = "Scan to explore our menu",
-  qrFooterNote = "Good food. One scan away.",
-  qrLogoSize = 60,
+  qrSubtitle = "SCAN TO ORDER",
+  qrFooterNote = "☕ Good tea brings people together.",
+  qrLogoSize = 130,
   onClose,
 }) => {
   const origin = window.location.origin;
@@ -169,30 +173,32 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
   };
 
   // Live editable state for quick customization right before printing
-  const [headline, setHeadline] = useState<string>(
-    qrHeaderTitle && qrHeaderTitle.trim().length > 0
-      ? qrHeaderTitle
-      : qrFooterNote && qrFooterNote.trim().length > 0 && !qrFooterNote.includes("tea brings")
-      ? qrFooterNote
-      : "Good food. One scan away."
-  );
-  const [subtext, setSubtext] = useState<string>(
-    qrSubtitle && qrSubtitle !== "SCAN TO ORDER"
-      ? qrSubtitle
-      : "Scan to explore our menu"
-  );
-  const [sweetMsg, setSweetMsg] = useState<string>("Enjoy your visit!");
-  const [badgeColor, setBadgeColor] = useState<string>(primaryColor || "#050F2A");
-  const [bgCardColor, setBgCardColor] = useState<string>(cardBgColor || "#FFFFFF");
-  const [txtCardColor, setTxtCardColor] = useState<string>(cardTextColor || "#050F2A");
+  const [subtext, setSubtext] = useState<string>(qrSubtitle || "SCAN TO ORDER");
+  const [sweetMsg, setSweetMsg] = useState<string>(qrFooterNote || "☕ Good tea brings people together.");
+  const [badgeColor, setBadgeColor] = useState<string>(accentColor || "#E8B64F");
+  const [bgCardColor, setBgCardColor] = useState<string>(cardBgColor || "#2C190E");
+  const [txtCardColor, setTxtCardColor] = useState<string>(cardTextColor || "#FFFCF6");
+  const [activeCardSize, setActiveCardSize] = useState<string>(cardSize || "standard");
+  const [curLogoHeight, setCurLogoHeight] = useState<number>(getQrLogoHeight(qrLogoSize));
+  const [isWatermarkVisible, setIsWatermarkVisible] = useState<boolean>(showWatermark ?? true);
   const [showEditor, setShowEditor] = useState<boolean>(false);
 
   const handlePrint = () => {
     window.print();
   };
 
-  const logoHeight = getQrLogoHeight(qrLogoSize);
   const tableBadge = formatTableBadgeText(table.tableNumber || table.number);
+
+  // Card dimensions based on activeCardSize
+  const cardDimClasses =
+    activeCardSize === "compact"
+      ? "w-[240px] sm:w-[260px] p-5 pt-6 pb-5 space-y-3"
+      : activeCardSize === "large"
+      ? "w-[310px] sm:w-[350px] p-7 pt-8 pb-7 space-y-5"
+      : "w-[280px] sm:w-[310px] p-6 pt-7 pb-6 space-y-4";
+
+  const qrPx =
+    activeCardSize === "compact" ? 125 : activeCardSize === "large" ? 165 : 148;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn print:p-0 print:bg-white print:fixed print:inset-0">
@@ -270,20 +276,7 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
 
         {/* Optional Quick In-Modal Editor */}
         {showEditor && (
-          <div className="p-4 bg-zinc-50 border-b border-zinc-200 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs print-hidden animate-fadeIn">
-            <div>
-              <label className="block text-[11px] font-bold text-zinc-700 mb-1">
-                Headline Message
-              </label>
-              <input
-                type="text"
-                value={headline}
-                onChange={(e) => setHeadline(e.target.value)}
-                placeholder="Good food. One scan away."
-                className="w-full bg-white border border-zinc-300 rounded-xl px-3 py-1.5 text-zinc-900 text-xs focus:outline-none focus:border-[#050F2A]"
-              />
-            </div>
-
+          <div className="p-4 bg-zinc-50 border-b border-zinc-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs print-hidden animate-fadeIn">
             <div>
               <label className="block text-[11px] font-bold text-zinc-700 mb-1">
                 Subtext Instruction
@@ -292,41 +285,66 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
                 type="text"
                 value={subtext}
                 onChange={(e) => setSubtext(e.target.value)}
-                placeholder="Scan to explore our menu"
+                placeholder="SCAN TO ORDER"
                 className="w-full bg-white border border-zinc-300 rounded-xl px-3 py-1.5 text-zinc-900 text-xs focus:outline-none focus:border-[#050F2A]"
               />
             </div>
 
             <div>
               <label className="block text-[11px] font-bold text-zinc-700 mb-1">
-                Sweet Message (Greeting / Tagline)
+                Sweet Message / Quote
               </label>
               <input
                 type="text"
                 value={sweetMsg}
                 onChange={(e) => setSweetMsg(e.target.value)}
-                placeholder="Enjoy your visit!"
+                placeholder="☕ Good tea brings people together."
                 className="w-full bg-white border border-zinc-300 rounded-xl px-3 py-1.5 text-zinc-900 text-xs focus:outline-none focus:border-[#050F2A]"
               />
             </div>
 
+            {/* QR Logo Size Slider in Modal */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[11px] font-bold text-zinc-700">
+                  Logo Size: {curLogoHeight}px
+                </label>
+              </div>
+              <input
+                type="range"
+                min="50"
+                max="240"
+                step="4"
+                value={curLogoHeight}
+                onChange={(e) => setCurLogoHeight(Number(e.target.value))}
+                className="w-full h-2 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-[#7BBBFF]"
+              />
+            </div>
+
+            {/* Card Dimensions / Size Selection */}
             <div>
               <label className="block text-[11px] font-bold text-zinc-700 mb-1">
-                Table Badge Color
+                Card Size
               </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={badgeColor}
-                  onChange={(e) => setBadgeColor(e.target.value)}
-                  className="w-8 h-8 rounded-lg border border-zinc-300 cursor-pointer p-0.5 bg-white"
-                />
-                <input
-                  type="text"
-                  value={badgeColor}
-                  onChange={(e) => setBadgeColor(e.target.value)}
-                  className="flex-1 bg-white border border-zinc-300 rounded-xl px-3 py-1.5 text-xs font-mono"
-                />
+              <div className="grid grid-cols-3 gap-1">
+                {[
+                  { id: "compact", label: "Compact" },
+                  { id: "standard", label: "Standard" },
+                  { id: "large", label: "Large" },
+                ].map((sz) => (
+                  <button
+                    key={sz.id}
+                    type="button"
+                    onClick={() => setActiveCardSize(sz.id)}
+                    className={`py-1 rounded-lg text-center font-bold text-[11px] border transition ${
+                      activeCardSize === sz.id
+                        ? "bg-[#050F2A] text-white border-[#050F2A]"
+                        : "bg-white text-zinc-700 hover:bg-zinc-100 border-zinc-300"
+                    }`}
+                  >
+                    {sz.label}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -352,22 +370,40 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
 
             <div>
               <label className="block text-[11px] font-bold text-zinc-700 mb-1">
-                Card Text Color
+                Accent / Badge Color
               </label>
               <div className="flex items-center gap-2">
                 <input
                   type="color"
-                  value={txtCardColor}
-                  onChange={(e) => setTxtCardColor(e.target.value)}
+                  value={badgeColor}
+                  onChange={(e) => setBadgeColor(e.target.value)}
                   className="w-8 h-8 rounded-lg border border-zinc-300 cursor-pointer p-0.5 bg-white"
                 />
                 <input
                   type="text"
-                  value={txtCardColor}
-                  onChange={(e) => setTxtCardColor(e.target.value)}
+                  value={badgeColor}
+                  onChange={(e) => setBadgeColor(e.target.value)}
                   className="flex-1 bg-white border border-zinc-300 rounded-xl px-3 py-1.5 text-xs font-mono"
                 />
               </div>
+            </div>
+
+            {/* Watermark toggle */}
+            <div className="col-span-full pt-1 border-t border-zinc-200 flex items-center justify-between">
+              <span className="text-[11px] font-bold text-zinc-700">
+                Show "Powered by menyo.org" watermark
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsWatermarkVisible(!isWatermarkVisible)}
+                className={`px-3 py-1 rounded-full text-[11px] font-bold transition ${
+                  isWatermarkVisible
+                    ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                    : "bg-zinc-200 text-zinc-700 border border-zinc-300"
+                }`}
+              >
+                {isWatermarkVisible ? "Watermark: On" : "Watermark: Hidden"}
+              </button>
             </div>
           </div>
         )}
@@ -377,7 +413,7 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
           {/* Card: Exact Replica matching user reference image */}
           <div
             id="printable-tent-card"
-            className="w-[280px] sm:w-[310px] rounded-[28px] p-6 pt-7 pb-6 shadow-2xl flex flex-col items-center text-center space-y-4 border transition-all select-none print-card-exact"
+            className={`${cardDimClasses} rounded-[28px] shadow-2xl flex flex-col items-center text-center border transition-all select-none print-card-exact relative`}
             style={{
               backgroundColor: bgCardColor,
               color: txtCardColor,
@@ -391,9 +427,9 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
                   src={effectiveQrLogo}
                   alt={businessName}
                   style={{
-                    height: `${logoHeight}px`,
+                    height: `${curLogoHeight}px`,
                   }}
-                  className="max-w-[220px] w-auto object-contain select-none drop-shadow-md transition-all"
+                  className="max-w-[240px] w-auto object-contain select-none drop-shadow-md transition-all"
                 />
               ) : (
                 <div
@@ -410,7 +446,7 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
               <QRCodeSVG
                 id={`qr-svg-${table.id || table.token}`}
                 value={qrUrl}
-                size={148}
+                size={qrPx}
                 level="H"
                 includeMargin={false}
                 fgColor={bgCardColor === "#FFFFFF" ? "#050F2A" : (bgCardColor || "#2C190E")}
@@ -434,6 +470,11 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
               </p>
             </div>
 
+            {/* 3 Step Action Guide Icons: Scan • Choose • Enjoy */}
+            <div className="py-0.5">
+              <QrActionGuide textColor={badgeColor || txtCardColor} />
+            </div>
+
             {/* Footer Slogan / Tagline with Gold Divider Line */}
             <div
               className="pt-2.5 border-t w-full text-[11px] italic leading-tight"
@@ -444,6 +485,13 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
             >
               <span>{sweetMsg || "☕ Good tea brings people together."}</span>
             </div>
+
+            {/* Optional Powered by Menyo watermark */}
+            {isWatermarkVisible && (
+              <div className="text-[9px] opacity-40 pt-1 tracking-wider">
+                Powered by <span className="font-semibold">menyo.org</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -493,6 +541,8 @@ interface BatchProps {
   headerTextColor?: string;
   cardBgColor?: string;
   cardTextColor?: string;
+  cardSize?: "compact" | "standard" | "large" | string;
+  showWatermark?: boolean;
   logoUrl?: string | null;
   qrLogoUrl?: string | null;
   qrHeaderTitle?: string;
@@ -507,36 +557,31 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
   businessSlug,
   tables,
   primaryColor = "#050F2A",
+  accentColor = "#E8B64F",
   cardBgColor = "#2C190E",
   cardTextColor = "#FFFCF6",
+  cardSize = "standard",
+  showWatermark = true,
   logoUrl,
   qrLogoUrl,
   qrHeaderTitle,
-  qrSubtitle = "Scan to explore our menu",
-  qrFooterNote = "Good food. One scan away.",
-  qrLogoSize = 60,
+  qrSubtitle = "SCAN TO ORDER",
+  qrFooterNote = "☕ Good tea brings people together.",
+  qrLogoSize = 130,
   onClose,
 }) => {
   const origin = window.location.origin;
   const effectiveQrLogo = qrLogoUrl || logoUrl;
 
   // Live editable state
-  const [headline, setHeadline] = useState<string>(
-    qrHeaderTitle && qrHeaderTitle.trim().length > 0
-      ? qrHeaderTitle
-      : qrFooterNote && qrFooterNote.trim().length > 0 && !qrFooterNote.includes("tea brings")
-      ? qrFooterNote
-      : "Good food. One scan away."
-  );
-  const [subtext, setSubtext] = useState<string>(
-    qrSubtitle && qrSubtitle !== "SCAN TO ORDER"
-      ? qrSubtitle
-      : "Scan to explore our menu"
-  );
-  const [sweetMsg, setSweetMsg] = useState<string>("Enjoy your visit!");
-  const [badgeColor, setBadgeColor] = useState<string>(primaryColor || "#050F2A");
+  const [subtext, setSubtext] = useState<string>(qrSubtitle || "SCAN TO ORDER");
+  const [sweetMsg, setSweetMsg] = useState<string>(qrFooterNote || "☕ Good tea brings people together.");
+  const [badgeColor, setBadgeColor] = useState<string>(accentColor || "#E8B64F");
   const [bgCardColor, setBgCardColor] = useState<string>(cardBgColor || "#2C190E");
   const [txtCardColor, setTxtCardColor] = useState<string>(cardTextColor || "#FFFCF6");
+  const [activeCardSize, setActiveCardSize] = useState<string>(cardSize || "standard");
+  const [curLogoHeight, setCurLogoHeight] = useState<number>(getQrLogoHeight(qrLogoSize));
+  const [isWatermarkVisible, setIsWatermarkVisible] = useState<boolean>(showWatermark ?? true);
   const [showEditor, setShowEditor] = useState<boolean>(false);
 
   const handlePrint = () => {
@@ -594,20 +639,11 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
           </div>
         </div>
 
-        {/* Quick Text Editor */}
+        {/* Quick Text & Style Editor */}
         {showEditor && (
-          <div className="my-4 p-4 bg-zinc-50 border border-zinc-200 rounded-2xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs print-hidden animate-fadeIn">
+          <div className="my-4 p-4 bg-zinc-50 border border-zinc-200 rounded-2xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs print-hidden animate-fadeIn">
             <div>
-              <label className="block text-[11px] font-bold text-zinc-700 mb-1">Headline</label>
-              <input
-                type="text"
-                value={headline}
-                onChange={(e) => setHeadline(e.target.value)}
-                className="w-full bg-white border border-zinc-300 rounded-xl px-3 py-1.5 text-xs text-zinc-900"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-bold text-zinc-700 mb-1">Subtext</label>
+              <label className="block text-[11px] font-bold text-zinc-700 mb-1">Subtext Instruction</label>
               <input
                 type="text"
                 value={subtext}
@@ -616,13 +652,44 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
               />
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-zinc-700 mb-1">Sweet Message</label>
+              <label className="block text-[11px] font-bold text-zinc-700 mb-1">Sweet Message / Quote</label>
               <input
                 type="text"
                 value={sweetMsg}
                 onChange={(e) => setSweetMsg(e.target.value)}
                 className="w-full bg-white border border-zinc-300 rounded-xl px-3 py-1.5 text-xs text-zinc-900"
               />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-zinc-700 mb-1">
+                Logo Size: {curLogoHeight}px
+              </label>
+              <input
+                type="range"
+                min="50"
+                max="240"
+                step="4"
+                value={curLogoHeight}
+                onChange={(e) => setCurLogoHeight(Number(e.target.value))}
+                className="w-full h-2 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-[#7BBBFF]"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-zinc-700 mb-1">Card Background Color</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={bgCardColor}
+                  onChange={(e) => setBgCardColor(e.target.value)}
+                  className="w-8 h-8 rounded-lg border border-zinc-300 cursor-pointer p-0.5 bg-white"
+                />
+                <input
+                  type="text"
+                  value={bgCardColor}
+                  onChange={(e) => setBgCardColor(e.target.value)}
+                  className="flex-1 bg-white border border-zinc-300 rounded-xl px-2 py-1.5 text-xs font-mono"
+                />
+              </div>
             </div>
             <div>
               <label className="block text-[11px] font-bold text-zinc-700 mb-1">Badge Color</label>
@@ -640,6 +707,20 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
                   className="flex-1 bg-white border border-zinc-300 rounded-xl px-2 py-1.5 text-xs font-mono"
                 />
               </div>
+            </div>
+            <div className="flex items-center justify-between pt-3">
+              <span className="text-[11px] font-bold text-zinc-700">Watermark</span>
+              <button
+                type="button"
+                onClick={() => setIsWatermarkVisible(!isWatermarkVisible)}
+                className={`px-3 py-1 rounded-full text-[11px] font-bold transition ${
+                  isWatermarkVisible
+                    ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                    : "bg-zinc-200 text-zinc-700 border border-zinc-300"
+                }`}
+              >
+                {isWatermarkVisible ? "Watermark: On" : "Watermark: Hidden"}
+              </button>
             </div>
           </div>
         )}
@@ -667,9 +748,9 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
                       src={effectiveQrLogo}
                       alt={businessName}
                       style={{
-                        height: `${Math.round(logoHeight * 0.85)}px`,
+                        height: `${Math.round(curLogoHeight * 0.85)}px`,
                       }}
-                      className="max-w-[170px] w-auto object-contain select-none drop-shadow"
+                      className="max-w-[190px] w-auto object-contain select-none drop-shadow"
                     />
                   ) : (
                     <div
@@ -685,7 +766,7 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
                 <div className="bg-white p-3 rounded-2xl shadow-md border border-black/10">
                   <QRCodeSVG
                     value={qrUrl}
-                    size={130}
+                    size={135}
                     level="H"
                     includeMargin={false}
                     fgColor={bgCardColor === "#FFFFFF" ? "#050F2A" : (bgCardColor || "#2C190E")}
@@ -709,6 +790,11 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
                   </p>
                 </div>
 
+                {/* 3 Step Action Guide Icons: Scan • Choose • Enjoy */}
+                <div className="py-0.5">
+                  <QrActionGuide textColor={badgeColor || txtCardColor} />
+                </div>
+
                 {/* Footer Quote */}
                 <div
                   className="pt-2 border-t w-full text-[10px] italic leading-tight"
@@ -719,6 +805,13 @@ export const BatchTablesPrintModal: React.FC<BatchProps> = ({
                 >
                   <span>{sweetMsg || "☕ Good tea brings people together."}</span>
                 </div>
+
+                {/* Optional Powered by Menyo watermark */}
+                {isWatermarkVisible && (
+                  <div className="text-[9px] opacity-40 pt-1 tracking-wider">
+                    Powered by <span className="font-semibold">menyo.org</span>
+                  </div>
+                )}
               </div>
             );
           })}
