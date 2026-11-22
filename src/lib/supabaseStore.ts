@@ -550,8 +550,16 @@ export function onSnapshot(
     )
     .subscribe();
 
+  // 4. Lightweight periodic fallback sync (guarantees live updates even if WebSocket is blocked/dropped)
+  const pollTimer = setInterval(() => {
+    if (!active) return;
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    runFetch();
+  }, 4000);
+
   return () => {
     active = false;
+    clearInterval(pollTimer);
     if (debounceTimer) clearTimeout(debounceTimer);
     unsubLocal();
     supabase.removeChannel(channel).catch(() => {});
