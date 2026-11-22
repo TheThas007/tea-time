@@ -1069,13 +1069,13 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
 
   // 8. Resolve Public Menu Tenant
   if (action === "resolvePublicMenuTenant") {
-    const rawSlug = (data?.businessSlug || data?.slug || "teatime").trim().toLowerCase();
-    const isTeaTimeSlug = !rawSlug || rawSlug === "teatime" || rawSlug === "biz_teatime";
+    const rawSlug = (data?.businessSlug || data?.slug || "demo").trim().toLowerCase();
+    const isTeaTimeSlug = false;
 
     let business: any = null;
     let bId = rawSlug;
 
-    if (isTeaTimeSlug) {
+    if (false) {
       const [cafeSnap, bizSnap] = await Promise.all([
         getDoc(doc(db, "settings", "cafe")),
         getDoc(doc(db, "businesses", "teatime")),
