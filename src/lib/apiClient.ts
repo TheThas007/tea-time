@@ -1614,20 +1614,23 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
   // 11. Create Tenant Order (Direct client fallback)
   if (action === "createTenantOrder") {
     const slug = (data.businessSlug || "").toLowerCase().trim();
-    let bId = "teatime";
+    let bId = data.businessId || "";
     let bizName = "Restaurant";
-    if (slug && slug !== "teatime") {
+    if (!bId && slug) {
       try {
         const slugSnap = await getDoc(doc(db, "businessSlugs", slug));
         if (slugSnap.exists()) {
           bId = slugSnap.data()?.businessId || bId;
         }
-        const bSnap = await getDoc(doc(db, "businesses", bId));
-        if (bSnap.exists()) {
-          bizName = bSnap.data()?.name || bizName;
-        }
       } catch { }
     }
+    if (!bId) bId = slug || "teatime";
+    try {
+      const bSnap = await getDoc(doc(db, "businesses", bId));
+      if (bSnap.exists()) {
+        bizName = bSnap.data()?.name || bizName;
+      }
+    } catch { }
 
     const orderId = `ord_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const trackingToken = `trk_${Math.random().toString(36).substring(2, 12)}`;
