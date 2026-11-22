@@ -95,11 +95,6 @@ export const BusinessDashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const { businessSlug } = useParams<{ businessSlug?: string }>();
 
-  // If URL explicitly asks for teatime admin, render Tea Time's admin dashboard directly
-  if (businessSlug === "teatime") {
-    return <AdminDashboardPage />;
-  }
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -893,8 +888,8 @@ export const BusinessDashboardPage: React.FC = () => {
     );
   }
 
-  // Dedicated dashboard view for TEA TIME client (Live orders board, sound alerts, operations)
-  if (business?.slug === "teatime" || currentUser?.email === "admin@teatime.lk") {
+  // Dedicated dashboard view for legacy TEA TIME client if email is admin@teatime.lk
+  if (currentUser?.email === "admin@teatime.lk") {
     return <AdminDashboardPage />;
   }
 
