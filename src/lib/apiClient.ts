@@ -1814,14 +1814,18 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
   if (action === "getCustomerReward") {
     const phone = String(data?.phone || "").replace(/[^0-9]/g, "").trim();
     let bId = (data?.businessId || "").trim();
-    if (!bId && data?.businessSlug) {
-      const slug = (data.businessSlug || "").toLowerCase().trim();
+    const slugToResolve = (!bId || !bId.startsWith("biz_"))
+      ? (data?.businessSlug || bId || "").toLowerCase().trim()
+      : "";
+    if (slugToResolve) {
       try {
-        const sSnap = await getDoc(doc(db, "businessSlugs", slug));
-        if (sSnap.exists()) bId = sSnap.data()?.businessId || slug;
+        const sSnap = await getDoc(doc(db, "businessSlugs", slugToResolve));
+        if (sSnap.exists() && sSnap.data()?.businessId) {
+          bId = sSnap.data()?.businessId;
+        }
       } catch {}
     }
-    if (!bId || bId === "teatime") bId = "teatime";
+    if (!bId) bId = "teatime";
 
     if (phone.length >= 7) {
       try {
@@ -1848,14 +1852,18 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
       throw new ApiError("invalid-argument", "Valid mobile number is required.");
     }
     let bId = (data?.businessId || "").trim();
-    if (!bId && data?.businessSlug) {
-      const slug = (data.businessSlug || "").toLowerCase().trim();
+    const slugToResolve = (!bId || !bId.startsWith("biz_"))
+      ? (data?.businessSlug || bId || "").toLowerCase().trim()
+      : "";
+    if (slugToResolve) {
       try {
-        const sSnap = await getDoc(doc(db, "businessSlugs", slug));
-        if (sSnap.exists()) bId = sSnap.data()?.businessId || slug;
+        const sSnap = await getDoc(doc(db, "businessSlugs", slugToResolve));
+        if (sSnap.exists() && sSnap.data()?.businessId) {
+          bId = sSnap.data()?.businessId;
+        }
       } catch {}
     }
-    if (!bId || bId === "teatime") bId = "teatime";
+    if (!bId) bId = "teatime";
 
     const ref = doc(db, "businesses", bId, "customers", phone);
     let existing: any = null;
