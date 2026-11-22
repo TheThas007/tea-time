@@ -287,7 +287,9 @@ export const BusinessDashboardPage: React.FC = () => {
       let b = session.business;
 
       // If URL slug param is present (e.g. /ffgfgffg/admin), resolve that specific business
-      if (businessSlug && businessSlug !== "teatime") {
+      if (session.business) {
+        b = session.business;
+      } else if (businessSlug && businessSlug !== "teatime") {
         try {
           let targetBId = businessSlug;
           const slugSnap = await getDoc(storeDoc(db, "businessSlugs", businessSlug)).catch(() => null);
