@@ -1,6 +1,7 @@
 import React from "react";
 import { Utensils, Clock } from "lucide-react";
 import { Logo } from "../common/Logo";
+import { MenyoWordmark } from "../common/MenyoLogo";
 
 interface CustomerHeaderProps {
   tableNumber?: string | null;
@@ -11,6 +12,7 @@ interface CustomerHeaderProps {
   logoHeight?: number | string;
   primaryColor?: string;
   accentColor?: string;
+  isDemo?: boolean;
 }
 
 export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
@@ -22,8 +24,10 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
   logoHeight,
   primaryColor = "#050F2A",
   accentColor = "#7BBBFF",
+  isDemo = false,
 }) => {
   const isTeaTime =
+    !isDemo &&
     (!brandName ||
     brandName.toLowerCase() === "tea time" ||
     brandName.toLowerCase() === "teatime") && !logoUrl;
@@ -45,6 +49,13 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({
               style={parsedLogoH ? { height: parsedLogoH, maxHeight: "90px" } : undefined}
               className={parsedLogoH ? "w-auto object-contain select-none" : "h-11 sm:h-12 md:h-[52px] w-auto object-contain select-none"}
             />
+          </div>
+        ) : isDemo ? (
+          <div className="flex items-center gap-2">
+            <MenyoWordmark variant="light" height={22} />
+            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-[#7BBBFF]/20 text-[#7BBBFF] border border-[#7BBBFF]/40">
+              DEMO
+            </span>
           </div>
         ) : isTeaTime ? (
           <Logo size="md" theme="dark" />

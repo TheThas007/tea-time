@@ -39,7 +39,7 @@ export const CustomerMenuPage: React.FC<CustomerMenuPageProps> = ({ isExplicitDe
   const { businessSlug: rawSlug } = useParams<{ businessSlug?: string }>();
   const isDemoUrl = isExplicitDemoRoute || rawSlug?.toLowerCase().trim() === "demo";
   const businessSlug = isDemoUrl ? "teatime" : (rawSlug ? rawSlug.toLowerCase().trim() : "teatime");
-  const isTeaTime = isDemoUrl || !rawSlug || businessSlug === "teatime" || businessSlug === "biz_teatime";
+  const isTeaTime = !isDemoUrl && (!rawSlug || businessSlug === "teatime" || businessSlug === "biz_teatime");
 
   const [searchParams, setSearchParams] = useSearchParams();
   const isDemoMode = isDemoUrl || searchParams.get("demo") === "true";
@@ -940,11 +940,12 @@ export const CustomerMenuPage: React.FC<CustomerMenuPageProps> = ({ isExplicitDe
 
       {/* Customer Header */}
       <CustomerHeader
-        brandName={isTeaTime ? (cafeSettings?.cafeName || "TEA TIME") : (tenantBusiness?.name || "Menu")}
-        logoUrl={tenantTheme.logoUrl}
+        brandName={isDemoUrl ? "Menyo Demo" : (isTeaTime ? (cafeSettings?.cafeName || "TEA TIME") : (tenantBusiness?.name || "Menu"))}
+        logoUrl={isDemoUrl ? null : tenantTheme.logoUrl}
         logoHeight={localSavedTheme?.navbarLogoHeight || (tenantBusiness?.branding as any)?.navbarLogoHeight || (cafeSettings as any)?.navbarLogoHeight}
         primaryColor={tenantTheme.headerBg}
         accentColor={tenantTheme.accent}
+        isDemo={isDemoUrl || isDemoMode}
         tableNumber={currentTable?.number || (tableLoading ? "Loading..." : "Table ---")}
         activeOrderCount={customerOrderIds.length}
         onOpenOrderTracker={() => {
@@ -1257,8 +1258,8 @@ export const CustomerMenuPage: React.FC<CustomerMenuPageProps> = ({ isExplicitDe
           orderId={activeTrackerOrderId}
           businessSlug={businessSlug}
           businessId={tenantBusiness?.id}
-          businessName={tenantBusiness?.name || (isTeaTime ? "Tea Time" : undefined)}
-          logoUrl={tenantBusiness?.memoryLogoUrl || tenantBusiness?.branding?.memoryLogoUrl || tenantBusiness?.branding?.logoUrl || tenantBusiness?.logoUrl}
+          businessName={isDemoUrl ? "Menyo Demo" : (tenantBusiness?.name || (isTeaTime ? "Tea Time" : undefined))}
+          logoUrl={isDemoUrl ? undefined : (tenantBusiness?.memoryLogoUrl || tenantBusiness?.branding?.memoryLogoUrl || tenantBusiness?.branding?.logoUrl || tenantBusiness?.logoUrl)}
           onClose={() => setActiveTrackerOrderId(null)}
           onOrderMore={() => {
             setActiveTrackerOrderId(null);
