@@ -22,15 +22,15 @@ interface SingleProps {
 }
 
 export function getQrLogoHeight(size?: number | string): number {
-  if (typeof size === "number") return Math.min(Math.max(size, 40), 160);
+  if (typeof size === "number") return Math.min(Math.max(size, 40), 280);
   if (!size) return 60;
   if (size === "small" || size === "compact") return 45;
   if (size === "medium" || size === "default") return 60;
   if (size === "large" || size === "big") return 80;
-  if (size === "xlarge" || size === "extrabig") return 100;
-  if (size === "huge" || size === "max") return 130;
+  if (size === "xlarge" || size === "extrabig") return 110;
+  if (size === "huge" || size === "max") return 150;
   const parsed = parseInt(String(size), 10);
-  return isNaN(parsed) ? 60 : Math.min(Math.max(parsed, 40), 160);
+  return isNaN(parsed) ? 60 : Math.min(Math.max(parsed, 40), 280);
 }
 
 // 4 Corner brackets surrounding the QR code matching user reference image
@@ -355,9 +355,8 @@ export const SingleTablePrintModal: React.FC<SingleProps> = ({
                   alt={businessName}
                   style={{
                     height: `${logoHeight}px`,
-                    maxHeight: `${logoHeight + 15}px`,
                   }}
-                  className="w-auto max-w-[200px] object-contain drop-shadow-xs"
+                  className="w-auto max-w-[240px] object-contain drop-shadow-xs"
                 />
               ) : (
                 <div className="flex items-center gap-2">

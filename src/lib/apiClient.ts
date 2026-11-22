@@ -1302,6 +1302,9 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
     const mergedBranding = {
       ...(data.branding || {}),
       logoUrl: data.logoUrl !== undefined ? data.logoUrl : bInput.logoUrl,
+      navbarLogoHeight: (data as any).navbarLogoHeight || bInput.navbarLogoHeight,
+      qrCardBgColor: (data as any).qrCardBgColor || bInput.qrCardBgColor,
+      qrCardTextColor: (data as any).qrCardTextColor || bInput.qrCardTextColor,
       primaryColor: data.primaryColor || bInput.primaryColor,
       accentColor: data.accentColor || bInput.accentColor,
       backgroundColor: data.backgroundColor || bInput.backgroundColor,
@@ -1323,6 +1326,7 @@ async function clientRpcHandler<T = any>(action: string, data?: any): Promise<T>
     if (mergedBranding.headerBackgroundColor) updatePayload.headerBackgroundColor = mergedBranding.headerBackgroundColor;
     if (mergedBranding.headerTextColor) updatePayload.headerTextColor = mergedBranding.headerTextColor;
     if (mergedBranding.logoUrl !== undefined) updatePayload.logoUrl = mergedBranding.logoUrl;
+    if (mergedBranding.navbarLogoHeight !== undefined) updatePayload.navbarLogoHeight = mergedBranding.navbarLogoHeight;
     if (mergedBranding.qrHeaderTitle !== undefined) updatePayload.qrHeaderTitle = mergedBranding.qrHeaderTitle;
     if (mergedBranding.qrSubtitle !== undefined) updatePayload.qrSubtitle = mergedBranding.qrSubtitle;
     if (mergedBranding.qrFooterNote !== undefined) updatePayload.qrFooterNote = mergedBranding.qrFooterNote;
@@ -2612,6 +2616,9 @@ export const platformApi = {
     qrSubtitle?: string;
     qrFooterNote?: string;
     qrLogoSize?: number | string;
+    navbarLogoHeight?: number | string;
+    qrCardBgColor?: string;
+    qrCardTextColor?: string;
     branding?: {
       logoUrl?: string | null;
       primaryColor?: string | null;

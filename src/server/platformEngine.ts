@@ -2725,6 +2725,9 @@ export class PlatformEngine {
             : (business.slug === "teatime" ? "It's time for you!" : "Enjoy your visit!")
         ),
         qrLogoSize: (input as any).qrLogoSize ?? bInput.qrLogoSize ?? business.branding?.qrLogoSize ?? 112,
+        navbarLogoHeight: (input as any).navbarLogoHeight ?? bInput.navbarLogoHeight ?? (business.branding as any)?.navbarLogoHeight ?? 48,
+        qrCardBgColor: (input as any).qrCardBgColor ?? bInput.qrCardBgColor ?? (business.branding as any)?.qrCardBgColor ?? "#FFFFFF",
+        qrCardTextColor: (input as any).qrCardTextColor ?? bInput.qrCardTextColor ?? (business.branding as any)?.qrCardTextColor ?? "#050F2A",
       },
       phone: (input.phone ?? business.phone ?? "").trim().slice(0, 40),
       whatsapp: (input.whatsapp ?? business.whatsapp ?? "").trim().slice(0, 40),

@@ -319,8 +319,8 @@ export const BusinessDashboardPage: React.FC = () => {
         throw new Error(`Business "${businessSlug}" could not be found.`);
       }
 
-      // If user landed on /admin without a businessSlug in the URL, redirect to their tenant URL /:slug/admin
-      if (!businessSlug && b.slug && b.slug !== "teatime") {
+      // If user landed on /admin or /dashboard without a businessSlug in the URL, redirect to their tenant URL /:slug/admin
+      if (!businessSlug && b.slug) {
         navigate(`/${b.slug}/admin`, { replace: true });
       }
 

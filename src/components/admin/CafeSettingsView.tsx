@@ -422,6 +422,13 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
           isOrderingPaused: settings.isOrderingPaused,
           pauseMessage: settings.pauseMessage,
           logoUrl: settings.logoUrl || null,
+          navbarLogoHeight: settings.navbarLogoHeight || 48,
+          qrLogoSize: settings.qrLogoSize || 112,
+          qrCardBgColor: settings.qrCardBgColor || "#FFFFFF",
+          qrCardTextColor: settings.qrCardTextColor || "#050F2A",
+          qrHeaderTitle: settings.qrHeaderTitle,
+          qrSubtitle: settings.qrSubtitle,
+          qrFooterNote: settings.qrFooterNote,
           primaryColor: settings.primaryColor || "#050F2A",
           accentColor: settings.accentColor || "#7BBBFF",
           backgroundColor: settings.backgroundColor || "#F8F9FA",
@@ -472,6 +479,13 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
           facebookUrl: fbLink?.url || settings.facebookUrl || "",
           branding: {
             logoUrl: settings.logoUrl || null,
+            navbarLogoHeight: settings.navbarLogoHeight || 48,
+            qrLogoSize: settings.qrLogoSize || 112,
+            qrCardBgColor: settings.qrCardBgColor || "#FFFFFF",
+            qrCardTextColor: settings.qrCardTextColor || "#050F2A",
+            qrHeaderTitle: settings.qrHeaderTitle,
+            qrSubtitle: settings.qrSubtitle,
+            qrFooterNote: settings.qrFooterNote,
             primaryColor: settings.primaryColor || "#050F2A",
             accentColor: settings.accentColor || "#7BBBFF",
             backgroundColor: settings.backgroundColor || "#F8F9FA",
@@ -1879,7 +1893,7 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
                           <img
                             src={settings.logoUrl}
                             alt="Logo"
-                            style={{ height: `${Math.min(Number(settings.navbarLogoHeight) || 32, 44)}px` }}
+                            style={{ height: `${Number(settings.navbarLogoHeight) || 48}px` }}
                             className="w-auto object-contain transition-all"
                           />
                         ) : (
@@ -2050,9 +2064,8 @@ export const CafeSettingsView: React.FC<CafeSettingsViewProps> = ({
                         alt={settings.cafeName || "Logo"}
                         style={{
                           height: `${getQrLogoHeight(settings.qrLogoSize)}px`,
-                          maxHeight: `${getQrLogoHeight(settings.qrLogoSize) + 15}px`,
                         }}
-                        className="max-w-[180px] w-auto object-contain drop-shadow-xs transition-all"
+                        className="max-w-[220px] w-auto object-contain drop-shadow-xs transition-all"
                       />
                     ) : (
                       <div className="flex items-center gap-1.5">

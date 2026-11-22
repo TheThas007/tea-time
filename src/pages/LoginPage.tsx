@@ -73,10 +73,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
       navigate("/super-admin");
     } else if (existingRole === "BUSINESS_OWNER") {
       const target = existingSlug || existingBizId;
-      if (target && target !== "teatime") {
+      if (target) {
         navigate(`/${target}/admin`);
       } else {
-        navigate("/admin");
+        navigate("/dashboard");
       }
     }
   }, [navigate, resetMode]);
@@ -131,11 +131,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
           localStorage.setItem("menyo_auth_role", "BUSINESS_OWNER");
           localStorage.setItem("menyo_auth_email", identifier.trim());
           const targetSlug = (res as any)?.slug || res.businessId;
-          if (targetSlug && targetSlug !== "teatime") {
+          if (targetSlug) {
             localStorage.setItem("menyo_auth_businessSlug", targetSlug);
             navigate(`/${targetSlug}/admin`);
           } else {
-            navigate("/admin");
+            navigate("/dashboard");
           }
         }
       }
@@ -282,10 +282,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialTab = "signin" }) =
     } else {
       localStorage.setItem("menyo_auth_role", "BUSINESS_OWNER");
       const storedSlug = localStorage.getItem("menyo_auth_businessSlug");
-      if (storedSlug && storedSlug !== "teatime") {
+      if (storedSlug) {
         navigate(`/${storedSlug}/admin`);
       } else {
-        navigate("/admin");
+        navigate("/dashboard");
       }
     }
   };
