@@ -1,6 +1,7 @@
 const origin = "https://menyo.org";
 const siteName = "Menyo";
 const logo = `${origin}/icon-512.png`;
+export const qrMenuGuidePath = "/guides/restaurant-qr-menu";
 
 type PageSeo = {
   title: string;
@@ -11,9 +12,14 @@ type PageSeo = {
 
 export const publicPages = {
   "/": {
-    title: "QR Menu & Restaurant POS in Sri Lanka | Menyo",
-    description: "Create a digital QR menu for your Sri Lankan restaurant or café. Take table orders, manage your kitchen, and print POS bills with Menyo.",
+    title: "QR Code Menu for Restaurants & POS | Menyo",
+    description: "Create a QR code menu for your restaurant or café. Guests scan, browse, and order from their phones. Manage live kitchen orders and POS billing with Menyo.",
     canonicalPath: "/",
+  },
+  [qrMenuGuidePath]: {
+    title: "How to Create a QR Code Menu for a Restaurant | Menyo",
+    description: "Set up a digital restaurant menu, create a QR code for each table, and test the guest ordering flow before you print your QR cards.",
+    canonicalPath: qrMenuGuidePath,
   },
   "/terms": {
     title: "Terms and Conditions | Menyo",
@@ -82,7 +88,6 @@ const homepageSchema = {
       logo,
       email: "aevonixlk@gmail.com",
       telephone: "+94764847081",
-      areaServed: { "@type": "Country", name: "Sri Lanka" },
     },
     {
       "@type": "WebApplication",

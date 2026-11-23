@@ -4,10 +4,11 @@ import { AuthProvider } from "./context/AuthContext";
 import { CartProvider } from "./context/CartContext";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { Loader2 } from "lucide-react";
-import { updatePageSeo } from "./shared/siteSeo";
+import { qrMenuGuidePath, updatePageSeo } from "./shared/siteSeo";
 
 // Lazy load pages for fast initial page load and split bundles
 const LandingPage = lazy(() => import("./pages/LandingPage").then((m) => ({ default: m.LandingPage })));
+const QrMenuGuidePage = lazy(() => import("./pages/QrMenuGuidePage").then((m) => ({ default: m.QrMenuGuidePage })));
 const LoginPage = lazy(() => import("./pages/LoginPage").then((m) => ({ default: m.LoginPage })));
 const SuperAdminPage = lazy(() => import("./pages/SuperAdminPage").then((m) => ({ default: m.SuperAdminPage })));
 const BusinessDashboardPage = lazy(() => import("./pages/BusinessDashboardPage").then((m) => ({ default: m.BusinessDashboardPage })));
@@ -37,6 +38,7 @@ export const App: React.FC = () => {
               <Routes>
                 {/* AEVONIX SaaS Platform Landing Page */}
                 <Route path="/" element={<LandingPage />} />
+                <Route path={qrMenuGuidePath} element={<QrMenuGuidePage />} />
 
                 {/* Platform Authentication & Temporary Password Flow */}
                 <Route path="/login" element={<LoginPage />} />

@@ -28,6 +28,7 @@ import {
   Flame,
 } from "lucide-react";
 import { MenyoWordmark } from "../components/common/MenyoLogo";
+import { qrMenuGuidePath } from "../shared/siteSeo";
 
 export const LandingPage: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -367,12 +368,11 @@ export const LandingPage: React.FC = () => {
         {/* Centered Headline, Subtitle and Pill Actions (Below Demonstration) */}
         <div className="text-center max-w-3xl mx-auto space-y-4">
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-[#050F2A] tracking-tight leading-[1.08]">
-            QR Menus &amp; Restaurant POS <br />
-            in Sri Lanka
+            QR Code Menus for Restaurants
           </h1>
 
           <p className="text-base sm:text-lg text-[#050F2A]/70 max-w-xl mx-auto font-medium">
-            Let guests scan a table QR code to browse and order. Manage your digital menu, live kitchen orders, and cashier billing with Menyo.
+            Let guests scan, browse, and order from their phones. Manage your digital menu, live kitchen orders, and restaurant POS billing in Menyo.
           </p>
 
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -394,7 +394,7 @@ export const LandingPage: React.FC = () => {
           </div>
 
           <div className="pt-2 text-[11px] font-bold uppercase tracking-widest text-[#050F2A]/40">
-            by AEVONIX
+            Built by AEVONIX in Sri Lanka
           </div>
         </div>
       </section>
@@ -749,7 +749,7 @@ export const LandingPage: React.FC = () => {
             Simple 3-Step Setup
           </span>
           <h2 className="text-3xl sm:text-4xl font-black text-[#050F2A] tracking-tight">
-            How Menyo works for your café.
+            How to set up a QR menu with Menyo
           </h2>
         </div>
 
@@ -787,6 +787,11 @@ export const LandingPage: React.FC = () => {
             </p>
           </div>
         </div>
+        <div className="mt-8 text-center">
+          <Link to={qrMenuGuidePath} className="text-sm font-bold underline underline-offset-4">
+            Read the restaurant QR menu setup guide
+          </Link>
+        </div>
       </section>
 
       {/* 5. PRICING SECTION (3 Equal-Quality Cards, Soft Pastel Accents) */}
@@ -796,7 +801,7 @@ export const LandingPage: React.FC = () => {
             QR menu &amp; restaurant POS pricing
           </h2>
           <p className="text-sm text-[#050F2A]/70 mt-2">
-            Transparent pricing in Sri Lankan Rupees. All plans include the full platform suite.
+            All plans include the full platform. Prices are shown in LKR with approximate USD equivalents.
           </p>
         </div>
 
@@ -892,7 +897,7 @@ export const LandingPage: React.FC = () => {
           <details className="rounded-2xl border border-[#050F2A]/10 bg-white p-5">
             <summary className="cursor-pointer text-sm font-bold">Is cashier billing included with the digital menu?</summary>
             <p className="mt-3 text-sm text-[#050F2A]/70">
-              Yes. The plans above include the restaurant POS, thermal bill printing, and live order management. Pricing is listed in Sri Lankan rupees for one branch.
+              Yes. Every plan includes restaurant POS, thermal bill printing, and live order management for one branch.
             </p>
           </details>
         </div>
