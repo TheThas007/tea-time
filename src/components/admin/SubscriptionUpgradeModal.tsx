@@ -90,34 +90,36 @@ export const SubscriptionUpgradeModal: React.FC<SubscriptionUpgradeModalProps> =
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-[#FFFCF6] border border-[#DFC9AC] rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-warm-xl relative max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45 backdrop-blur-md animate-fadeIn">
+      <div className="bg-white rounded-[28px] max-w-2xl w-full p-6 sm:p-9 shadow-[0_24px_80px_rgba(0,0,0,0.18)] border border-[#D2D2D7]/60 relative max-h-[90vh] overflow-y-auto">
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 w-9 h-9 rounded-full bg-[#FAF7F0] hover:bg-[#DFC9AC]/40 border border-[#DFC9AC] flex items-center justify-center text-[#8A6A53] hover:text-[#301C10] transition-all"
+          aria-label="Close"
+          className="absolute top-5 right-5 w-8 h-8 rounded-full bg-[#F5F5F7] hover:bg-[#E8E8ED] flex items-center justify-center text-[#6E6E73] hover:text-[#1D1D1F] transition-colors cursor-pointer"
         >
-          <X className="w-5 h-5" />
+          <X className="w-4 h-4" />
         </button>
 
-        {/* Modal Header */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center px-3 py-1 rounded-full bg-[#E8B64F]/20 border border-[#E8B64F]/40 text-[#4A290F] text-xs font-bold uppercase tracking-wider mb-2">
-            <span>Menyo Subscription Renewal</span>
-          </div>
-          <h2 className="text-2xl font-black text-[#301C10] tracking-tight">
-            {isExpired ? "Reactivate Your Menu Access" : "Upgrade or Renew Your Plan"}
+        {/* Modal Header — Apple.com Typography */}
+        <div className="text-center mb-7">
+          <p className="text-[11px] font-semibold text-[#0071E3] uppercase tracking-[0.14em] mb-1.5">
+            Menyo Subscription
+          </p>
+          <h2 className="text-2xl sm:text-[30px] font-semibold text-[#1D1D1F] tracking-[-0.025em] leading-tight">
+            {isExpired ? "Reactivate your plan." : "Choose the plan that’s right for you."}
           </h2>
-          <p className="text-xs text-[#8A6A53] mt-1 max-w-md mx-auto">
-            Keep your live customer QR ordering seamless, instant, and interruption-free for{" "}
-            <span className="font-bold text-[#301C10]">{businessName}</span>.
+          <p className="text-[13px] text-[#6E6E73] mt-2 max-w-md mx-auto leading-relaxed">
+            Seamless QR ordering and real-time kitchen sync for{" "}
+            <span className="font-semibold text-[#1D1D1F]">{businessName}</span>.
           </p>
         </div>
 
-        {/* Package Selector Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+        {/* Apple-style Pricing Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mb-6">
           {DEFAULT_PACKAGES.map((pkg) => {
             const isSelected = selectedPlan === pkg.id;
+            const monthlyEq = Math.round(pkg.priceDisplay / (pkg.durationMonths || 1));
             return (
               <div
                 key={pkg.id}
@@ -125,94 +127,107 @@ export const SubscriptionUpgradeModal: React.FC<SubscriptionUpgradeModalProps> =
                   setSelectedPlan(pkg.id);
                   setPaymentNotice(null);
                 }}
-                className={`relative p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                className={`relative p-5 rounded-2xl border cursor-pointer transition-all duration-200 flex flex-col justify-between ${
                   isSelected
-                    ? "border-[#4A290F] bg-[#FAF7F0] shadow-warm"
-                    : "border-[#DFC9AC]/60 bg-[#FFFCF6] hover:border-[#DFC9AC]"
+                    ? "border-[#0071E3] ring-2 ring-[#0071E3]/20 bg-[#FBFBFD] shadow-sm"
+                    : "border-[#D2D2D7] bg-white hover:border-[#86868B]"
                 }`}
               >
-                {pkg.isPopular && (
-                  <span className="absolute -top-2.5 right-3 px-2 py-0.5 rounded-full bg-[#E8B64F] text-[#1A0F08] text-[10px] font-black uppercase tracking-wider shadow-xs">
-                    Popular
-                  </span>
-                )}
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-[#8A6A53] uppercase">{pkg.durationMonths} Mo</span>
-                    {isSelected && (
-                      <div className="w-5 h-5 rounded-full bg-[#4A290F] flex items-center justify-center text-[#FFFCF6]">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <span className="text-[11px] font-semibold text-[#6E6E73] tracking-wide uppercase">
+                      {pkg.durationMonths} {pkg.durationMonths === 1 ? "Month" : "Months"}
+                    </span>
+                    {isSelected ? (
+                      <div className="w-5 h-5 rounded-full bg-[#0071E3] flex items-center justify-center text-white shrink-0">
                         <Check className="w-3 h-3 stroke-[3]" />
                       </div>
-                    )}
+                    ) : pkg.isPopular ? (
+                      <span className="px-2 py-0.5 rounded-full bg-[#E8F3FF] text-[#0071E3] text-[10px] font-semibold">
+                        Popular
+                      </span>
+                    ) : null}
                   </div>
-                  <h3 className="font-bold text-sm text-[#301C10]">{pkg.name}</h3>
-                  <div className="mt-2 flex items-baseline gap-1">
-                    <span className="text-lg font-black text-[#301C10]">
+
+                  <h3 className="font-semibold text-[15px] text-[#1D1D1F] tracking-tight">
+                    {pkg.name}
+                  </h3>
+
+                  <div className="mt-3">
+                    <div className="text-[22px] font-semibold text-[#1D1D1F] tracking-[-0.02em]">
                       Rs. {pkg.priceDisplay.toLocaleString()}
-                    </span>
+                    </div>
+                    <div className="text-[11px] text-[#6E6E73] mt-0.5">
+                      Rs. {monthlyEq.toLocaleString()}/mo
+                    </div>
                   </div>
+
                   {pkg.savingsDisplay && (
-                    <span className="inline-block mt-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                    <span className="inline-block mt-2 text-[11px] font-medium text-[#008009] bg-[#E8F8EB] px-2 py-0.5 rounded-full">
                       {pkg.savingsDisplay}
                     </span>
                   )}
                 </div>
-                <p className="text-[11px] text-[#8A6A53] mt-3 leading-snug">{pkg.description}</p>
+
+                <p className="text-[11px] text-[#6E6E73] mt-4 leading-relaxed">
+                  {pkg.description}
+                </p>
               </div>
             );
           })}
         </div>
 
-        {/* Selected Plan Summary Banner */}
-        <div className="p-4 bg-[#FAF7F0] rounded-2xl border border-[#DFC9AC] mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        {/* Selected Plan Summary Bar */}
+        <div className="p-4 bg-[#F5F5F7] rounded-2xl mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span className="font-bold text-[#301C10]">Selected: {activePackage.name}</span>
+              <ShieldCheck className="w-4 h-4 text-[#0071E3]" />
+              <span className="text-[13px] font-semibold text-[#1D1D1F]">
+                {activePackage.name}
+              </span>
             </div>
-            <p className="text-[#8A6A53] mt-0.5 text-[11px]">
-              Full Unlimited Customer Orders & Kitchen Display Realtime Access
+            <p className="text-[#6E6E73] mt-0.5 text-[11px]">
+              Unlimited QR orders, live kitchen display, and instant updates.
             </p>
           </div>
-          <div className="text-right">
-            <span className="text-base font-black text-[#4A290F]">
-              Rs. {activePackage.priceDisplay.toLocaleString()} LKR
+          <div className="sm:text-right">
+            <span className="text-lg font-semibold text-[#1D1D1F] tracking-tight">
+              Rs. {activePackage.priceDisplay.toLocaleString()}{" "}
+              <span className="text-xs font-normal text-[#6E6E73]">LKR</span>
             </span>
           </div>
         </div>
 
         {paymentNotice && (
-          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-xs text-amber-800 animate-fadeIn">
-            <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+          <div className="mb-4 p-3.5 bg-[#F5F5F7] border border-[#D2D2D7] rounded-2xl flex items-center gap-2.5 text-xs text-[#1D1D1F] animate-fadeIn">
+            <AlertCircle className="w-4 h-4 shrink-0 text-[#0071E3]" />
             <span>{paymentNotice}</span>
           </div>
         )}
 
-        {/* Payment Action Buttons */}
+        {/* Apple-style Pill Action Buttons */}
         <div className="space-y-2.5">
-          {/* PayHere Direct Card Gateway (Integrated Ready) */}
           <button
             onClick={handlePayHereClick}
-            className="w-full py-3.5 rounded-xl bg-[#4A290F] hover:bg-[#623B1B] text-[#FFFCF6] font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-warm cursor-pointer"
+            className="w-full py-3.5 rounded-full bg-[#0071E3] hover:bg-[#0077ED] text-white font-medium text-[14px] tracking-tight transition-colors flex items-center justify-center gap-2 cursor-pointer"
           >
-            <CreditCard className="w-4 h-4 text-[#E8B64F]" />
-            <span>Pay Online via PayHere (Card / Frimi / Genie)</span>
+            <CreditCard className="w-4 h-4" />
+            <span>Continue with PayHere (Card / Frimi / Genie)</span>
           </button>
 
-          {/* Instant WhatsApp Manual Payment Alternative */}
           <a
             href={`https://wa.me/94764847081?text=${whatsappMessage}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm"
+            className="w-full py-3.5 rounded-full bg-[#F5F5F7] hover:bg-[#E8E8ED] text-[#1D1D1F] font-medium text-[14px] tracking-tight transition-colors flex items-center justify-center gap-2"
           >
-            <MessageCircle className="w-4 h-4 text-white" />
-            <span>Instant Bank Transfer / WhatsApp Activation</span>
+            <MessageCircle className="w-4 h-4 text-[#0071E3]" />
+            <span>Instant Bank Transfer via WhatsApp</span>
           </a>
         </div>
 
-        <p className="text-center text-[10px] text-[#8A6A53] mt-4">
-          🔒 Secure 256-bit SSL encrypted. Account automatically refreshes immediately upon verification.
+        <p className="text-center text-[11px] text-[#86868B] mt-5">
+          256-bit SSL encrypted. Your account updates automatically upon verification.
         </p>
       </div>
     </div>
