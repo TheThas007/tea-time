@@ -1089,7 +1089,7 @@ export const BusinessDashboardPage: React.FC = () => {
         <div className="flex items-center gap-2 sm:gap-3">
           {/* View Menu Button */}
           <a
-            href={`/${business?.slug || businessSlug || business?.id || "menu"}`}
+            href={`/${business?.slug || businessSlug || business?.id || "teatime"}/menu`}
             target="_blank"
             rel="noopener noreferrer"
             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white/90 hover:text-white text-xs font-bold transition shadow-sm"
