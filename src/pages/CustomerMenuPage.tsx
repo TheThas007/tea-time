@@ -760,45 +760,57 @@ export const CustomerMenuPage: React.FC<CustomerMenuPageProps> = ({ isExplicitDe
       cafeSettings?.primaryColor ||
       (isTeaTime ? "#2C190E" : "#7BBBFF"),
     accent:
-      localSavedTheme?.accentColor ||
       tenantBusiness?.branding?.accentColor ||
       tenantBusiness?.accentColor ||
+      localSavedTheme?.accentColor ||
       cafeSettings?.accentColor ||
       (isTeaTime ? "#E8B64F" : "#7BBBFF"),
     bg:
-      localSavedTheme?.backgroundColor ||
       tenantBusiness?.branding?.backgroundColor ||
       tenantBusiness?.backgroundColor ||
+      localSavedTheme?.backgroundColor ||
       cafeSettings?.backgroundColor ||
       (isTeaTime ? "#FAF7F0" : "#F8F9FA"),
     text:
-      localSavedTheme?.textColor ||
       tenantBusiness?.branding?.textColor ||
       tenantBusiness?.textColor ||
+      localSavedTheme?.textColor ||
       cafeSettings?.textColor ||
       (isTeaTime ? "#301C10" : "#050F2A"),
     headerBg:
-      localSavedTheme?.headerBackgroundColor ||
       tenantBusiness?.branding?.headerBackgroundColor ||
       tenantBusiness?.headerBackgroundColor ||
-      localSavedTheme?.primaryColor ||
       tenantBusiness?.branding?.primaryColor ||
+      localSavedTheme?.headerBackgroundColor ||
+      localSavedTheme?.primaryColor ||
       cafeSettings?.headerBackgroundColor ||
       cafeSettings?.primaryColor ||
       (isTeaTime ? "#0A0A0A" : "#050F2A"),
     headerText:
-      localSavedTheme?.headerTextColor ||
       tenantBusiness?.branding?.headerTextColor ||
       tenantBusiness?.headerTextColor ||
+      localSavedTheme?.headerTextColor ||
       cafeSettings?.headerTextColor ||
       (isTeaTime ? "#FFFCF6" : "#F2FDFF"),
     logoUrl:
-      localSavedTheme?.logoUrl ||
       tenantBusiness?.branding?.logoUrl ||
       tenantBusiness?.logoUrl ||
+      localSavedTheme?.logoUrl ||
       cafeSettings?.logoUrl ||
       null,
   };
+
+  // Keep localStorage cache in sync with live DB branding so refresh never flashes old colors or logo size
+  useEffect(() => {
+    if (typeof window === "undefined" || !tenantBusiness?.branding || !businessSlug) return;
+    try {
+      const payload = JSON.stringify(tenantBusiness.branding);
+      localStorage.setItem(`menyo_settings_${businessSlug}`, payload);
+      if (tenantBusiness.id) {
+        localStorage.setItem(`menyo_settings_${tenantBusiness.id}`, payload);
+      }
+    } catch {}
+  }, [tenantBusiness?.branding, tenantBusiness?.id, businessSlug]);
 
   // Active social & Google review links in real-time
   const socialLinksList = useMemo(() => {
@@ -942,7 +954,7 @@ export const CustomerMenuPage: React.FC<CustomerMenuPageProps> = ({ isExplicitDe
       <CustomerHeader
         brandName={isDemoUrl ? "Menyo Demo" : (isTeaTime ? (cafeSettings?.cafeName || "TEA TIME") : (tenantBusiness?.name || "Menu"))}
         logoUrl={isDemoUrl ? null : tenantTheme.logoUrl}
-        logoHeight={localSavedTheme?.navbarLogoHeight || (tenantBusiness?.branding as any)?.navbarLogoHeight || (cafeSettings as any)?.navbarLogoHeight}
+        logoHeight={(tenantBusiness?.branding as any)?.navbarLogoHeight || localSavedTheme?.navbarLogoHeight || (cafeSettings as any)?.navbarLogoHeight}
         primaryColor={tenantTheme.headerBg}
         accentColor={tenantTheme.accent}
         isDemo={isDemoUrl || isDemoMode}
